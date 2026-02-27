@@ -574,35 +574,6 @@ img {
   pointer-events: none;
 }
 
-/* -- Hero crossed golf clubs -- */
-.hero-clubs {
-  display: flex;
-  justify-content: center;
-  gap: 0;
-  margin-bottom: 14px;
-  position: relative;
-}
-
-.hero-club {
-  opacity: 0.55;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.25));
-  transition: opacity var(--transition);
-}
-
-.hero-club-left {
-  transform: rotate(-20deg);
-  margin-right: -10px;
-}
-
-.hero-club-right {
-  transform: rotate(20deg);
-  margin-left: -10px;
-}
-
-.welcome-hero:hover .hero-club {
-  opacity: 0.75;
-}
-
 .welcome-title {
   font-size: 1.4rem;
   font-weight: 700;

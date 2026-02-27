@@ -42,31 +42,6 @@ const dashboard = {
 
       // Hero
       html += '<div class="welcome-hero">';
-      html += '  <div class="hero-clubs">';
-      // Left club — Driver
-      html += '    <svg class="hero-club hero-club-left" viewBox="0 0 24 120" width="24" height="120" aria-hidden="true">';
-      html += '      <line x1="12" y1="8" x2="12" y2="90" stroke="#d4d4d4" stroke-width="2.2" stroke-linecap="round"/>';
-      html += '      <line x1="10.5" y1="10" x2="13.5" y2="12" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <line x1="10.5" y1="14" x2="13.5" y2="16" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <line x1="10.5" y1="18" x2="13.5" y2="20" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <ellipse cx="12" cy="98" rx="10" ry="14" fill="#b0b0b0" stroke="#888" stroke-width="0.8"/>';
-      html += '      <line x1="5" y1="95" x2="19" y2="95" stroke="#999" stroke-width="0.4"/>';
-      html += '      <line x1="4" y1="98" x2="20" y2="98" stroke="#999" stroke-width="0.4"/>';
-      html += '      <line x1="5" y1="101" x2="19" y2="101" stroke="#999" stroke-width="0.4"/>';
-      html += '    </svg>';
-      // Right club — Iron
-      html += '    <svg class="hero-club hero-club-right" viewBox="0 0 24 120" width="24" height="120" aria-hidden="true">';
-      html += '      <line x1="12" y1="8" x2="12" y2="90" stroke="#d4d4d4" stroke-width="2.2" stroke-linecap="round"/>';
-      html += '      <line x1="10.5" y1="10" x2="13.5" y2="12" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <line x1="10.5" y1="14" x2="13.5" y2="16" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <line x1="10.5" y1="18" x2="13.5" y2="20" stroke="#aaa" stroke-width="0.7"/>';
-      html += '      <path d="M6 90 L12 90 L14 91 L14 104 L10 106 L6 104 Z" fill="#b0b0b0" stroke="#888" stroke-width="0.6"/>';
-      html += '      <rect x="11" y="88" width="2.5" height="3" rx="0.5" fill="#999"/>';
-      html += '      <line x1="7" y1="94" x2="13" y2="94" stroke="#777" stroke-width="0.4"/>';
-      html += '      <line x1="7" y1="97" x2="13" y2="97" stroke="#777" stroke-width="0.4"/>';
-      html += '      <line x1="7" y1="100" x2="13" y2="100" stroke="#777" stroke-width="0.4"/>';
-      html += '    </svg>';
-      html += '  </div>';
       html += '  <div class="welcome-title">' + (user ? ('Welcome back, ' + _esc(user.name || 'Player')) : 'Bandon Dunes Retreat') + '</div>';
       html += '  <div class="welcome-subtitle">8 Players &middot; 5 Rounds &middot; 10 Matches Per Player</div>';
       html += '  <div class="welcome-actions">';
