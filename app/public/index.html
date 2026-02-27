@@ -11,83 +11,99 @@
 </head>
 <body>
 
-  <!-- ===== NAVBAR ===== -->
-  <header class="navbar">
-    <div class="navbar-inner">
-      <div class="navbar-brand">
-        <span class="title">Bandon Dunes Retreat</span>
-        <span class="subtitle">Match Play Championship</span>
+  <!-- ===== HEADER / NAVIGATION ===== -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <a href="#dashboard" class="brand-link">
+          <span class="brand-title">Bandon Dunes Retreat</span>
+          <span class="brand-subtitle">Match Play Championship</span>
+        </a>
       </div>
 
-      <ul class="nav-links">
-        <li><a href="#dashboard" class="active">Dashboard</a></li>
-        <li><a href="#leaderboard">Leaderboard</a></li>
-        <li><a href="#players">Players</a></li>
-      </ul>
+      <nav class="nav" id="main-nav">
+        <a href="#dashboard" class="nav-link active" data-route="dashboard">Dashboard</a>
+        <a href="#rounds" class="nav-link" data-route="rounds">Rounds</a>
+        <a href="#leaderboard" class="nav-link" data-route="leaderboard">Leaderboard</a>
+        <a href="#players" class="nav-link" data-route="players">Players</a>
+      </nav>
 
-      <div class="nav-user">
-        <button class="btn-nav" id="btn-show-login">Sign In</button>
-        <div id="user-menu" style="display:none">
+      <div class="header-actions">
+        <button class="btn btn-accent btn-sm" id="login-btn">Sign In</button>
+        <div class="user-menu" id="user-menu" style="display:none">
           <span class="user-name" id="user-name"></span>
-          <button class="btn-nav" id="btn-logout">Logout</button>
+          <button class="btn btn-sm btn-outline-light" id="logout-btn">Logout</button>
         </div>
       </div>
+
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
     </div>
   </header>
 
   <!-- ===== MAIN CONTENT ===== -->
-  <main class="container" id="app">
-    <!-- Views rendered here by the router -->
+  <main class="main">
+    <div class="container" id="app">
+      <!-- Views are rendered here by the router -->
+    </div>
   </main>
 
   <!-- ===== AUTH MODAL ===== -->
-  <div class="modal-overlay" id="modal-overlay">
+  <div class="modal-overlay" id="auth-modal">
     <div class="modal">
-      <h2>Match Play Championship</h2>
-      <div class="modal-tabs">
-        <button class="modal-tab active" id="tab-login">Sign In</button>
-        <button class="modal-tab" id="tab-register">Register</button>
+      <button class="modal-close" id="modal-close" aria-label="Close modal">&times;</button>
+
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Match Play Championship</h2>
+        <p class="modal-subtitle">Welcome to Bandon Dunes</p>
+        <div class="modal-tabs">
+          <button class="modal-tab active" id="tab-login" data-tab="login">Sign In</button>
+          <button class="modal-tab" id="tab-register" data-tab="register">Register</button>
+        </div>
       </div>
 
-      <div id="auth-error" style="color:var(--danger);font-size:0.85rem;min-height:1.2em;margin-bottom:0.5rem"></div>
-
       <!-- Login Form -->
-      <form id="login-form">
+      <form class="auth-form" id="login-form">
         <div class="form-group">
           <label for="login-email">Email</label>
-          <input type="email" id="login-email" class="form-control" placeholder="you@example.com" required>
+          <input type="email" id="login-email" class="form-input" placeholder="you@example.com" required>
         </div>
         <div class="form-group">
           <label for="login-password">Password</label>
-          <input type="password" id="login-password" class="form-control" placeholder="Enter your password" required>
+          <input type="password" id="login-password" class="form-input" placeholder="Enter your password" required>
         </div>
+        <div class="form-error" id="login-error"></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
       </form>
 
       <!-- Register Form -->
-      <form id="register-form" style="display:none">
+      <form class="auth-form" id="register-form" style="display:none">
         <div class="form-group">
-          <label for="reg-name">Full Name</label>
-          <input type="text" id="reg-name" class="form-control" placeholder="John Smith" required>
+          <label for="register-name">Full Name</label>
+          <input type="text" id="register-name" class="form-input" placeholder="John Smith" required>
         </div>
         <div class="form-group">
-          <label for="reg-email">Email</label>
-          <input type="email" id="reg-email" class="form-control" placeholder="you@example.com" required>
+          <label for="register-email">Email</label>
+          <input type="email" id="register-email" class="form-input" placeholder="you@example.com" required>
         </div>
         <div class="form-group">
-          <label for="reg-password">Password</label>
-          <input type="password" id="reg-password" class="form-control" placeholder="Create a password" required minlength="6">
+          <label for="register-password">Password</label>
+          <input type="password" id="register-password" class="form-input" placeholder="Create a password" required minlength="6">
         </div>
         <div class="form-group">
-          <label for="reg-handicap">Handicap Index</label>
-          <input type="number" id="reg-handicap" class="form-control" placeholder="e.g. 12.4" step="0.1" min="0" max="54" value="0">
+          <label for="register-handicap">Handicap Index</label>
+          <input type="number" id="register-handicap" class="form-input" placeholder="e.g. 12.4" step="0.1" min="0" max="54" required>
         </div>
+        <div class="form-error" id="register-error"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Account</button>
       </form>
     </div>
   </div>
 
-  <!-- ===== SCRIPTS ===== -->
+  <!-- ===== SCRIPTS (loaded in dependency order) ===== -->
   <script src="js/api.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/dashboard.js"></script>
