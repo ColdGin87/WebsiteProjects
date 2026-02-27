@@ -156,6 +156,15 @@ const scorecard = {
                   ${holeNumbers.map(h => `<td>${courseHoles[h]?.par || holeData[h]?.par || '-'}</td>`).join('')}
                   <td>${holeNumbers.reduce((s, h) => s + (courseHoles[h]?.par || holeData[h]?.par || 0), 0)}</td>
                 </tr>
+                <tr class="si-row">
+                  <td class="row-label">SI</td>
+                  ${holeNumbers.map(h => {
+                    const si = courseHoles[h]?.stroke_index || holeData[h]?.stroke_index || '-';
+                    const isStroke = match.stroke_holes?.includes(h);
+                    return `<td class="${isStroke ? 'stroke-cell' : ''}">${si}</td>`;
+                  }).join('')}
+                  <td></td>
+                </tr>
                 <tr>
                   <td class="row-label">${match.player1_name}${match.stroke_holes?.length ? ' *' : ''}</td>
                   ${holeNumbers.map(h => {

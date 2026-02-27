@@ -72,6 +72,9 @@ const dashboard = {
       html += '  <div class="welcome-actions">';
       html += '    <a href="#leaderboard" class="btn btn-accent btn-sm" onclick="event.preventDefault();app.navigate(\'#leaderboard\')">Leaderboard</a>';
       html += '    <a href="#rounds" class="btn btn-outline-light btn-sm" onclick="event.preventDefault();app.navigate(\'#rounds\')">View Rounds</a>';
+      if (players.length < 8) {
+        html += '  <button class="btn btn-outline-light btn-sm" onclick="auth.showModal(\'register\')">&#43; Add Player</button>';
+      }
       if (!user) {
         html += '  <button class="btn btn-outline-light btn-sm" onclick="auth.showModal(\'login\')">Sign In</button>';
       }

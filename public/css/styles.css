@@ -2007,6 +2007,23 @@ img {
   background: #F8F8F2;
 }
 
+/* Stroke index row */
+.scorecard .si-row td {
+  background: #F0EFE8;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.scorecard .si-row .row-label {
+  background: #F0EFE8;
+}
+
+.scorecard .si-row .stroke-cell {
+  color: var(--primary);
+  font-weight: 700;
+}
+
 /* Status row */
 .scorecard .status-row td {
   font-weight: 700;
