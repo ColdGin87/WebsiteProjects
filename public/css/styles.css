@@ -2060,6 +2060,132 @@ img {
 }
 
 /* ==========================================================================
+   CHALLENGE SETUP
+   ========================================================================== */
+.challenge-setup-card {
+  border-left: 4px solid var(--accent-dark);
+}
+
+.challenge-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.challenge-player-select {
+  flex: 1;
+  min-width: 140px;
+}
+
+.challenge-player-select label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-light);
+  margin-bottom: 4px;
+}
+
+.challenge-player-select select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 0.88rem;
+  font-family: var(--font);
+  background: #fff;
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--transition);
+  cursor: pointer;
+}
+
+.challenge-player-select select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(27, 94, 32, 0.12);
+}
+
+.challenge-vs {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding-bottom: 12px;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   SIGNATURE / ATTESTATION
+   ========================================================================== */
+.signature-section {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 2px solid var(--border);
+}
+
+.signature-header {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  margin-bottom: 0.75rem;
+}
+
+.signature-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.signature-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.signature-item.signed {
+  background: #E8F5E9;
+  border-color: #A5D6A7;
+}
+
+.sig-icon {
+  font-size: 1rem;
+  color: var(--success);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sig-name {
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.sig-time {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-left: auto;
+}
+
+.sig-pending {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.btn-sign {
+  margin-top: 0.5rem;
+}
+
+/* ==========================================================================
    MOBILE-SPECIFIC IMPROVEMENTS
    ========================================================================== */
 
@@ -2125,6 +2251,27 @@ img {
   /* Match player names wrap better */
   .match-card .players {
     font-size: 0.88rem;
+  }
+
+  /* Challenge form stacks on mobile */
+  .challenge-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .challenge-vs {
+    text-align: center;
+    padding-bottom: 0;
+  }
+
+  .signature-item {
+    flex-wrap: wrap;
+  }
+
+  .sig-time {
+    width: 100%;
+    margin-left: 0;
+    margin-top: 2px;
   }
 
   /* Leaderboard compactness */

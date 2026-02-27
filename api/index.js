@@ -30,6 +30,7 @@ app.use('/api/rounds', require('../lib/routes/rounds'));
 const matchesModule = require('../lib/routes/matches');
 app.use('/api/matches', matchesModule.router);
 app.use('/api/leaderboard', matchesModule.leaderboardRouter);
+app.use('/api/challenges', require('../lib/routes/challenges'));
 
 // Error handling
 app.use((err, req, res, next) => {

@@ -69,6 +69,10 @@ const app = {
         if (id) scorecard.renderMatch(id);
         else dashboard.render();
         break;
+      case 'challenge':
+        if (id) scorecard.renderChallenge(id);
+        else dashboard.render();
+        break;
       case 'leaderboard':
         leaderboardView.render();
         break;
