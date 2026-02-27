@@ -4,7 +4,7 @@
 const scorecard = {
   async renderRound(roundId) {
     const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading">Loading round...</div>';
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading round...</div>';
 
     try {
       const round = await api.get(`/api/rounds/${roundId}`);
@@ -81,7 +81,7 @@ const scorecard = {
 
   async renderMatch(matchId) {
     const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading">Loading match...</div>';
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading match...</div>';
 
     try {
       const match = await api.get(`/api/matches/${matchId}`);
@@ -163,7 +163,7 @@ const scorecard = {
                     const isStroke = match.strokes_receiver === 'player1' && match.stroke_holes?.includes(h);
                     const cls = d ? (d.hole_winner_id === match.player1_id ? 'hole-won' : d.hole_winner_id === match.player2_id ? 'hole-lost' : d.hole_winner_id === null && d.player1_strokes ? 'hole-halved' : '') : '';
                     if (canEdit) {
-                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" min="1" max="12" value="${d?.player1_strokes || ''}" data-hole="${h}" data-player="1" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
+                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="12" value="${d?.player1_strokes || ''}" data-hole="${h}" data-player="1" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
                     }
                     return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}">${d?.player1_strokes || '-'}</td>`;
                   }).join('')}
@@ -176,7 +176,7 @@ const scorecard = {
                     const isStroke = match.strokes_receiver === 'player2' && match.stroke_holes?.includes(h);
                     const cls = d ? (d.hole_winner_id === match.player2_id ? 'hole-won' : d.hole_winner_id === match.player1_id ? 'hole-lost' : d.hole_winner_id === null && d.player2_strokes ? 'hole-halved' : '') : '';
                     if (canEdit) {
-                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" min="1" max="12" value="${d?.player2_strokes || ''}" data-hole="${h}" data-player="2" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
+                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="12" value="${d?.player2_strokes || ''}" data-hole="${h}" data-player="2" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
                     }
                     return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}">${d?.player2_strokes || '-'}</td>`;
                   }).join('')}

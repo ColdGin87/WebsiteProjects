@@ -16,13 +16,8 @@ const auth = {
     const closeBtn = document.getElementById('modal-close');
     if (closeBtn) closeBtn.addEventListener('click', () => this.hideModal());
 
-    // Close on overlay click
-    const overlay = document.getElementById('auth-modal');
-    if (overlay) {
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) this.hideModal();
-      });
-    }
+    // Modal stays open — user must use the X button to close
+    // (prevents accidental dismissal on mobile)
 
     // Tab switching
     const tabLogin = document.getElementById('tab-login');

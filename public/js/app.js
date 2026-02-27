@@ -11,10 +11,28 @@ const app = {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         this.navigate(link.getAttribute('href'));
+        this.closeMobileMenu();
       });
     });
 
+    // Mobile hamburger menu toggle
+    const toggle = document.getElementById('mobile-menu-toggle');
+    const nav = document.getElementById('main-nav');
+    if (toggle && nav) {
+      toggle.addEventListener('click', () => {
+        nav.classList.toggle('open');
+        toggle.classList.toggle('open');
+      });
+    }
+
     this.route();
+  },
+
+  closeMobileMenu() {
+    const nav = document.getElementById('main-nav');
+    const toggle = document.getElementById('mobile-menu-toggle');
+    if (nav) nav.classList.remove('open');
+    if (toggle) toggle.classList.remove('open');
   },
 
   navigate(hash) {
@@ -27,6 +45,9 @@ const app = {
     const page = parts[0];
     const id = parts[1];
 
+    // Close mobile menu on navigation
+    this.closeMobileMenu();
+
     // Update active nav
     document.querySelectorAll('.nav-link').forEach(link => {
       const href = link.getAttribute('href').substring(1).split('/')[0];
@@ -37,9 +58,12 @@ const app = {
       case 'dashboard':
         dashboard.render();
         break;
+      case 'rounds':
+        this.renderRoundsList();
+        break;
       case 'round':
         if (id) scorecard.renderRound(id);
-        else dashboard.render();
+        else this.renderRoundsList();
         break;
       case 'match':
         if (id) scorecard.renderMatch(id);
@@ -56,9 +80,41 @@ const app = {
     }
   },
 
+  async renderRoundsList() {
+    const container = document.getElementById('app');
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading rounds...</div>';
+    try {
+      const rounds = await api.get('/api/rounds');
+      var courseColors = ['round-accent-1', 'round-accent-2', 'round-accent-3', 'round-accent-4', 'round-accent-5'];
+
+      var html = '<h2 class="section-title">All Rounds</h2>';
+
+      if (rounds.length === 0) {
+        html += '<div class="empty-state"><h3>No rounds yet</h3><p>Rounds will appear once the tournament is set up.</p></div>';
+      } else {
+        html += '<div class="grid grid-2">';
+        rounds.forEach(function (r, idx) {
+          html += '<div class="round-card card-clickable" onclick="app.navigate(\'#round/' + r.id + '\')">';
+          html += '  <div class="round-accent ' + courseColors[idx % 5] + '"></div>';
+          html += '  <div style="padding-left:12px">';
+          html += '    <div class="round-number">Round ' + r.round_number + '</div>';
+          html += '    <div class="round-course">' + _esc(r.course_name || r.name) + '</div>';
+          html += '    <span class="badge badge-' + r.status + '">' + _esc(r.status) + '</span>';
+          html += '  </div>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      container.innerHTML = html;
+    } catch (err) {
+      container.innerHTML = '<div class="empty-state"><h3>Error</h3><p>' + _esc(err.message) + '</p></div>';
+    }
+  },
+
   async renderPlayers() {
     const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading">Loading players...</div>';
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading players...</div>';
     try {
       const players = await api.get('/api/players');
       container.innerHTML = `

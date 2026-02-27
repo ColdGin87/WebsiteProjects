@@ -8,23 +8,23 @@ const dashboard = {
     container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading dashboard...</div>';
 
     try {
-      // Fetch core data in parallel
-      const [rounds, players] = await Promise.all([
-        api.get('/api/rounds').catch(() => []),
-        api.get('/api/players').catch(() => [])
-      ]);
-
-      // Leaderboard (may not exist yet)
-      let leaderboard = [];
-      try { leaderboard = await api.get('/api/leaderboard') || []; } catch (_) {}
-
       const user = auth.currentUser;
 
-      // My matches
-      let myMatches = [];
+      // Fetch ALL data in parallel for speed
+      const fetches = [
+        api.get('/api/rounds').catch(() => []),
+        api.get('/api/players').catch(() => []),
+        api.get('/api/leaderboard').catch(() => [])
+      ];
       if (user) {
-        try { myMatches = await api.get('/api/matches?player=' + user.id) || []; } catch (_) {}
+        fetches.push(api.get('/api/matches?player=' + user.id).catch(() => []));
       }
+
+      const results = await Promise.all(fetches);
+      const rounds = results[0] || [];
+      const players = results[1] || [];
+      const leaderboard = results[2] || [];
+      let myMatches = user ? (results[3] || []) : [];
 
       const activeRound = rounds.find(function (r) { return r.status === 'active'; });
       const upcomingRounds = rounds.filter(function (r) { return r.status === 'upcoming' || r.status === 'pending'; });

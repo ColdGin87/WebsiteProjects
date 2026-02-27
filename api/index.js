@@ -11,11 +11,16 @@ const { initDatabase } = require('../lib/database');
 let dbInitialized = false;
 
 app.use(async (req, res, next) => {
-  if (!dbInitialized) {
-    await initDatabase();
-    dbInitialized = true;
+  try {
+    if (!dbInitialized) {
+      await initDatabase();
+      dbInitialized = true;
+    }
+    next();
+  } catch (err) {
+    console.error('Database initialization failed:', err);
+    next(err);
   }
-  next();
 });
 
 // API Routes
