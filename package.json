@@ -1,0 +1,17 @@
+{
+  "name": "golf-website-project",
+  "version": "1.0.0",
+  "description": "Golf application website built with an agent-based project workflow",
+  "main": "orchestrator.js",
+  "scripts": {
+    "plan": "node orchestrator.js --phase=planning",
+    "design": "node orchestrator.js --phase=design",
+    "develop": "node orchestrator.js --phase=development",
+    "test": "node orchestrator.js --phase=testing",
+    "deploy": "node orchestrator.js --phase=deployment",
+    "all": "node orchestrator.js --phase=all",
+    "status": "node orchestrator.js --status"
+  },
+  "keywords": ["golf", "website", "agents", "project-management"],
+  "license": "MIT"
+}
