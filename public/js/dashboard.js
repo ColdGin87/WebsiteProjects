@@ -16,7 +16,7 @@ const dashboard = {
 
       // Leaderboard (may not exist yet)
       let leaderboard = [];
-      try { leaderboard = await api.get('/api/matches/leaderboard') || []; } catch (_) {}
+      try { leaderboard = await api.get('/api/leaderboard') || []; } catch (_) {}
 
       const user = auth.currentUser;
 

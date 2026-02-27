@@ -7,7 +7,7 @@ const app = {
     window.addEventListener('hashchange', () => this.route());
 
     // Nav link handlers
-    document.querySelectorAll('.nav-links a').forEach(link => {
+    document.querySelectorAll('.nav-link').forEach(link => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
         this.navigate(link.getAttribute('href'));
@@ -28,7 +28,7 @@ const app = {
     const id = parts[1];
 
     // Update active nav
-    document.querySelectorAll('.nav-links a').forEach(link => {
+    document.querySelectorAll('.nav-link').forEach(link => {
       const href = link.getAttribute('href').substring(1).split('/')[0];
       link.classList.toggle('active', href === page);
     });

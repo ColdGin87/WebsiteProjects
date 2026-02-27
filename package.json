@@ -1,17 +1,23 @@
 {
-  "name": "golf-website-project",
+  "name": "golf-retreat-match-play",
   "version": "1.0.0",
-  "description": "Golf application website built with an agent-based project workflow",
-  "main": "orchestrator.js",
+  "description": "Golf retreat match play tournament - Vercel deployment",
+  "private": true,
   "scripts": {
-    "plan": "node orchestrator.js --phase=planning",
-    "design": "node orchestrator.js --phase=design",
-    "develop": "node orchestrator.js --phase=development",
-    "test": "node orchestrator.js --phase=testing",
-    "deploy": "node orchestrator.js --phase=deployment",
-    "all": "node orchestrator.js --phase=all",
-    "status": "node orchestrator.js --status"
+    "dev": "vercel dev",
+    "build": "echo 'No build step required'",
+    "start": "node api/index.js"
   },
-  "keywords": ["golf", "website", "agents", "project-management"],
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "license": "MIT"
 }
