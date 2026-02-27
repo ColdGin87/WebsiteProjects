@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../../database/init').db;
+const { db } = require('../../database/init');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
@@ -41,15 +41,16 @@ router.post('/register', (req, res, next) => {
 
     // Hash password
     const salt = bcrypt.genSaltSync(10);
-    const hashedPassword = bcrypt.hashSync(password, salt);
+    const passwordHash = bcrypt.hashSync(password, salt);
 
-    // Insert player
+    // Insert player — first player becomes admin
+    const isAdmin = playerCount.count === 0 ? 1 : 0;
     const result = db.prepare(
-      'INSERT INTO players (name, email, password, handicap) VALUES (?, ?, ?, ?)'
-    ).run(name, email, hashedPassword, handicap);
+      'INSERT INTO players (name, email, password_hash, handicap, is_admin) VALUES (?, ?, ?, ?, ?)'
+    ).run(name, email, passwordHash, handicap, isAdmin);
 
     const user = db.prepare(
-      'SELECT id, name, email, handicap, is_admin FROM players WHERE id = ?'
+      'SELECT id, name, email, handicap, is_admin, created_at FROM players WHERE id = ?'
     ).get(result.lastInsertRowid);
 
     // Generate JWT
@@ -79,14 +80,14 @@ router.post('/login', (req, res, next) => {
     }
 
     const user = db.prepare(
-      'SELECT id, name, email, password, handicap, is_admin FROM players WHERE email = ?'
+      'SELECT id, name, email, password_hash, handicap, is_admin FROM players WHERE email = ?'
     ).get(email);
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
 
-    const validPassword = bcrypt.compareSync(password, user.password);
+    const validPassword = bcrypt.compareSync(password, user.password_hash);
     if (!validPassword) {
       return res.status(401).json({ error: 'Invalid email or password.' });
     }
@@ -98,8 +99,8 @@ router.post('/login', (req, res, next) => {
       { expiresIn: '7d' }
     );
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user;
+    // Return user without password_hash
+    const { password_hash: _, ...userWithoutPassword } = user;
     res.json({ token, user: userWithoutPassword });
   } catch (err) {
     next(err);
@@ -120,7 +121,7 @@ router.get('/me', authenticate, (req, res, next) => {
       return res.status(404).json({ error: 'User not found.' });
     }
 
-    // Get match stats
+    // Get match stats from completed matches
     const wins = db.prepare(
       'SELECT COUNT(*) as count FROM matches WHERE winner_id = ? AND status = ?'
     ).get(user.id, 'completed');
@@ -145,8 +146,8 @@ router.get('/me', authenticate, (req, res, next) => {
         wins: wins.count,
         losses,
         halves: halves.count,
-        points
-      }
+        points,
+      },
     });
   } catch (err) {
     next(err);

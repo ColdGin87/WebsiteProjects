@@ -1,5 +1,5 @@
 const express = require('express');
-const db = require('../../database/init').db;
+const { db } = require('../../database/init');
 
 const router = express.Router();
 
@@ -35,7 +35,7 @@ router.get('/:id', (req, res, next) => {
       return res.status(404).json({ error: 'Player not found.' });
     }
 
-    // Get match record
+    // Get match record from completed matches
     const wins = db.prepare(
       'SELECT COUNT(*) as count FROM matches WHERE winner_id = ? AND status = ?'
     ).get(id, 'completed');
@@ -60,8 +60,8 @@ router.get('/:id', (req, res, next) => {
         wins: wins.count,
         losses,
         halves: halves.count,
-        points
-      }
+        points,
+      },
     });
   } catch (err) {
     next(err);
@@ -83,16 +83,16 @@ router.get('/:id/matches', (req, res, next) => {
 
     const matches = db.prepare(
       `SELECT m.id, m.round_id, m.foursome_id, m.player1_id, m.player2_id,
-              m.winner_id, m.result_text, m.status,
-              p1.name as player1_name, p1.handicap as player1_handicap,
-              p2.name as player2_name, p2.handicap as player2_handicap,
-              r.round_number
+              m.half, m.status, m.winner_id, m.result_text,
+              p1.name AS player1_name, p1.handicap AS player1_handicap,
+              p2.name AS player2_name, p2.handicap AS player2_handicap,
+              r.round_number, r.name AS round_name
        FROM matches m
        JOIN players p1 ON m.player1_id = p1.id
        JOIN players p2 ON m.player2_id = p2.id
        JOIN rounds r ON m.round_id = r.id
        WHERE m.player1_id = ? OR m.player2_id = ?
-       ORDER BY r.round_number ASC`
+       ORDER BY r.round_number ASC, m.half ASC`
     ).all(id, id);
 
     res.json(matches);

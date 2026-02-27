@@ -21,8 +21,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/players', require('./src/routes/players'));
 app.use('/api/rounds', require('./src/routes/rounds'));
-app.use('/api/matches', require('./src/routes/matches'));
-app.use('/api/leaderboard', require('./src/routes/leaderboard'));
+const matchesRouter = require('./src/routes/matches');
+app.use('/api/matches', matchesRouter);
+app.use('/api/leaderboard', matchesRouter.leaderboardRouter);
 
 // SPA fallback — serve index.html for any non-API route
 app.get('*', (req, res) => {
