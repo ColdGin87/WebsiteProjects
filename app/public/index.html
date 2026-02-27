@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bandon Dunes Retreat | Match Play Championship</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <a href="#dashboard" class="brand-link">
+          <h1 class="brand-title">Bandon Dunes Retreat</h1>
+          <span class="brand-subtitle">Match Play Championship</span>
+        </a>
+      </div>
+      <nav class="nav" id="main-nav">
+        <a href="#dashboard" class="nav-link active" data-route="dashboard">Dashboard</a>
+        <a href="#rounds" class="nav-link" data-route="rounds">Rounds</a>
+        <a href="#leaderboard" class="nav-link" data-route="leaderboard">Leaderboard</a>
+        <a href="#players" class="nav-link" data-route="players">Players</a>
+      </nav>
+      <div class="header-actions">
+        <div class="user-menu" id="user-menu" style="display:none;">
+          <span class="user-name" id="user-name"></span>
+          <button class="btn btn-small btn-secondary" id="logout-btn">Logout</button>
+        </div>
+        <button class="btn btn-small btn-accent" id="login-btn">Sign In</button>
+      </div>
+      <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="container" id="app">
+      <!-- Views are rendered here by the router -->
+    </div>
+  </main>
+
+  <!-- Auth Modal -->
+  <div class="modal-overlay" id="auth-modal" style="display:none;">
+    <div class="modal">
+      <button class="modal-close" id="modal-close">&times;</button>
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Sign In</h2>
+        <div class="modal-tabs">
+          <button class="modal-tab active" id="tab-login" data-tab="login">Sign In</button>
+          <button class="modal-tab" id="tab-register" data-tab="register">Register</button>
+        </div>
+      </div>
+
+      <!-- Login Form -->
+      <form class="auth-form" id="login-form">
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" class="form-input" placeholder="your@email.com" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Enter password" required>
+        </div>
+        <div class="form-error" id="login-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+
+      <!-- Register Form -->
+      <form class="auth-form" id="register-form" style="display:none;">
+        <div class="form-group">
+          <label for="register-name">Full Name</label>
+          <input type="text" id="register-name" class="form-input" placeholder="John Smith" required>
+        </div>
+        <div class="form-group">
+          <label for="register-email">Email</label>
+          <input type="email" id="register-email" class="form-input" placeholder="your@email.com" required>
+        </div>
+        <div class="form-group">
+          <label for="register-password">Password</label>
+          <input type="password" id="register-password" class="form-input" placeholder="Create password" required minlength="6">
+        </div>
+        <div class="form-group">
+          <label for="register-handicap">Handicap Index</label>
+          <input type="number" id="register-handicap" class="form-input" placeholder="e.g. 12.4" step="0.1" min="0" max="54" required>
+        </div>
+        <div class="form-error" id="register-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Scripts loaded in dependency order -->
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/scorecard.js"></script>
+  <script src="js/leaderboard.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
