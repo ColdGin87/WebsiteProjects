@@ -105,13 +105,24 @@ img {
 .brand-link {
   color: #fff;
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   line-height: 1.2;
   flex-shrink: 0;
 }
 
 .brand-link:hover {
   color: var(--accent);
+}
+
+.brand-logo {
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.2));
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
 }
 
 .brand-title {
