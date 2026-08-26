@@ -29,7 +29,7 @@
   --radius-md: 10px;
   --radius-lg: 14px;
   --transition: 0.2s ease;
-  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 /* ---------- Reset & Base ---------- */
@@ -184,12 +184,14 @@ img {
   flex-direction: column;
   justify-content: center;
   gap: 5px;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   background: none;
   border: none;
   cursor: pointer;
-  padding: 6px;
+  padding: 10px;
   border-radius: var(--radius-sm);
   transition: background var(--transition);
 }
@@ -1068,64 +1070,68 @@ img {
 /* Score quick-input overlay */
 .score-input-overlay {
   position: fixed;
-  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
+  top: auto;
+  height: 80px;
+  background: transparent;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
   z-index: 200;
-  padding: 20px;
-  backdrop-filter: blur(3px);
+  padding: 0;
 }
 
 .score-input-box {
   background: var(--card-bg);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 28px 24px;
-  text-align: center;
-  min-width: 240px;
-  animation: scoreInputSlideIn 0.2s ease-out;
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  padding: 8px 10px;
+  text-align: left;
+  width: 100%;
+  min-height: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-@keyframes scoreInputSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.96);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+.score-input-meta {
+  min-width: 0;
+  flex: 0 1 88px;
 }
 
 .score-input-box .score-input-title {
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--primary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 4px;
+  letter-spacing: 0;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .score-input-box .score-input-label {
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  color: var(--text-light);
-  margin-bottom: 14px;
+  color: #555;
+  margin-bottom: 0;
 }
 
-.score-input-box input[type="number"] {
-  width: 80px;
-  font-size: 2.2rem;
+.score-input-box input[type="number"],
+.score-overlay-number {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
+  font-size: 1.1rem;
   font-weight: 700;
   text-align: center;
   border: 2px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 10px;
+  padding: 4px;
   outline: none;
   font-family: var(--font);
   color: var(--text);
@@ -1145,10 +1151,15 @@ img {
 }
 
 .score-input-actions {
-  margin-top: 16px;
+  margin-top: 0;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
+}
+
+.score-input-actions .btn {
+  min-width: 44px;
+  min-height: 44px;
 }
 
 /* ==========================================================================
@@ -1887,8 +1898,10 @@ img {
    ========================================================================== */
 .score-input {
   width: 100%;
-  max-width: 52px;
-  height: 40px;
+  max-width: 56px;
+  min-width: 44px;
+  min-height: 44px;
+  height: 44px;
   font-size: 1.1rem;
   font-weight: 700;
   text-align: center;
@@ -2039,32 +2052,43 @@ img {
 @media (max-width: 600px) {
   .form-input {
     font-size: 16px;
+    min-height: 44px;
   }
 
   .score-input {
     font-size: 16px;
-    max-width: 46px;
-    height: 38px;
+    max-width: 56px;
+    min-width: 44px;
+    min-height: 44px;
+    height: 44px;
   }
 
   /* Larger touch targets for buttons */
-  .btn-sm {
-    padding: 8px 14px;
-    font-size: 0.82rem;
-    min-height: 40px;
+  .btn-sm,
+  .btn-small {
+    padding: 10px 14px;
+    font-size: 0.875rem;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .sc-cell-editable {
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* Make scorecard cells a bit more compact for mobile */
   .scorecard th,
   .scorecard td {
-    padding: 6px 3px;
-    min-width: 40px;
+    padding: 8px 4px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   .scorecard .row-label {
-    min-width: 70px;
-    max-width: 90px;
-    font-size: 0.72rem;
+    min-width: 148px;
+    max-width: 180px;
+    font-size: 0.875rem;
   }
 
   /* Full width modal on small screens */
@@ -2206,12 +2230,17 @@ img {
 }
 
 .tiny-label {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #fff;
+  color: #333;
+}
+
+.admin-bar .tiny-label,
+.admin-bar .tiny-label select {
+  color: #333;
 }
 
 .hcp-mini,
@@ -2219,9 +2248,9 @@ img {
 .net-mini,
 .est-label {
   display: block;
-  font-size: 0.62rem;
+  font-size: 0.875rem;
   font-weight: 700;
-  color: var(--text-light);
+  color: #555;
 }
 
 .net-mini {
@@ -2236,16 +2265,33 @@ img {
   min-width: 720px;
 }
 
+.team-scorecard thead th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--primary-dark);
+  color: #fff;
+}
+
 .team-scorecard thead th:first-child,
 .team-scorecard tbody td:first-child,
 .team-scorecard .row-label {
   position: sticky;
   left: 0;
   z-index: 3;
-  min-width: 108px;
-  max-width: 140px;
+  min-width: 148px;
+  max-width: 196px;
+  font-size: 0.875rem;
   background: var(--card-bg);
   box-shadow: 2px 0 0 var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-scorecard thead th:first-child {
+  z-index: 5;
+  top: 0;
+  left: 0;
 }
 
 .team-scorecard thead th:first-child {
@@ -2287,38 +2333,54 @@ img {
 .dots-3,
 .dots-plus {
   position: relative;
+  padding-bottom: 10px;
 }
 
-.dots-1::before,
-.dots-2::before,
-.dots-3::before,
-.dots-plus::before {
-  content: '';
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px #000;
-}
-
+.dots-1::after,
 .dots-2::after,
 .dots-3::after {
   content: '';
   position: absolute;
-  top: 3px;
-  right: 12px;
-  width: 7px;
-  height: 7px;
+  bottom: 2px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 1px #000;
 }
 
+.dots-1::after {
+  transform: translateX(-50%);
+}
+
+.dots-2::after {
+  transform: translateX(-8px);
+  box-shadow: 0 0 0 1px #000, 10px 0 0 0 var(--accent), 10px 0 0 1px #000;
+}
+
+.dots-3::after {
+  transform: translateX(-13px);
+  box-shadow:
+    0 0 0 1px #000,
+    10px 0 0 0 var(--accent), 10px 0 0 1px #000,
+    20px 0 0 0 var(--accent), 20px 0 0 1px #000;
+}
+
 .dots-plus::before {
-  background: #1565C0;
+  content: '+';
+  position: absolute;
+  top: 1px;
+  right: 3px;
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #1565C0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .row-team td {
@@ -2333,13 +2395,15 @@ img {
 .stepper {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 12px 0;
+  gap: 6px;
+  margin: 0;
 }
 
 .stepper-btn {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
   font-size: 1.4rem;
 }
 
@@ -2347,12 +2411,16 @@ img {
 .score-input-overlay:not([hidden]) {
   display: flex;
   position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  height: 80px;
+  background: transparent;
   z-index: 200;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
 }
 
 .score-input-overlay[hidden] {
@@ -2372,12 +2440,155 @@ img {
   .team-scorecard thead th:first-child,
   .team-scorecard tbody td:first-child,
   .team-scorecard .row-label {
-    min-width: 88px;
-    max-width: 100px;
-    font-size: 0.72rem;
+    min-width: 148px;
+    max-width: 196px;
+    font-size: 0.875rem;
   }
 
   .high-contrast td {
-    font-size: 0.95rem;
+    font-size: 1rem;
+  }
+}
+
+.scorecard-container {
+  max-height: calc(100vh - 180px);
+  overflow: auto;
+}
+
+.hole-view {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+.hole-number {
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin: 8px 0 4px;
+}
+
+.race-strip,
+.ball-line,
+.ball-reveal {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.4;
+  margin: 4px 0 8px;
+}
+
+.hole-meta {
+  font-size: 0.875rem;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+.hole-player-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hole-player-name {
+  font-size: 1rem;
+  font-weight: 700;
+  min-width: 0;
+  flex: 1;
+  padding-right: 12px;
+}
+
+.hole-player-score {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.hole-team-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 6px 0;
+}
+
+.hole-team-total.incomplete,
+.hole-team-total .incomplete {
+  outline: 2px dashed #F9A825;
+}
+
+.thumb-zone,
+.hole-nav {
+  position: sticky;
+  bottom: 0;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--card-bg);
+  padding: 12px 8px;
+  z-index: 40;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.hole-nav .btn {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.hole-nav-label {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.join-code-input {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 700;
+  min-height: 44px;
+}
+
+.is-current-hole {
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+#app-form-modal .form-input,
+#app-form-modal .btn {
+  min-height: 44px;
+}
+
+.gross {
+  font-size: 1rem;
+}
+
+@media (max-width: 600px) {
+  .hole-view,
+  .hole-players,
+  .hole-player-row {
+    overflow-x: hidden;
+  }
+
+  #score-save,
+  #score-clear,
+  .stepper-btn,
+  #score-overlay-input {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

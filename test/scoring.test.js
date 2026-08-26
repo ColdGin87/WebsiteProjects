@@ -11,6 +11,7 @@ const {
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
+const { resultsText } = require('../lib/compute/roundState');
 
 describe('playingHandicap', () => {
   it('keeps whole numbers', () => {
@@ -243,6 +244,30 @@ describe('autoBalanceTeams', () => {
     // 1 (4) → T1, 2 (8) → T2, 3 (10) → T2, 4 (12) → T1, 5 (18) → T1, 6 (24) → T2
     assert.deepEqual(teams[0].memberIds, [1, 4, 5]);
     assert.deepEqual(teams[1].memberIds, [2, 3, 6]);
+  });
+});
+
+describe('resultsText leading vs winning', () => {
+  function sample(status) {
+    return {
+      round: { name: 'Saturday', format: 'team_net', status, course: { name: 'Goldendale Golf Club' } },
+      winner: { name: 'Team 1', total: 87 },
+      teams: [{ name: 'Team 1', total: 87, incomplete: false, members: [] }],
+      unassigned: [],
+      holeResults: [],
+    };
+  }
+
+  it('says Leading team while the round is live', () => {
+    const text = resultsText(sample('live'));
+    assert.match(text, /Leading team: Team 1 \(87\)/);
+    assert.equal(text.includes('Winning team'), false);
+  });
+
+  it('says Winning team only when the round is completed', () => {
+    const text = resultsText(sample('completed'));
+    assert.match(text, /Winning team: Team 1 \(87\)/);
+    assert.equal(text.includes('Leading team'), false);
   });
 });
 

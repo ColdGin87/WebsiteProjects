@@ -4,6 +4,8 @@
 const api = {
   TOKEN_KEY: 'goldendale_scorecard_token',
   QUEUE_KEY: 'goldendale_offline_queue',
+  SCORE_TIMEOUT_MS: 8000,
+  _flushing: null,
 
   setToken(token) {
     localStorage.setItem(this.TOKEN_KEY, token);
@@ -30,27 +32,59 @@ const api = {
     this.updateBadge();
   },
 
+  scoreKey(item) {
+    const body = item && item.body;
+    if (!body) return null;
+    const memberId = body.memberId != null ? body.memberId : body.member_id;
+    const holeNumber = body.holeNumber != null ? body.holeNumber : body.hole_number;
+    if (memberId == null || holeNumber == null) return null;
+    return String(memberId) + ':' + String(holeNumber);
+  },
+
   enqueue(item) {
-    const items = this.queue();
-    items.push({ ...item, id: Date.now() + ':' + Math.random().toString(16).slice(2), createdAt: Date.now() });
+    const key = this.scoreKey(item);
+    let items = this.queue();
+    if (key) items = items.filter((q) => this.scoreKey(q) !== key);
+    items.push({
+      ...item,
+      id: Date.now() + ':' + Math.random().toString(16).slice(2),
+      createdAt: Date.now(),
+    });
     this.saveQueue(items);
+    if (item.body && window.scorecard && typeof scorecard.applyLocalScore === 'function') {
+      scorecard.applyLocalScore(item.body.memberId, item.body.holeNumber, item.body.gross);
+    }
+    this.flushInBackground();
   },
 
   updateBadge() {
-    const badge = document.getElementById('unsynced-badge');
-    if (!badge) return;
     const n = this.queue().length;
-    badge.hidden = n === 0;
-    badge.textContent = 'Unsynced ' + n;
+    document.querySelectorAll('#unsynced-badge, #unsynced-inline').forEach((badge) => {
+      if (!badge) return;
+      badge.hidden = n === 0;
+      badge.textContent = 'Unsynced ' + n;
+    });
+  },
+
+  flushInBackground() {
+    this.flushQueue();
   },
 
   async flushQueue() {
+    if (this._flushing) return this._flushing;
+    this._flushing = this._flushNow().finally(() => {
+      this._flushing = null;
+    });
+    return this._flushing;
+  },
+
+  async _flushNow() {
     const items = this.queue();
     if (!items.length) return;
     const remain = [];
     for (const item of items) {
       try {
-        await this.request(item.method, item.path, item.body, { skipQueue: true });
+        await this.request(item.method, item.path, item.body, { skipQueue: true, timeoutMs: this.SCORE_TIMEOUT_MS });
       } catch {
         remain.push(item);
       }
@@ -58,25 +92,53 @@ const api = {
     this.saveQueue(remain);
   },
 
+  abortAfter(ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return {
+      signal: controller.signal,
+      cancel() { clearTimeout(timer); },
+    };
+  },
+
   async request(method, path, body, opts) {
-    const headers = { 'Content-Type': 'application/json' };
+    const headers = { 'Content-Type': 'application/json', ...(opts?.extraHeaders || {}) };
     const token = this.getToken();
     if (token) headers.Authorization = 'Bearer ' + token;
 
     const init = { method, headers };
     if (body && method !== 'GET') init.body = JSON.stringify(body);
 
+    const isScorePost = method === 'POST' && /\/scores$/.test(path);
+    const isLiveGet = method === 'GET' && /\/live(?:\?|$)/.test(path);
+    const timeoutMs = opts?.timeoutMs != null
+      ? opts.timeoutMs
+      : (isScorePost || isLiveGet ? this.SCORE_TIMEOUT_MS : 0);
+    const gate = timeoutMs ? this.abortAfter(timeoutMs) : null;
+    if (gate) init.signal = gate.signal;
+
     let res;
     try {
       res = await fetch(path, init);
+      if (gate) gate.cancel();
     } catch (networkErr) {
-      if (!opts?.skipQueue && method !== 'GET' && /\/scores$/.test(path)) {
+      if (gate) gate.cancel();
+      const timedOut = networkErr && (networkErr.name === 'AbortError' || /abort/i.test(networkErr.message || ''));
+      if (!opts?.skipQueue && isScorePost) {
         this.enqueue({ method, path, body });
-        const queued = new Error('Saved offline. Will sync when you are back online.');
+        const queued = new Error(timedOut
+          ? 'Saved offline. Will sync when you are back online.'
+          : 'Saved offline. Will sync when you are back online.');
         queued.offline = true;
+        queued.timeout = timedOut;
         throw queued;
       }
+      if (timedOut) throw new Error('Request timed out.');
       throw new Error('Network error. Please check your connection.');
+    }
+
+    if (res.status === 304) {
+      return { notModified: true };
     }
 
     let data = null;
@@ -97,6 +159,20 @@ const api = {
     return data;
   },
 
+  getLive(path, updatedAt) {
+    const extraHeaders = {};
+    let url = path;
+    if (updatedAt) {
+      extraHeaders['If-None-Match'] = '"' + updatedAt + '"';
+      url += (path.includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(updatedAt);
+    }
+    return this.request('GET', url, null, { extraHeaders, timeoutMs: this.SCORE_TIMEOUT_MS });
+  },
+
+  postScore(path, body) {
+    return this.request('POST', path, body, { timeoutMs: this.SCORE_TIMEOUT_MS });
+  },
+
   get(path) { return this.request('GET', path); },
   post(path, body) { return this.request('POST', path, body); },
   put(path, body) { return this.request('PUT', path, body); },
@@ -104,8 +180,8 @@ const api = {
 };
 
 window.api = api;
-window.addEventListener('online', () => api.flushQueue());
+window.addEventListener('online', () => api.flushInBackground());
 document.addEventListener('DOMContentLoaded', () => {
   api.updateBadge();
-  api.flushQueue();
+  api.flushInBackground();
 });

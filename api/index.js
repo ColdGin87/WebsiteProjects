@@ -45,7 +45,13 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, name: 'goldendale-scorecard' });
 });
 
-app.use(express.static(path.join(__dirname, '../public')));
+app.use(express.static(path.join(__dirname, '../public'), {
+  setHeaders(res, filePath) {
+    if (/\.(css|js)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  },
+}));
 
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack || err.message || err);

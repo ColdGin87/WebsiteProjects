@@ -207,12 +207,17 @@ async function runScenario(base) {
     }
   }
 
+  let lastPost = null;
   for (const player of PLAYERS) {
     const member = state.members.find((m) => m.display_name === player.name);
-    state = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    lastPost = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
       token,
       body: { memberId: member.id, holeNumber: 1, gross: player.gross },
     });
+    if (!lastPost || lastPost.ok !== true) fail('score POST should return ok');
+    if (lastPost.members || lastPost.holes || lastPost.round) {
+      fail('score POST must be slim (no full loadRoundBundle)');
+    }
   }
 
   try {
@@ -229,7 +234,12 @@ async function runScenario(base) {
     if (!/1 to 15/.test(err.message)) throw err;
   }
 
-  const live = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token });
+  if (!lastPost.updatedAt) fail('slim POST missing updatedAt');
+  const postedHole = (lastPost.teams || []).find((t) => t.name === 'Team 1') || (lastPost.teams || [])[0];
+  if (!postedHole || !postedHole.hole) fail('slim POST missing that hole team total');
+  assertEqual(postedHole.hole.total, 16, 'slim POST team hole 1');
+
+  const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
   const dots = [];
   const nets = [];
   for (const player of PLAYERS) {
@@ -255,6 +265,34 @@ async function runScenario(base) {
   assertEqual(teamHole.incomplete, false, 'team hole 1 complete');
   assertEqual(teamHole.balls.length, 3, 'three balls counted');
   assertEqual(new Set(teamHole.balls.map((b) => b.playerId)).size, 3, 'three different players');
+
+  const livePatch = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token });
+  if (livePatch.holes || (livePatch.round && livePatch.round.course)) {
+    fail('live payload should omit course/tee/holes');
+  }
+  if (!Array.isArray(livePatch.scores) || !Array.isArray(livePatch.teams)) {
+    fail('live payload needs scores and team hole totals');
+  }
+  const liveTeam = (livePatch.teams || []).find((t) => t.name === 'Team 1') || livePatch.teams[0];
+  const liveHole = (liveTeam.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(liveHole && liveHole.total, 16, 'live patch team hole 1');
+
+  const liveUrl = base + `/api/rounds/${roundId}/live`;
+  const firstLive = await fetch(liveUrl, {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  if (!firstLive.ok) fail('live GET failed: ' + firstLive.status);
+  const etag = firstLive.headers.get('etag');
+  const firstBody = await firstLive.json();
+  if (!etag) fail('live GET missing ETag');
+  const none = await fetch(liveUrl, {
+    headers: { Authorization: 'Bearer ' + token, 'If-None-Match': etag },
+  });
+  assertEqual(none.status, 304, 'unchanged live If-None-Match');
+  const since = await fetch(liveUrl + '?since=' + encodeURIComponent(firstBody.updatedAt), {
+    headers: { Authorization: 'Bearer ' + token },
+  });
+  assertEqual(since.status, 304, 'unchanged live since');
 
   console.log('PASS Goldendale four-player hole 1');
   console.log('  course   Goldendale Golf Club 18 holes');

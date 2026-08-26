@@ -41,7 +41,7 @@ const app = {
     const id = parts[1];
 
     this.closeMobileMenu();
-    if (window.scorecard) scorecard.stopPoll();
+    if (window.scorecard && page !== 'round') scorecard.stopPoll();
 
     document.querySelectorAll('.nav-link').forEach((link) => {
       const href = (link.getAttribute('href') || '').substring(1).split('/')[0];
@@ -63,7 +63,7 @@ const app = {
         dashboard.renderCourses();
         break;
       case 'round':
-        if (id) scorecard.renderRound(id);
+        if (id) scorecard.renderRound(id, parts[2]);
         else dashboard.render();
         break;
       case 'join':

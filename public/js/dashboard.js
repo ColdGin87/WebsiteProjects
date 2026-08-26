@@ -19,7 +19,7 @@ const dashboard = {
           <h3 class="card-title">Have a join code?</h3>
           <p class="card-subtitle">Sign in first, then enter the 6-character code from your organizer.</p>
           <div class="inline-form">
-            <input id="guest-code" class="form-input" maxlength="8" placeholder="ABC123" style="text-transform:uppercase">
+            <input id="guest-code" class="form-input join-code-input" maxlength="6" placeholder="ABC123" autocomplete="off" style="text-transform:uppercase">
             <button class="btn btn-primary" onclick="auth.showModal('login')">Sign in to join</button>
           </div>
         </div>`;
@@ -69,10 +69,22 @@ const dashboard = {
   },
 
   async promptJoin() {
-    const code = prompt('Enter the 6-character join code');
-    if (!code) return;
+    const values = await _formPrompt({
+      title: 'Join a round',
+      submitLabel: 'Join',
+      fields: [{
+        name: 'code',
+        label: '6-character join code',
+        maxlength: 6,
+        required: true,
+        uppercase: true,
+        placeholder: 'ABC123',
+        alphabet: JOIN_ALPHABET,
+      }],
+    });
+    if (!values) return;
     try {
-      const state = await api.post('/api/rounds/join', { code: code.trim().toUpperCase() });
+      const state = await api.post('/api/rounds/join', { code: values.code });
       app.navigate('#round/' + state.round.id);
     } catch (err) {
       _toast(err.message, 'error');
@@ -311,11 +323,88 @@ const dashboard = {
   },
 };
 
+const JOIN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
 function _esc(str) {
   if (str === null || str === undefined) return '';
   const div = document.createElement('div');
   div.appendChild(document.createTextNode(String(str)));
   return div.innerHTML;
+}
+
+function _formPrompt({ title, submitLabel, fields }) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('app-form-modal');
+    const form = document.getElementById('app-form');
+    const fieldsEl = document.getElementById('app-form-fields');
+    const titleEl = document.getElementById('app-form-title');
+    const submitBtn = document.getElementById('app-form-submit');
+    const errEl = document.getElementById('app-form-error');
+    if (!modal || !form || !fieldsEl) {
+      resolve(null);
+      return;
+    }
+    titleEl.textContent = title || 'Enter details';
+    submitBtn.textContent = submitLabel || 'Save';
+    errEl.textContent = '';
+    fieldsEl.innerHTML = (fields || []).map((f, i) => `
+      <div class="form-group">
+        <label for="app-form-f-${i}">${_esc(f.label)}</label>
+        <input id="app-form-f-${i}" class="form-input${f.alphabet ? ' join-code-input' : ''}"
+          name="${_esc(f.name)}" type="${f.type || 'text'}" value="${_esc(f.value ?? '')}"
+          ${f.maxlength ? `maxlength="${f.maxlength}"` : ''}
+          ${f.required ? 'required' : ''}
+          ${f.placeholder ? `placeholder="${_esc(f.placeholder)}"` : ''}
+          ${f.uppercase ? 'style="text-transform:uppercase"' : ''}
+          autocomplete="off">
+      </div>`).join('');
+    modal.classList.add('active');
+    const inputs = [...fieldsEl.querySelectorAll('input')];
+    inputs.forEach((input, i) => {
+      const field = fields[i];
+      if (field && field.alphabet) {
+        input.addEventListener('input', () => {
+          const next = input.value.toUpperCase().split('').filter((ch) => field.alphabet.includes(ch)).join('');
+          input.value = next;
+        });
+      }
+    });
+    if (inputs[0]) inputs[0].focus();
+
+    const finish = (value) => {
+      cleanup();
+      modal.classList.remove('active');
+      resolve(value);
+    };
+    const onSubmit = (e) => {
+      e.preventDefault();
+      const values = {};
+      (fields || []).forEach((f, i) => {
+        let v = document.getElementById('app-form-f-' + i).value;
+        if (f.uppercase) v = v.toUpperCase();
+        if (f.alphabet) v = v.split('').filter((ch) => f.alphabet.includes(ch)).join('');
+        values[f.name] = v;
+      });
+      const codeField = (fields || []).find((f) => f.name === 'code' && f.alphabet);
+      if (codeField) {
+        const code = values.code || '';
+        if (code.length !== 6 || [...code].some((ch) => !JOIN_ALPHABET.includes(ch))) {
+          errEl.textContent = 'Enter the 6-character code (no 0, O, 1, or I).';
+          return;
+        }
+      }
+      finish(values);
+    };
+    const onCancel = () => finish(null);
+    const cleanup = () => {
+      form.removeEventListener('submit', onSubmit);
+      document.getElementById('app-form-cancel').onclick = null;
+      document.getElementById('app-form-close').onclick = null;
+    };
+    form.addEventListener('submit', onSubmit);
+    document.getElementById('app-form-cancel').onclick = onCancel;
+    document.getElementById('app-form-close').onclick = onCancel;
+  });
 }
 
 function _toast(message, type) {
@@ -331,3 +420,5 @@ function _toast(message, type) {
 window.dashboard = dashboard;
 window._esc = _esc;
 window._toast = _toast;
+window._formPrompt = _formPrompt;
+window.JOIN_ALPHABET = JOIN_ALPHABET;
