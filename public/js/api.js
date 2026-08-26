@@ -4,7 +4,34 @@
  * so a stale cached helper cannot leave login as `api.post is not a function`.
  */
 function ensureApiMethods(target) {
-  if (!target || typeof target.request !== 'function') return target;
+  if (!target || typeof target !== 'object') return target;
+  if (typeof target.request !== 'function') {
+    target.request = function request(method, path, body) {
+      const headers = { 'Content-Type': 'application/json' };
+      try {
+        const token = typeof this.getToken === 'function'
+          ? this.getToken()
+          : (typeof localStorage !== 'undefined' ? localStorage.getItem('goldendale_scorecard_token') : null);
+        if (token) headers.Authorization = 'Bearer ' + token;
+      } catch {
+        /* ignore */
+      }
+      const init = { method, headers };
+      if (body != null && method !== 'GET' && method !== 'HEAD') init.body = JSON.stringify(body);
+      return fetch(path, init).then(async (res) => {
+        let data = null;
+        const contentType = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+        if (contentType.includes('application/json')) {
+          try { data = await res.json(); } catch { data = null; }
+        }
+        if (!res.ok) {
+          const msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
+          throw new Error(typeof msg === 'string' ? msg : 'Request failed.');
+        }
+        return data;
+      });
+    };
+  }
   if (typeof target.get !== 'function') {
     target.get = function get(path) { return this.request('GET', path); };
   }

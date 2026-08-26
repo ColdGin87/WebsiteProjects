@@ -8,8 +8,11 @@ const scorecard = {
   expandedHole: null,
   focusCell: null,
   writeError: '',
+  addPlayerOpen: false,
+  stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
+  ASSET_V: '20260826d',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -246,10 +249,14 @@ const scorecard = {
 
   addPlayerPanel(state) {
     if (!this.isOrganizer(state)) return '';
+    const count = (state.members || []).length;
+    if (count >= 2 && !this.addPlayerOpen) {
+      return `<button type="button" class="btn btn-secondary add-player-toggle" id="add-player-toggle" onclick="scorecard.openAddPlayer()">Add player</button>`;
+    }
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player</h3>
-        <p class="card-subtitle">Name, handicap, and team. A foursome or up to 15. This is how you add the next name.</p>
+        <p class="card-subtitle">Name, handicap, and team. A foursome or up to 15.</p>
         <form class="add-guest-row" onsubmit="event.preventDefault();scorecard.addGuestFromForm('live')">
           <input class="form-input" id="live-add-guest-name" placeholder="Name" required>
           <input class="form-input" id="live-add-guest-hcp" placeholder="HCP">
@@ -259,8 +266,32 @@ const scorecard = {
           </select>
           <button class="btn btn-accent" type="submit">Add player</button>
         </form>
-        <button type="button" class="btn btn-secondary" onclick="scorecard.addDemoFoursome()">Add Kurt, Chase &amp; Brian (75 / 85 / 95)</button>
+        ${count >= 2 ? '<button type="button" class="btn btn-secondary" onclick="scorecard.closeAddPlayer()">Done adding</button>' : ''}
       </div>`;
+  },
+
+  openAddPlayer() {
+    this.addPlayerOpen = true;
+    if (this.state) this.draw(this.state);
+  },
+
+  closeAddPlayer() {
+    this.addPlayerOpen = false;
+    if (this.state) this.draw(this.state);
+  },
+
+  ensureVsPar() {
+    if (window.vsPar && typeof window.vsPar.formatVsPar === 'function') return;
+    if (document.querySelector('script[data-vspar-loader]')) return;
+    const script = document.createElement('script');
+    script.src = 'js/vsPar.js?v=' + this.ASSET_V;
+    script.dataset.vsparLoader = '1';
+    script.onload = () => {
+      if (this.state && this.isHoleView()) {
+        for (const team of this.state.teams || []) this.paintTeamVsPar(team);
+      }
+    };
+    document.head.appendChild(script);
   },
 
   ballsCountedText(state, memberId) {
@@ -380,6 +411,18 @@ const scorecard = {
   },
 
   focusNextHole(memberId, holeNumber) {
+    if (this.isHoleView()) {
+      const members = (this.state && this.state.members) || [];
+      const idx = members.findIndex((m) => m.id === memberId);
+      const next = members[idx + 1];
+      if (!next) return;
+      const el = document.querySelector(`input.score-input[data-member="${next.id}"][data-hole="${holeNumber}"]`);
+      if (el) {
+        el.focus();
+        el.select();
+      }
+      return;
+    }
     const holes = (this.state && this.state.holes) || [];
     const idx = holes.findIndex((h) => h.hole_number === holeNumber);
     const next = holes[idx + 1];
@@ -539,15 +582,43 @@ const scorecard = {
     return (state.holes || []).find((h) => h.hole_number === holeNumber) || {};
   },
 
-  ballLineText(state, holeNumber) {
-    const bits = [];
+  ballFirstName(ball) {
+    return String((ball && ball.name) || '?').split(/\s+/)[0] || '?';
+  },
+
+  teamBallsText(team, holeNumber) {
+    const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
+    return ((hole && hole.balls) || []).map((ball) => {
+      const kind = ball.type === 'gross' ? 'G' : 'N';
+      return `${this.ballFirstName(ball)} ${ball.score}${kind}`;
+    }).join(' · ');
+  },
+
+  teamBallsHtml(team, holeNumber) {
+    return `<div class="team-balls" data-team-balls="${team.id}">${_esc(this.teamBallsText(team, holeNumber))}</div>`;
+  },
+
+  latestScoredHole(state) {
+    let latest = 0;
     for (const team of state.teams || []) {
-      const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
-      for (const ball of (hole && hole.balls) || []) {
-        bits.push(`${ball.name} ${ball.score}${ball.type === 'gross' ? 'G' : 'N'}`);
+      for (const hole of team.holes || []) {
+        if (hole.total != null && hole.holeNumber > latest) latest = hole.holeNumber;
       }
     }
-    return bits.join(' · ');
+    if (latest) return latest;
+    for (const member of state.members || []) {
+      for (const hole of member.holes || []) {
+        if (hole.gross != null && hole.holeNumber > latest) latest = hole.holeNumber;
+      }
+    }
+    return latest || null;
+  },
+
+  ballLineText(state, holeNumber) {
+    return (state.teams || []).map((team) => {
+      const balls = this.teamBallsText(team, holeNumber);
+      return balls ? `${team.name} ${balls}` : '';
+    }).filter(Boolean).join(' · ');
   },
 
   raceStripText(state) {
@@ -565,46 +636,103 @@ const scorecard = {
     }).join(' · ');
   },
 
+  holePlayersHtml(state, holeNumber) {
+    const hole = this.holeMeta(state, holeNumber);
+    return `<div class="hole-players" id="hole-players">${(state.members || []).map((member) => {
+      const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
+      const cls = this.cellClassList(hs, hole.par);
+      return `<div class="hole-player-row" data-member-row="${member.id}">
+        <span class="hole-player-name">${_esc(member.display_name)}</span>
+        <div class="hole-player-score ${cls}" data-score-cell="${member.id}:${holeNumber}">
+          <div class="gross-box">
+            <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
+              data-member="${member.id}" data-hole="${holeNumber}"
+              data-committed="${hs?.gross ?? ''}"
+              value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
+            ${this.strokeDotsHtml(hs?.strokes)}
+          </div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  },
+
   drawHoleView(state) {
+    this.ensureVsPar();
     const container = document.getElementById('app');
     const r = state.round;
-    const holes = state.holes || [];
     const holeNumber = this.pickCurrentHole(state);
     this.currentHole = holeNumber;
     const hole = this.holeMeta(state, holeNumber);
     const formatLabel = r.format === 'match_play' ? 'Match play' : `${r.gross_balls} gross + ${r.net_balls} net`;
-    const balls = this.ballLineText(state, holeNumber);
     const race = this.raceStripText(state);
-    const outHoles = holes.filter((h) => h.hole_number <= 9);
-    const inHoles = holes.filter((h) => h.hole_number >= 10);
 
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode('full')">Full card</button>`)}
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
-      ${this.addPlayerPanel(state)}
       <div class="card hole-view" id="hole-view">
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel}</p>
         <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
         <div class="race-strip" id="race-strip">${_esc(race)}</div>
         <p class="hole-meta" id="hole-meta">Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}</p>
-        ${r.format === 'team_net' ? `
-          <div class="hole-teams" id="hole-teams">${this.holeTeamTotals(state, holeNumber)}</div>
-          <div class="ball-line" id="ball-line">${_esc(balls)}</div>
-        ` : ''}
-        <div class="scorecard-container high-contrast" id="scorecard-scroll">
-          ${this.scoreTable(state, holes, outHoles, inHoles)}
-        </div>
+        ${this.holePlayersHtml(state, holeNumber)}
+        ${r.format === 'team_net' ? `<div class="hole-teams" id="hole-teams">${this.holeTeamTotals(state, holeNumber)}</div>` : ''}
         <div class="end-totals" id="end-totals">${this.endTotalsHtml(state)}</div>
+        ${this.addPlayerPanel(state)}
       </div>
-      <div class="hole-nav thumb-zone" id="hole-nav">
-        <button type="button" class="btn btn-secondary" id="hole-prev" ${holes[0] && holeNumber <= holes[0].hole_number ? 'disabled' : ''}>Prev</button>
-        <span class="hole-nav-label">Hole ${holeNumber}</span>
-        <button type="button" class="btn btn-secondary" id="hole-stepper">Stepper</button>
-        <button type="button" class="btn btn-secondary" id="hole-next" ${holes[holes.length - 1] && holeNumber >= holes[holes.length - 1].hole_number ? 'disabled' : ''}>Next</button>
-      </div>
+      <div class="hole-nav thumb-zone" id="hole-nav"></div>
     `;
+    this.renderHoleNav();
+  },
+
+  holeNavButtonsHtml(holeNumber) {
+    const holes = (this.state && this.state.holes) || [];
+    const first = holes[0];
+    const last = holes[holes.length - 1];
+    return `
+      <button type="button" class="btn btn-secondary" id="hole-prev" ${first && holeNumber <= first.hole_number ? 'disabled' : ''}>Prev</button>
+      <span class="hole-nav-label">Hole ${holeNumber}</span>
+      <button type="button" class="btn btn-secondary" id="hole-stepper">Stepper</button>
+      <button type="button" class="btn btn-secondary" id="hole-next" ${last && holeNumber >= last.hole_number ? 'disabled' : ''}>Next</button>`;
+  },
+
+  stepperInnerHtml() {
+    const o = this.overlay || {};
+    const value = o.current == null ? (o.par ?? '') : o.current;
+    return `<div class="score-stepper" id="hole-stepper-bar">
+      <span class="hole-nav-label" id="score-overlay-title">${_esc(o.name || 'Score')}</span>
+      <button type="button" class="btn btn-secondary stepper-btn" id="score-minus">−</button>
+      <input type="number" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" min="1" max="15" value="${value}">
+      <button type="button" class="btn btn-secondary stepper-btn" id="score-plus">+</button>
+      <button type="button" class="btn btn-secondary" id="score-clear">Clear</button>
+      <button type="button" class="btn btn-secondary" id="score-done">Done</button>
+    </div>`;
+  },
+
+  renderHoleNav() {
+    let nav = document.getElementById('hole-nav');
+    if (this.stepperOpen && this.overlay) {
+      if (!nav) {
+        nav = document.createElement('div');
+        nav.id = 'hole-nav';
+        nav.className = 'hole-nav thumb-zone';
+        const app = document.getElementById('app');
+        if (app) app.appendChild(nav);
+      }
+      if (!nav) return;
+      nav.hidden = false;
+      nav.innerHTML = this.stepperInnerHtml();
+      this.bindStepperControls();
+      return;
+    }
+    if (!this.isHoleView()) {
+      if (nav) nav.remove();
+      return;
+    }
+    if (!nav) return;
+    nav.hidden = false;
+    nav.innerHTML = this.holeNavButtonsHtml(this.currentHole);
     const prev = document.getElementById('hole-prev');
     const next = document.getElementById('hole-next');
     const stepper = document.getElementById('hole-stepper');
@@ -622,6 +750,7 @@ const scorecard = {
           <strong data-team-hole-score="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
           <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
         </div>
+        ${this.teamBallsHtml(team, holeNumber)}
         ${this.vsParLinesHtml(state, team, holeNumber)}
       </div>`;
     }).join('');
@@ -944,7 +1073,6 @@ const scorecard = {
           return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
             onclick="scorecard.revealHoleBalls(${h.hole_number})">
             <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${hole?.total ?? ''}</span>
-            ${this.vsParLinesHtml(state, team, h.hole_number)}
           </td>`;
         }).join('')}
         ${outHoles.length ? `<td class="sc-total">${team.out ?? ''}</td>` : ''}
@@ -1118,10 +1246,15 @@ const scorecard = {
   },
 
   paintBallLine(holeNumber) {
-    const el = document.getElementById('ball-line');
-    if (el && this.state) el.textContent = this.ballLineText(this.state, holeNumber || this.currentHole);
+    const hole = holeNumber || this.currentHole;
+    if (!this.state) return;
+    for (const team of this.state.teams || []) {
+      document.querySelectorAll('[data-team-balls="' + team.id + '"]').forEach((el) => {
+        el.textContent = this.teamBallsText(team, hole);
+      });
+    }
     const reveal = document.getElementById('ball-reveal');
-    if (reveal && this.expandedHole && this.state) {
+    if (reveal && this.expandedHole) {
       reveal.textContent = 'Hole ' + this.expandedHole + ' · ' + this.ballLineText(this.state, this.expandedHole);
     }
   },
@@ -1129,6 +1262,28 @@ const scorecard = {
   patchUI() {
     if (!this.state) return;
     if (this.screen !== 'play') return;
+    if (this.isHoleView()) {
+      const players = document.getElementById('hole-players');
+      if (!players) {
+        this.draw(this.state);
+        return;
+      }
+      const rows = players.querySelectorAll('.hole-player-row');
+      if (rows.length !== (this.state.members || []).length) {
+        this.draw(this.state);
+        return;
+      }
+      const holeNumber = this.currentHole;
+      for (const member of this.state.members || []) {
+        this.paintScoreCell(member.id, holeNumber);
+      }
+      for (const team of this.state.teams || []) this.paintTeamHole(holeNumber);
+      this.paintRaceStrip();
+      this.paintBallLine(holeNumber);
+      this.paintEndTotals();
+      this.paintCurrentHoleChrome();
+      return;
+    }
     const table = document.getElementById('full-scorecard');
     if (!table) {
       this.draw(this.state);
@@ -1152,57 +1307,61 @@ const scorecard = {
     this.paintCurrentHoleChrome();
   },
 
-  setThumbNavHidden(hidden) {
-    const nav = document.getElementById('hole-nav');
-    if (nav) nav.hidden = hidden;
-  },
-
   openEditor(roundId, memberId, holeNumber, name, current, par) {
-    this.overlay = { roundId, memberId, holeNumber, name, par };
-    const overlay = document.getElementById('score-overlay');
+    this.overlay = { roundId, memberId, holeNumber, name, current, par };
+    this.stepperOpen = true;
+    this.renderHoleNav();
     const input = document.getElementById('score-overlay-input');
-    document.getElementById('score-overlay-title').textContent = name;
-    document.getElementById('score-overlay-label').textContent = `Hole ${holeNumber} · Par ${par}`;
-    input.value = current == null ? par : current;
-    overlay.hidden = false;
-    overlay.classList.add('active');
-    this.setThumbNavHidden(true);
-    input.focus();
-    input.select();
+    if (input) {
+      input.focus();
+      input.select();
+    }
   },
 
   closeEditor() {
-    const overlay = document.getElementById('score-overlay');
-    if (overlay) {
-      overlay.hidden = true;
-      overlay.classList.remove('active');
-    }
-    this.setThumbNavHidden(false);
+    this.stepperOpen = false;
+    this.overlay = null;
+    this.renderHoleNav();
   },
 
   bindOverlay() {
-    const overlay = document.getElementById('score-overlay');
-    const input = document.getElementById('score-overlay-input');
-    if (!overlay || overlay.dataset.bound) return;
-    overlay.dataset.bound = '1';
-    document.getElementById('score-minus').onclick = () => {
-      input.value = Math.max(1, (Number(input.value) || 1) - 1);
-    };
-    document.getElementById('score-plus').onclick = () => {
-      input.value = Math.min(15, (Number(input.value) || 0) + 1);
-    };
-    document.getElementById('score-save').onclick = () => this.saveOverlay();
-    document.getElementById('score-clear').onclick = () => this.saveOverlay(true);
+    this.bindStepperControls();
   },
 
-  saveOverlay(clear) {
-    if (!this.overlay) return;
+  bindStepperControls() {
+    const minus = document.getElementById('score-minus');
+    const plus = document.getElementById('score-plus');
+    const clear = document.getElementById('score-clear');
+    const done = document.getElementById('score-done');
     const input = document.getElementById('score-overlay-input');
+    if (!minus || !input || minus.dataset.bound) return;
+    minus.dataset.bound = '1';
+    minus.onclick = () => this.nudgeStepper(-1);
+    if (plus) plus.onclick = () => this.nudgeStepper(1);
+    if (clear) clear.onclick = () => this.commitStepper(null);
+    if (done) done.onclick = () => this.closeEditor();
+    input.addEventListener('change', () => {
+      const raw = String(input.value || '').replace(/\D/g, '').slice(0, 2);
+      if (!raw) return;
+      const n = Number(raw);
+      if (n >= 1 && n <= 15) this.commitStepper(n);
+    });
+  },
+
+  nudgeStepper(delta) {
+    const input = document.getElementById('score-overlay-input');
+    if (!input || !this.overlay) return;
+    const fallback = Number(this.overlay.current != null ? this.overlay.current : this.overlay.par) || 4;
+    const next = Math.min(15, Math.max(1, (Number(input.value) || fallback) + delta));
+    input.value = next;
+    this.commitStepper(next);
+  },
+
+  commitStepper(gross) {
+    if (!this.overlay) return;
     const { memberId, holeNumber } = this.overlay;
-    const gross = clear ? null : Number(input.value);
-    this.closeEditor();
+    this.overlay.current = gross;
     this.commitScore(memberId, holeNumber, gross);
-    this.focusNextHole(memberId, holeNumber);
   },
 
   async addGuest() {
@@ -1242,6 +1401,7 @@ const scorecard = {
       });
       this.state = state;
       this.writeCache(state.round.id, state);
+      if ((state.members || []).length >= 2) this.addPlayerOpen = false;
       this.draw(state);
     } catch (err) { _toast(err.message, 'error'); }
   },

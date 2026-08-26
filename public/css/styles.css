@@ -2500,11 +2500,20 @@ img {
   margin-bottom: 10px;
 }
 
+.hole-view,
+.hole-players,
+.hole-teams,
+.hole-player-row {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 .hole-player-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  max-width: 100%;
   min-height: 44px;
   padding: 6px 0;
   border: 0;
@@ -2513,7 +2522,7 @@ img {
   font: inherit;
   color: inherit;
   text-align: left;
-  cursor: pointer;
+  box-sizing: border-box;
 }
 
 .hole-player-name {
@@ -2527,12 +2536,17 @@ img {
 .hole-player-score {
   min-width: 44px;
   min-height: 44px;
+  flex: 0 0 56px;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: 1rem;
   font-weight: 800;
+}
+
+.hole-player-score .score-input {
+  max-width: 56px;
 }
 
 .hole-team-total {
@@ -2551,6 +2565,19 @@ img {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.team-balls,
+.lb-latest-hole {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.3;
+}
+
+.lb-hole-number {
+  font-weight: 700;
+  margin-top: 4px;
 }
 
 .vs-par-lines {
@@ -2578,10 +2605,7 @@ img {
 }
 
 .team-hole-cell .vs-par-lines {
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 1px;
-  margin-top: 4px;
+  display: none;
 }
 
 .hole-team-total.incomplete,
@@ -2612,6 +2636,29 @@ img {
 .hole-nav-label {
   font-size: 1rem;
   font-weight: 700;
+}
+
+.hole-nav .score-stepper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.hole-nav .score-stepper .hole-nav-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28%;
+}
+
+.add-player-toggle {
+  min-height: 44px;
+  min-width: 44px;
+  width: 100%;
+  margin-top: 10px;
 }
 
 .join-code-input {
@@ -2762,7 +2809,7 @@ img {
     overflow-x: hidden;
   }
 
-  #score-save,
+  #score-done,
   #score-clear,
   .stepper-btn,
   #score-overlay-input {

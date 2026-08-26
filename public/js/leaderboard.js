@@ -66,6 +66,23 @@ const leaderboardView = {
     return scorecard.raceStripText(state);
   },
 
+  latestHole(state) {
+    return scorecard.latestScoredHole(state);
+  },
+
+  teamCellHtml(state, team) {
+    const latest = this.latestHole(state);
+    const hole = latest && (team.holes || []).find((h) => h.holeNumber === latest);
+    const balls = latest ? scorecard.teamBallsText(team, latest) : '';
+    return `<td class="player-cell">
+      ${_esc(team.name)}${team.incomplete ? ' *' : ''}
+      ${latest ? `<div class="lb-latest-hole">
+        <div class="lb-hole-number">Hole ${latest} · ${hole && hole.total != null ? hole.total : '—'}</div>
+        <div class="team-balls" data-team-balls="${team.id}">${_esc(balls)}</div>
+      </div>` : ''}
+    </td>`;
+  },
+
   draw(state, readOnly) {
     const container = document.getElementById('app');
     const r = state.round;
@@ -82,7 +99,7 @@ const leaderboardView = {
             ${(state.teams || []).map((t, i) => `
               <tr class="${i === 0 ? 'rank-1' : ''}" data-team-row="${t.id}">
                 <td class="rank-cell">${i + 1}</td>
-                <td class="player-cell">${_esc(t.name)}${t.incomplete ? ' *' : ''}</td>
+                ${this.teamCellHtml(state, t)}
                 <td class="numeric-cell" data-out>${t.out ?? '—'}</td>
                 <td class="numeric-cell" data-in>${t.inn ?? '—'}</td>
                 <td class="points-cell" data-tot>${t.total ?? '—'}</td>
@@ -125,6 +142,12 @@ const leaderboardView = {
       if (out) out.textContent = team.out ?? '—';
       if (inn) inn.textContent = team.inn ?? '—';
       if (tot) tot.textContent = team.total ?? '—';
+      const latest = this.latestHole(this.state);
+      const hole = latest && (team.holes || []).find((h) => h.holeNumber === latest);
+      const label = row.querySelector('.lb-hole-number');
+      if (label && latest) label.textContent = 'Hole ' + latest + ' · ' + (hole && hole.total != null ? hole.total : '—');
+      const balls = row.querySelector('[data-team-balls]');
+      if (balls && latest) balls.textContent = scorecard.teamBallsText(team, latest);
     }
     for (const m of this.state.members || []) {
       const row = document.querySelector('#public-players [data-member-row="' + m.id + '"]');

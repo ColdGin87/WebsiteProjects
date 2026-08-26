@@ -1,30 +1,91 @@
+const AUTH_TOKEN_KEY = 'goldendale_scorecard_token';
+
+function authFetch(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch {
+    /* ignore */
+  }
+  const init = { method, headers };
+  if (body != null && method !== 'GET' && method !== 'HEAD') {
+    init.body = JSON.stringify(body);
+  }
+  return fetch(path, init).then(async (res) => {
+    let data = null;
+    const contentType = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
+    if (contentType.includes('application/json')) {
+      try { data = await res.json(); } catch { data = null; }
+    } else {
+      try { data = await res.text(); } catch { data = null; }
+    }
+    if (!res.ok) {
+      const msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
+      const err = new Error(typeof msg === 'string' ? msg : 'Request failed.');
+      err.status = res.status;
+      throw err;
+    }
+    return data;
+  });
+}
+
 function apiClient() {
-  const a = (typeof window !== 'undefined' && window.api)
+  const raw = (typeof window !== 'undefined' && window.api)
     || (typeof api !== 'undefined' ? api : null);
-  if (!a) {
-    throw new Error('API client is not loaded. Hard-refresh the page.');
+  const base = raw && typeof raw === 'object' ? raw : {};
+
+  if (typeof window !== 'undefined' && typeof window.ensureApiMethods === 'function') {
+    try { window.ensureApiMethods(base); } catch { /* keep going */ }
   }
-  if (typeof a.request === 'function') {
-    if (typeof a.post !== 'function') {
-      a.post = function post(path, body) { return a.request('POST', path, body); };
-    }
-    if (typeof a.get !== 'function') {
-      a.get = function get(path) { return a.request('GET', path); };
-    }
-    if (typeof a.put !== 'function') {
-      a.put = function put(path, body) { return a.request('PUT', path, body); };
-    }
-    if (typeof a.del !== 'function') {
-      a.del = function del(path) { return a.request('DELETE', path); };
-    }
+
+  const request = typeof base.request === 'function'
+    ? base.request.bind(base)
+    : function request(method, path, body) { return authFetch(method, path, body); };
+
+  const client = {
+    request,
+    get: typeof base.get === 'function'
+      ? base.get.bind(base)
+      : function get(path) { return request('GET', path); },
+    post: typeof base.post === 'function'
+      ? base.post.bind(base)
+      : function post(path, body) { return request('POST', path, body); },
+    put: typeof base.put === 'function'
+      ? base.put.bind(base)
+      : function put(path, body) { return request('PUT', path, body); },
+    del: typeof base.del === 'function'
+      ? base.del.bind(base)
+      : function del(path) { return request('DELETE', path); },
+    setToken: typeof base.setToken === 'function'
+      ? base.setToken.bind(base)
+      : function setToken(token) {
+        try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch { /* ignore */ }
+      },
+    getToken: typeof base.getToken === 'function'
+      ? base.getToken.bind(base)
+      : function getToken() {
+        try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
+      },
+    clearToken: typeof base.clearToken === 'function'
+      ? base.clearToken.bind(base)
+      : function clearToken() {
+        try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* ignore */ }
+      },
+  };
+
+  try {
+    if (typeof base.request !== 'function') base.request = request;
+    if (typeof base.post !== 'function') base.post = client.post;
+    if (typeof base.get !== 'function') base.get = client.get;
+    if (typeof base.put !== 'function') base.put = client.put;
+    if (typeof base.del !== 'function') base.del = client.del;
+    if (typeof window !== 'undefined' && !window.api) window.api = base;
+  } catch {
+    /* frozen stale client — returned wrapper still signs in */
   }
-  if (typeof window !== 'undefined' && window.ensureApiMethods) {
-    window.ensureApiMethods(a);
-  }
-  if (typeof a.post !== 'function') {
-    throw new Error('API client is missing post(). Hard-refresh the page.');
-  }
-  return a;
+
+  return client;
 }
 
 const auth = {
