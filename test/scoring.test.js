@@ -10,6 +10,7 @@ const {
   autoBalanceTeams,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
+const { appBaseUrl } = require('../lib/tokens');
 
 describe('playingHandicap', () => {
   it('keeps whole numbers', () => {
@@ -242,6 +243,12 @@ describe('autoBalanceTeams', () => {
     // 1 (4) → T1, 2 (8) → T2, 3 (10) → T2, 4 (12) → T1, 5 (18) → T1, 6 (24) → T2
     assert.deepEqual(teams[0].memberIds, [1, 4, 5]);
     assert.deepEqual(teams[1].memberIds, [2, 3, 6]);
+  });
+});
+
+describe('appBaseUrl', () => {
+  it('uses http for localhost when no forwarded proto', () => {
+    assert.equal(appBaseUrl({ headers: { host: 'localhost:3000' } }), 'http://localhost:3000');
   });
 });
 
