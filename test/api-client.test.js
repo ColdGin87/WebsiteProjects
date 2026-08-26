@@ -1,0 +1,100 @@
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+const ROOT = path.join(__dirname, '..');
+
+function loadBrowserScript(filename, context) {
+  const src = fs.readFileSync(path.join(ROOT, 'public/js', filename), 'utf8');
+  vm.runInNewContext(src, context, { filename });
+  return context;
+}
+
+function browserContext(fetchImpl) {
+  const store = {};
+  const context = {
+    fetch: fetchImpl,
+    localStorage: {
+      getItem: (k) => (Object.prototype.hasOwnProperty.call(store, k) ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    },
+    document: {
+      addEventListener() {},
+      querySelectorAll() { return []; },
+      getElementById() { return null; },
+    },
+    addEventListener() {},
+    window: null,
+  };
+  context.window = context;
+  context.globalThis = context;
+  return context;
+}
+
+function jsonResponse(body) {
+  return {
+    ok: true,
+    status: 200,
+    headers: { get: () => 'application/json' },
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
+}
+
+describe('api client login helpers', () => {
+  it('exposes api.post as a function on window.api', () => {
+    const ctx = loadBrowserScript('api.js', browserContext(async () => jsonResponse({})));
+    assert.equal(typeof ctx.api.post, 'function');
+    assert.equal(typeof ctx.window.api.post, 'function');
+    assert.equal(typeof ctx.api.get, 'function');
+    assert.equal(typeof ctx.api.put, 'function');
+    assert.equal(typeof ctx.api.del, 'function');
+    assert.equal(ctx.window.api, ctx.api);
+  });
+
+  it('login and register call api.post', async () => {
+    const calls = [];
+    const ctx = loadBrowserScript('api.js', browserContext(async (url, init) => {
+      calls.push({ url, method: init.method, body: init.body });
+      return jsonResponse({ token: 't', user: { name: 'David' } });
+    }));
+    assert.equal(typeof ctx.api.post, 'function');
+    await ctx.api.post('/api/auth/login', { email: 'david@example.com', password: 'secret1' });
+    await ctx.api.post('/api/auth/register', { name: 'David', email: 'david@example.com', password: 'secret1' });
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, '/api/auth/login');
+    assert.equal(calls[0].method, 'POST');
+    assert.match(calls[0].body, /david@example.com/);
+    assert.equal(calls[1].url, '/api/auth/register');
+    assert.equal(calls[1].method, 'POST');
+  });
+
+  it('auth login still posts when window.api.post is missing', async () => {
+    const calls = [];
+    const ctx = loadBrowserScript('api.js', browserContext(async (url, init) => {
+      calls.push({ url, method: init.method });
+      return jsonResponse({ token: 't', user: { name: 'David' } });
+    }));
+    loadBrowserScript('auth.js', ctx);
+    delete ctx.window.api.post;
+    assert.equal(typeof ctx.window.api.post, 'undefined');
+    const client = ctx.apiClient();
+    assert.equal(typeof client.post, 'function');
+    await client.post('/api/auth/login', { email: 'a@b.c', password: 'x' });
+    assert.equal(calls[0].url, '/api/auth/login');
+    assert.equal(calls[0].method, 'POST');
+  });
+
+  it('index.html cache-busts unhashed js and css', () => {
+    const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
+    assert.match(html, /js\/api\.js\?v=/);
+    assert.match(html, /js\/auth\.js\?v=/);
+    assert.match(html, /css\/styles\.css\?v=/);
+    const vercel = fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8');
+    assert.doesNotMatch(vercel, /max-age=86400/);
+    assert.match(vercel, /must-revalidate/);
+  });
+});

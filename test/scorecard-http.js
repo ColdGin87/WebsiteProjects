@@ -402,6 +402,23 @@ async function runDemoScenario(base) {
   console.log('PASS demo foursome Kurt 75/66 · Chase 85/73 · Brian 95/80');
 }
 
+async function runCacheHeaders(base) {
+  const js = await fetch(base + '/js/api.js');
+  if (!js.ok) fail('GET /js/api.js failed');
+  const jsCache = js.headers.get('cache-control') || '';
+  if (/max-age=86400/i.test(jsCache)) fail('js must not 86400-cache: ' + jsCache);
+  if (!/must-revalidate|no-cache|max-age=0/i.test(jsCache)) {
+    fail('js Cache-Control should revalidate, got ' + jsCache);
+  }
+  const html = await fetch(base + '/');
+  if (!html.ok) fail('GET / failed');
+  const htmlCache = html.headers.get('cache-control') || '';
+  if (/max-age=86400/i.test(htmlCache)) fail('html must not 86400-cache: ' + htmlCache);
+  const page = await html.text();
+  if (!/js\/api\.js\?v=/.test(page)) fail('index.html must cache-bust js/api.js');
+  console.log('PASS cache headers: js revalidates, html not 86400, script ?v=');
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -434,6 +451,7 @@ async function main() {
   }
 
   try {
+    await runCacheHeaders(base);
     await runScenario(base);
     await runDemoScenario(base);
   } finally {

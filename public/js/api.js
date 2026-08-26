@@ -1,6 +1,25 @@
 /**
  * API client with JWT auth and an offline score queue.
+ * post/get/put/del are always real functions on the object and on window.api
+ * so a stale cached helper cannot leave login as `api.post is not a function`.
  */
+function ensureApiMethods(target) {
+  if (!target || typeof target.request !== 'function') return target;
+  if (typeof target.get !== 'function') {
+    target.get = function get(path) { return this.request('GET', path); };
+  }
+  if (typeof target.post !== 'function') {
+    target.post = function post(path, body) { return this.request('POST', path, body); };
+  }
+  if (typeof target.put !== 'function') {
+    target.put = function put(path, body) { return this.request('PUT', path, body); };
+  }
+  if (typeof target.del !== 'function') {
+    target.del = function del(path) { return this.request('DELETE', path); };
+  }
+  return target;
+}
+
 const api = {
   TOKEN_KEY: 'goldendale_scorecard_token',
   QUEUE_KEY: 'goldendale_offline_queue',
@@ -172,14 +191,17 @@ const api = {
   postScore(path, body) {
     return this.request('POST', path, body, { timeoutMs: this.SCORE_TIMEOUT_MS });
   },
-
-  get(path) { return this.request('GET', path); },
-  post(path, body) { return this.request('POST', path, body); },
-  put(path, body) { return this.request('PUT', path, body); },
-  del(path) { return this.request('DELETE', path); },
 };
 
+api.get = function get(path) { return this.request('GET', path); };
+api.post = function post(path, body) { return this.request('POST', path, body); };
+api.put = function put(path, body) { return this.request('PUT', path, body); };
+api.del = function del(path) { return this.request('DELETE', path); };
+
+ensureApiMethods(api);
 window.api = api;
+window.ensureApiMethods = ensureApiMethods;
+ensureApiMethods(window.api);
 window.addEventListener('online', () => api.flushInBackground());
 document.addEventListener('DOMContentLoaded', () => {
   api.updateBadge();

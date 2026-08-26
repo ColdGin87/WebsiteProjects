@@ -1,3 +1,32 @@
+function apiClient() {
+  const a = (typeof window !== 'undefined' && window.api)
+    || (typeof api !== 'undefined' ? api : null);
+  if (!a) {
+    throw new Error('API client is not loaded. Hard-refresh the page.');
+  }
+  if (typeof a.request === 'function') {
+    if (typeof a.post !== 'function') {
+      a.post = function post(path, body) { return a.request('POST', path, body); };
+    }
+    if (typeof a.get !== 'function') {
+      a.get = function get(path) { return a.request('GET', path); };
+    }
+    if (typeof a.put !== 'function') {
+      a.put = function put(path, body) { return a.request('PUT', path, body); };
+    }
+    if (typeof a.del !== 'function') {
+      a.del = function del(path) { return a.request('DELETE', path); };
+    }
+  }
+  if (typeof window !== 'undefined' && window.ensureApiMethods) {
+    window.ensureApiMethods(a);
+  }
+  if (typeof a.post !== 'function') {
+    throw new Error('API client is missing post(). Hard-refresh the page.');
+  }
+  return a;
+}
+
 const auth = {
   currentUser: null,
 
@@ -31,15 +60,16 @@ const auth = {
   },
 
   async checkSession() {
-    if (!api.getToken()) {
+    const client = apiClient();
+    if (!client.getToken || !client.getToken()) {
       this.setUser(null);
       return;
     }
     try {
-      const data = await api.get('/api/auth/me');
+      const data = await client.get('/api/auth/me');
       this.setUser(data.user || data);
     } catch {
-      api.clearToken();
+      if (client.clearToken) client.clearToken();
       this.setUser(null);
     }
   },
@@ -103,11 +133,12 @@ const auth = {
     e.preventDefault();
     const errEl = document.getElementById('login-error');
     try {
-      const data = await api.post('/api/auth/login', {
+      const client = apiClient();
+      const data = await client.post('/api/auth/login', {
         email: document.getElementById('login-email').value.trim(),
         password: document.getElementById('login-password').value,
       });
-      api.setToken(data.token);
+      if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
       if (window.app) window.app.route();
@@ -120,14 +151,15 @@ const auth = {
     e.preventDefault();
     const errEl = document.getElementById('register-error');
     try {
-      const data = await api.post('/api/auth/register', {
+      const client = apiClient();
+      const data = await client.post('/api/auth/register', {
         name: document.getElementById('register-name').value.trim(),
         email: document.getElementById('register-email').value.trim(),
         password: document.getElementById('register-password').value,
         handicap: document.getElementById('register-handicap').value.trim() || null,
         homeTee: document.getElementById('register-tee').value.trim() || null,
       });
-      api.setToken(data.token);
+      if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
       if (window.app) window.app.navigate('#dashboard');
@@ -141,7 +173,7 @@ const auth = {
     const errEl = document.getElementById('magic-error');
     const out = document.getElementById('magic-result');
     try {
-      const data = await api.post('/api/auth/magic-link', {
+      const data = await apiClient().post('/api/auth/magic-link', {
         email: document.getElementById('magic-email').value.trim(),
       });
       if (out) {
@@ -159,7 +191,7 @@ const auth = {
     const errEl = document.getElementById('forgot-error');
     const out = document.getElementById('forgot-result');
     try {
-      const data = await api.post('/api/auth/forgot', {
+      const data = await apiClient().post('/api/auth/forgot', {
         email: document.getElementById('forgot-email').value.trim(),
       });
       if (out) {
@@ -173,22 +205,26 @@ const auth = {
   },
 
   async consumeMagic(token) {
-    const data = await api.post('/api/auth/magic', { token });
-    api.setToken(data.token);
+    const client = apiClient();
+    const data = await client.post('/api/auth/magic', { token });
+    if (client.setToken) client.setToken(data.token);
     this.setUser(data.user);
   },
 
   async consumeReset(token, password) {
-    const data = await api.post('/api/auth/reset', { token, password });
-    api.setToken(data.token);
+    const client = apiClient();
+    const data = await client.post('/api/auth/reset', { token, password });
+    if (client.setToken) client.setToken(data.token);
     this.setUser(data.user);
   },
 
   logout() {
-    api.clearToken();
+    const client = apiClient();
+    if (client.clearToken) client.clearToken();
     this.setUser(null);
     if (window.app) window.app.navigate('#dashboard');
   },
 };
 
 window.auth = auth;
+window.apiClient = apiClient;
