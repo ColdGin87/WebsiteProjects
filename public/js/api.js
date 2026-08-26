@@ -1,11 +1,10 @@
 /**
- * API Client — JWT storage and fetch wrapper
- * All API calls go through this module.
+ * API client with JWT auth and an offline score queue.
  */
 const api = {
-  TOKEN_KEY: 'bandon_retreat_token',
+  TOKEN_KEY: 'goldendale_scorecard_token',
+  QUEUE_KEY: 'goldendale_offline_queue',
 
-  /* ---- Token helpers ---- */
   setToken(token) {
     localStorage.setItem(this.TOKEN_KEY, token);
   },
@@ -18,35 +17,74 @@ const api = {
     localStorage.removeItem(this.TOKEN_KEY);
   },
 
-  /* ---- Core request method ---- */
-  async request(method, path, body) {
+  queue() {
+    try {
+      return JSON.parse(localStorage.getItem(this.QUEUE_KEY) || '[]');
+    } catch {
+      return [];
+    }
+  },
+
+  saveQueue(items) {
+    localStorage.setItem(this.QUEUE_KEY, JSON.stringify(items));
+    this.updateBadge();
+  },
+
+  enqueue(item) {
+    const items = this.queue();
+    items.push({ ...item, id: Date.now() + ':' + Math.random().toString(16).slice(2), createdAt: Date.now() });
+    this.saveQueue(items);
+  },
+
+  updateBadge() {
+    const badge = document.getElementById('unsynced-badge');
+    if (!badge) return;
+    const n = this.queue().length;
+    badge.hidden = n === 0;
+    badge.textContent = 'Unsynced ' + n;
+  },
+
+  async flushQueue() {
+    const items = this.queue();
+    if (!items.length) return;
+    const remain = [];
+    for (const item of items) {
+      try {
+        await this.request(item.method, item.path, item.body, { skipQueue: true });
+      } catch {
+        remain.push(item);
+      }
+    }
+    this.saveQueue(remain);
+  },
+
+  async request(method, path, body, opts) {
     const headers = { 'Content-Type': 'application/json' };
     const token = this.getToken();
-    if (token) {
-      headers['Authorization'] = 'Bearer ' + token;
-    }
+    if (token) headers.Authorization = 'Bearer ' + token;
 
-    const opts = { method, headers };
-    if (body && method !== 'GET') {
-      opts.body = JSON.stringify(body);
-    }
+    const init = { method, headers };
+    if (body && method !== 'GET') init.body = JSON.stringify(body);
 
     let res;
     try {
-      res = await fetch(path, opts);
+      res = await fetch(path, init);
     } catch (networkErr) {
+      if (!opts?.skipQueue && method !== 'GET' && /\/scores$/.test(path)) {
+        this.enqueue({ method, path, body });
+        const queued = new Error('Saved offline. Will sync when you are back online.');
+        queued.offline = true;
+        throw queued;
+      }
       throw new Error('Network error. Please check your connection.');
     }
 
-    // Try to parse JSON; some responses may not have a body
     let data = null;
     const contentType = res.headers.get('content-type') || '';
     if (contentType.includes('application/json')) {
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = null;
-      }
+      try { data = await res.json(); } catch { data = null; }
+    } else if (contentType.includes('text/')) {
+      data = await res.text();
     }
 
     if (!res.ok) {
@@ -56,22 +94,18 @@ const api = {
       err.data = data;
       throw err;
     }
-
     return data;
   },
 
-  /* ---- Convenience methods ---- */
-  get(path) {
-    return this.request('GET', path);
-  },
-
-  post(path, body) {
-    return this.request('POST', path, body);
-  },
-
-  put(path, body) {
-    return this.request('PUT', path, body);
-  }
+  get(path) { return this.request('GET', path); },
+  post(path, body) { return this.request('POST', path, body); },
+  put(path, body) { return this.request('PUT', path, body); },
+  del(path) { return this.request('DELETE', path); },
 };
 
 window.api = api;
+window.addEventListener('online', () => api.flushQueue());
+document.addEventListener('DOMContentLoaded', () => {
+  api.updateBadge();
+  api.flushQueue();
+});

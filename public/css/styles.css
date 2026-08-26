@@ -2135,3 +2135,249 @@ img {
     transform: translateY(0);
   }
 }
+
+/* ==========================================================================
+   Goldendale Scorecard additions
+   ========================================================================== */
+.hero-copy {
+  color: rgba(255, 255, 255, 0.88);
+  margin: 10px 0 16px;
+  max-width: 36rem;
+}
+
+.inline-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.code-chip {
+  display: inline-block;
+  margin-left: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  background: #E8F5E9;
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.unsynced-badge {
+  background: #C62828;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.modal-help,
+.auth-result {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-bottom: 12px;
+  word-break: break-all;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 16px;
+  font-size: 0.9rem;
+}
+
+.round-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.join-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.tiny-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+}
+
+.hcp-mini,
+.si-mini,
+.net-mini,
+.est-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-light);
+}
+
+.net-mini {
+  color: var(--primary-dark);
+}
+
+.est-label {
+  color: var(--halved);
+}
+
+.team-scorecard {
+  min-width: 720px;
+}
+
+.team-scorecard thead th:first-child,
+.team-scorecard tbody td:first-child,
+.team-scorecard .row-label {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  min-width: 108px;
+  max-width: 140px;
+  background: var(--card-bg);
+  box-shadow: 2px 0 0 var(--border);
+}
+
+.team-scorecard thead th:first-child {
+  background: var(--primary-dark);
+  color: #fff;
+}
+
+.high-contrast .vs-eagle {
+  background: #0D3B13 !important;
+  color: #FFF59D !important;
+  font-weight: 800;
+}
+
+.high-contrast .vs-birdie {
+  background: #1B5E20 !important;
+  color: #fff !important;
+  font-weight: 800;
+}
+
+.high-contrast .vs-par {
+  background: #fff !important;
+  color: #111 !important;
+}
+
+.high-contrast .vs-bogey {
+  background: #E65100 !important;
+  color: #fff !important;
+  font-weight: 800;
+}
+
+.high-contrast .vs-double {
+  background: #B71C1C !important;
+  color: #fff !important;
+  font-weight: 800;
+}
+
+.dots-1,
+.dots-2,
+.dots-3,
+.dots-plus {
+  position: relative;
+}
+
+.dots-1::before,
+.dots-2::before,
+.dots-3::before,
+.dots-plus::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #000;
+}
+
+.dots-2::after,
+.dots-3::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 12px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #000;
+}
+
+.dots-plus::before {
+  background: #1565C0;
+}
+
+.row-team td {
+  background: #E8F5E9;
+  font-weight: 800;
+}
+
+.row-team td.incomplete {
+  outline: 2px dashed #F9A825;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.stepper-btn {
+  width: 48px;
+  height: 48px;
+  font-size: 1.4rem;
+}
+
+.score-input-overlay.active,
+.score-input-overlay:not([hidden]) {
+  display: flex;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.score-input-overlay[hidden] {
+  display: none !important;
+}
+
+.linkish {
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+@media (max-width: 600px) {
+  .team-scorecard thead th:first-child,
+  .team-scorecard tbody td:first-child,
+  .team-scorecard .row-label {
+    min-width: 88px;
+    max-width: 100px;
+    font-size: 0.72rem;
+  }
+
+  .high-contrast td {
+    font-size: 0.95rem;
+  }
+}

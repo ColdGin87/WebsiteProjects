@@ -1,215 +1,333 @@
-/**
- * Dashboard View — tournament overview, current round, schedule, quick stats
- */
 const dashboard = {
-
   async render() {
     const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading dashboard...</div>';
+    const user = auth.currentUser;
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading rounds...</div>';
+
+    if (!user) {
+      container.innerHTML = `
+        <div class="welcome-hero">
+          <div class="welcome-title">Goldendale Scorecard</div>
+          <div class="welcome-subtitle">Goldendale Golf Club · 1901 N Columbus Ave · 9 holes played twice</div>
+          <p class="hero-copy">Handicapped team competitions. Default format is lowest 1 gross + lowest 2 nets.</p>
+          <div class="welcome-actions">
+            <button class="btn btn-accent" onclick="auth.showModal('login')">Sign In</button>
+            <button class="btn btn-outline-light" onclick="auth.showModal('register')">Create account</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3 class="card-title">Have a join code?</h3>
+          <p class="card-subtitle">Sign in first, then enter the 6-character code from your organizer.</p>
+          <div class="inline-form">
+            <input id="guest-code" class="form-input" maxlength="8" placeholder="ABC123" style="text-transform:uppercase">
+            <button class="btn btn-primary" onclick="auth.showModal('login')">Sign in to join</button>
+          </div>
+        </div>`;
+      return;
+    }
 
     try {
-      const user = auth.currentUser;
+      const rounds = await api.get('/api/rounds');
+      const live = rounds.filter((r) => r.status === 'live' || r.status === 'setup');
+      const done = rounds.filter((r) => r.status === 'completed');
 
-      // Fetch ALL data in parallel for speed
-      const fetches = [
-        api.get('/api/rounds').catch(() => []),
-        api.get('/api/players').catch(() => []),
-        api.get('/api/leaderboard').catch(() => [])
-      ];
-      if (user) {
-        fetches.push(api.get('/api/matches?player=' + user.id).catch(() => []));
-      }
-
-      const results = await Promise.all(fetches);
-      const rounds = results[0] || [];
-      const players = results[1] || [];
-      const leaderboard = results[2] || [];
-      let myMatches = user ? (results[3] || []) : [];
-
-      const activeRound = rounds.find(function (r) { return r.status === 'active'; });
-      const upcomingRounds = rounds.filter(function (r) { return r.status === 'upcoming' || r.status === 'pending'; });
-      const completedRounds = rounds.filter(function (r) { return r.status === 'completed'; });
-
-      const myCompletedMatches = myMatches.filter(function (m) { return m.status === 'completed' || m.status === 'finalized'; });
-      const myWins = myCompletedMatches.filter(function (m) { return m.winner_id === (user && user.id); }).length;
-      const myLosses = myCompletedMatches.filter(function (m) { return m.winner_id && m.winner_id !== (user && user.id); }).length;
-      const myHalves = myCompletedMatches.filter(function (m) { return !m.winner_id; }).length;
-
-      // Course names by round number
-      var courseColors = ['round-accent-1', 'round-accent-2', 'round-accent-3', 'round-accent-4', 'round-accent-5'];
-
-      var html = '';
-
-      // Hero
-      html += '<div class="welcome-hero">';
-      html += '  <div class="welcome-title">' + (user ? ('Welcome back, ' + _esc(user.name || 'Player')) : 'Bandon Dunes Retreat') + '</div>';
-      html += '  <div class="welcome-subtitle">8 Players &middot; 5 Rounds &middot; 10 Matches Per Player</div>';
-      html += '  <div class="welcome-actions">';
-      html += '    <a href="#leaderboard" class="btn btn-accent btn-sm" onclick="event.preventDefault();app.navigate(\'#leaderboard\')">Leaderboard</a>';
-      html += '    <a href="#rounds" class="btn btn-outline-light btn-sm" onclick="event.preventDefault();app.navigate(\'#rounds\')">View Rounds</a>';
-      if (!user) {
-        html += '  <button class="btn btn-outline-light btn-sm" onclick="auth.showModal(\'login\')">Sign In</button>';
-      }
-      html += '  </div>';
-      html += '</div>';
-
-      // Admin bar
-      if (user && user.is_admin) {
-        html += '<div class="admin-bar admin-only" style="display:flex">';
-        html += '  <span class="admin-bar-label">Admin Controls</span>';
-        html += '  <button class="btn btn-accent btn-sm" onclick="dashboard.generateAll()">Generate All Rounds</button>';
-        html += '</div>';
-      }
-
-      // Stats row (only for logged-in user)
-      if (user) {
-        html += '<div class="stats-row">';
-        html += '  <div class="stat-card"><div class="stat-value">' + players.length + '</div><div class="stat-label">Players</div></div>';
-        html += '  <div class="stat-card"><div class="stat-value">' + completedRounds.length + '/' + rounds.length + '</div><div class="stat-label">Rounds</div></div>';
-        html += '  <div class="stat-card"><div class="stat-value">' + myWins + '-' + myLosses + '-' + myHalves + '</div><div class="stat-label">W-L-H</div></div>';
-        html += '  <div class="stat-card"><div class="stat-value">' + myCompletedMatches.length + '</div><div class="stat-label">Played</div></div>';
-        html += '</div>';
-      }
-
-      // Active round
-      if (activeRound) {
-        html += '<div class="section-title">Now Playing</div>';
-        html += '<div class="round-card card-clickable" onclick="app.navigate(\'#round/' + activeRound.id + '\')">';
-        html += '  <div class="round-accent ' + courseColors[((activeRound.round_number || 1) - 1) % 5] + '"></div>';
-        html += '  <div style="padding-left:12px">';
-        html += '    <div class="round-number">Round ' + activeRound.round_number + '</div>';
-        html += '    <div class="round-course">' + _esc(_courseName(activeRound)) + '</div>';
-        html += '    <span class="badge badge-active">Active</span>';
-        html += '  </div>';
-        html += '</div>';
-      }
-
-      // My upcoming matches
-      if (user && myMatches.length > 0) {
-        var pendingMatches = myMatches.filter(function (m) { return m.status === 'active' || m.status === 'pending'; });
-        if (pendingMatches.length > 0) {
-          html += '<div class="section-title mt-lg">My Upcoming Matches</div>';
-          html += '<div class="grid grid-2">';
-          pendingMatches.slice(0, 4).forEach(function (m) {
-            var opponent = (m.player1_id === user.id) ? (m.player2_name || 'TBD') : (m.player1_name || 'TBD');
-            var half = m.half || '';
-            html += '<div class="card card-clickable" onclick="app.navigate(\'#match/' + m.id + '\')">';
-            html += '  <div class="card-subtitle">Round ' + (m.round_number || '') + (half ? ' &middot; ' + _esc(half) : '') + '</div>';
-            html += '  <div class="card-title">' + _esc(opponent) + '</div>';
-            html += '  <span class="badge badge-' + m.status + '">' + _esc(m.status) + '</span>';
-            html += '</div>';
-          });
-          html += '</div>';
-        }
-      }
-
-      // Round schedule
-      if (rounds.length > 0) {
-        html += '<div class="section-title mt-lg">Round Schedule</div>';
-        html += '<div class="grid grid-2">';
-        rounds.forEach(function (r, idx) {
-          html += '<div class="round-card card-clickable" onclick="app.navigate(\'#round/' + r.id + '\')">';
-          html += '  <div class="round-accent ' + courseColors[idx % 5] + '"></div>';
-          html += '  <div style="padding-left:12px">';
-          html += '    <div class="round-number">Round ' + r.round_number + '</div>';
-          html += '    <div class="round-course">' + _esc(_courseName(r)) + '</div>';
-          html += '    <span class="badge badge-' + r.status + '">' + _esc(r.status) + '</span>';
-          html += '  </div>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-
-      // Quick leaderboard preview
-      if (leaderboard.length > 0) {
-        html += '<div class="section-title mt-lg">Standings</div>';
-        html += '<div class="card">';
-        html += '<div class="leaderboard-wrapper">';
-        html += '<table class="leaderboard-table">';
-        html += '<thead><tr><th>#</th><th>Player</th><th>W</th><th>L</th><th>H</th><th>Pts</th></tr></thead>';
-        html += '<tbody>';
-        leaderboard.slice(0, 5).forEach(function (p, i) {
-          var isCurrent = user && (p.player_id === user.id || p.id === user.id);
-          var rankClass = (i < 3) ? ' rank-' + (i + 1) : '';
-          html += '<tr class="' + rankClass + (isCurrent ? ' current-user' : '') + '">';
-          html += '  <td class="rank-cell">' + (i + 1) + '</td>';
-          html += '  <td class="player-cell">' + _esc(p.name || p.player_name || '') + '</td>';
-          html += '  <td class="numeric-cell">' + (p.wins || 0) + '</td>';
-          html += '  <td class="numeric-cell">' + (p.losses || 0) + '</td>';
-          html += '  <td class="numeric-cell">' + (p.halves || 0) + '</td>';
-          html += '  <td class="points-cell">' + (p.points || 0) + '</td>';
-          html += '</tr>';
-        });
-        html += '</tbody></table></div>';
-        html += '<div class="card-footer"><a href="#leaderboard" class="btn btn-secondary btn-sm" onclick="event.preventDefault();app.navigate(\'#leaderboard\')">Full Leaderboard</a></div>';
-        html += '</div>';
-      }
-
-      // Signed-out prompt
-      if (!user) {
-        html += '<div class="empty-state mt-lg">';
-        html += '  <div class="empty-state-icon">&#9971;</div>';
-        html += '  <h3>Join the Championship</h3>';
-        html += '  <p>Sign in to view your matches and enter scores from the course.</p>';
-        html += '  <button class="btn btn-primary mt-md" onclick="auth.showModal(\'login\')">Sign In</button>';
-        html += '</div>';
-      }
-
-      container.innerHTML = html;
+      container.innerHTML = `
+        <div class="welcome-hero">
+          <div class="welcome-title">Hi, ${_esc(user.name)}</div>
+          <div class="welcome-subtitle">Goldendale Golf Club · team scoring by default</div>
+          <div class="welcome-actions">
+            <a class="btn btn-accent btn-sm" href="#create" onclick="event.preventDefault();app.navigate('#create')">New round</a>
+            <button class="btn btn-outline-light btn-sm" onclick="dashboard.promptJoin()">Join with code</button>
+          </div>
+        </div>
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-value">${rounds.length}</div><div class="stat-label">My rounds</div></div>
+          <div class="stat-card"><div class="stat-value">${live.length}</div><div class="stat-label">Open</div></div>
+          <div class="stat-card"><div class="stat-value">${done.length}</div><div class="stat-label">History</div></div>
+        </div>
+        <h2 class="section-title">Open rounds</h2>
+        ${live.length ? dashboard.roundGrid(live) : '<div class="empty-state"><h3>No open rounds</h3><p>Create a team round or join with a 6-character code.</p></div>'}
+        <h2 class="section-title mt-lg">History</h2>
+        ${done.length ? dashboard.roundGrid(done) : '<div class="empty-state"><p>Completed rounds will land here.</p></div>'}
+      `;
     } catch (err) {
-      container.innerHTML = '<div class="empty-state"><h3>Error loading dashboard</h3><p>' + _esc(err.message) + '</p></div>';
+      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${_esc(err.message)}</p></div>`;
     }
   },
 
-  /**
-   * Admin: generate schedule for all rounds
-   */
-  async generateAll() {
-    if (!confirm('Generate the full tournament schedule? This will create all rounds, foursomes, and matches.')) return;
+  roundGrid(rounds) {
+    return `<div class="grid grid-2">${rounds.map((r, idx) => `
+      <div class="round-card card-clickable" onclick="app.navigate('#round/${r.id}')">
+        <div class="round-accent ${['round-accent-1','round-accent-2','round-accent-3','round-accent-4','round-accent-5'][idx % 5]}"></div>
+        <div style="padding-left:12px">
+          <div class="round-number">${_esc(r.name)}</div>
+          <div class="round-course">${_esc(r.course_name || 'Goldendale')} · ${r.format === 'match_play' ? 'Match play' : '1G + 2N'} · ${r.holes}</div>
+          <span class="badge badge-${_esc(r.status)}">${_esc(r.status)}</span>
+          <span class="code-chip">${_esc(r.join_code)}</span>
+        </div>
+      </div>`).join('')}</div>`;
+  },
+
+  async promptJoin() {
+    const code = prompt('Enter the 6-character join code');
+    if (!code) return;
     try {
-      await api.post('/api/rounds/generate-all');
-      _toast('Schedule generated successfully!', 'success');
-      this.render();
+      const state = await api.post('/api/rounds/join', { code: code.trim().toUpperCase() });
+      app.navigate('#round/' + state.round.id);
     } catch (err) {
-      _toast('Error: ' + err.message, 'error');
+      _toast(err.message, 'error');
     }
-  }
+  },
+
+  async renderCreate() {
+    const container = document.getElementById('app');
+    if (!auth.currentUser) {
+      container.innerHTML = '<div class="empty-state"><h3>Sign in to create a round</h3><button class="btn btn-primary" onclick="auth.showModal(\'login\')">Sign In</button></div>';
+      return;
+    }
+    container.innerHTML = '<div class="loading">Loading courses...</div>';
+    try {
+      const courses = await api.get('/api/courses');
+      const goldendale = courses.find((c) => c.name === 'Goldendale Golf Club') || courses[0];
+      let tees = [];
+      if (goldendale) {
+        const detail = await api.get('/api/courses/' + goldendale.id);
+        tees = detail.tees || [];
+      }
+      container.innerHTML = `
+        <h2 class="section-title">New round</h2>
+        <form class="card" id="create-round-form">
+          <div class="form-group">
+            <label>Round name</label>
+            <input class="form-input" name="name" value="Goldendale Team Round" required>
+          </div>
+          <div class="form-group">
+            <label>Course</label>
+            <select class="form-input" name="courseId" id="create-course">
+              ${courses.map((c) => `<option value="${c.id}" ${goldendale && c.id === goldendale.id ? 'selected' : ''}>${_esc(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Tee</label>
+            <select class="form-input" name="teeId" id="create-tee">
+              ${tees.map((t) => `<option value="${t.id}">${_esc(t.name)} · ${t.rating}/${t.slope}${t.yards_estimated ? ' (est. yards)' : ''}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Format</label>
+            <select class="form-input" name="format">
+              <option value="team_net" selected>Team — 1 gross + 2 net (default)</option>
+              <option value="match_play">Match play</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Holes</label>
+            <select class="form-input" name="holes">
+              <option value="18">18 holes</option>
+              <option value="front9">Front 9</option>
+              <option value="back9">Back 9</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Handicap allowance</label>
+            <select class="form-input" name="allowance">
+              <option value="100" selected>100%</option>
+              <option value="90">90%</option>
+              <option value="80">80%</option>
+              <option value="75">75%</option>
+            </select>
+          </div>
+          <div class="grid grid-2">
+            <div class="form-group"><label>Gross balls</label><input class="form-input" type="number" name="grossBalls" value="1" min="0" max="6"></div>
+            <div class="form-group"><label>Net balls</label><input class="form-input" type="number" name="netBalls" value="2" min="0" max="6"></div>
+          </div>
+          <label class="check-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
+          <div class="card-footer">
+            <button class="btn btn-primary" type="submit">Create round</button>
+          </div>
+        </form>`;
+
+      document.getElementById('create-course').addEventListener('change', async (e) => {
+        const detail = await api.get('/api/courses/' + e.target.value);
+        const teeSel = document.getElementById('create-tee');
+        teeSel.innerHTML = (detail.tees || []).map((t) =>
+          `<option value="${t.id}">${_esc(t.name)} · ${t.rating}/${t.slope}${t.yards_estimated ? ' (est. yards)' : ''}</option>`
+        ).join('');
+      });
+
+      document.getElementById('create-round-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        try {
+          const state = await api.post('/api/rounds', {
+            name: fd.get('name'),
+            courseId: Number(fd.get('courseId')),
+            teeId: fd.get('teeId') ? Number(fd.get('teeId')) : null,
+            format: fd.get('format'),
+            holes: fd.get('holes'),
+            allowance: Number(fd.get('allowance')),
+            grossBalls: Number(fd.get('grossBalls')),
+            netBalls: Number(fd.get('netBalls')),
+            dualCount: fd.get('dualCount') === 'on',
+          });
+          app.navigate('#round/' + state.round.id);
+        } catch (err) {
+          _toast(err.message, 'error');
+        }
+      });
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${_esc(err.message)}</p></div>`;
+    }
+  },
+
+  async renderProfile() {
+    const container = document.getElementById('app');
+    const user = auth.currentUser;
+    if (!user) {
+      container.innerHTML = '<div class="empty-state"><h3>Sign in to edit your profile</h3><button class="btn btn-primary" onclick="auth.showModal(\'login\')">Sign In</button></div>';
+      return;
+    }
+    container.innerHTML = `
+      <h2 class="section-title">Profile</h2>
+      <form class="card" id="profile-form">
+        <div class="form-group"><label>Display name</label><input class="form-input" name="name" value="${_esc(user.name || '')}" required></div>
+        <div class="form-group"><label>Email</label><input class="form-input" value="${_esc(user.email || '')}" disabled></div>
+        <div class="form-group"><label>Handicap index (optional)</label><input class="form-input" name="handicap" value="${_esc(user.handicap ?? '')}" placeholder="12.4 or +2"></div>
+        <div class="form-group"><label>Home tee (optional)</label><input class="form-input" name="homeTee" value="${_esc(user.home_tee || '')}" placeholder="White/Blue"></div>
+        <button class="btn btn-primary" type="submit">Save profile</button>
+      </form>`;
+    document.getElementById('profile-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      try {
+        const updated = await api.put('/api/auth/me', {
+          name: fd.get('name'),
+          handicap: fd.get('handicap') || null,
+          homeTee: fd.get('homeTee') || null,
+        });
+        auth.setUser(updated);
+        _toast('Profile saved', 'success');
+      } catch (err) {
+        _toast(err.message, 'error');
+      }
+    });
+  },
+
+  async renderCourses() {
+    const container = document.getElementById('app');
+    if (!auth.currentUser?.is_admin) {
+      container.innerHTML = '<div class="empty-state"><h3>Admin only</h3><p>The first registered account can edit courses.</p></div>';
+      return;
+    }
+    container.innerHTML = '<div class="loading">Loading courses...</div>';
+    try {
+      const courses = await api.get('/api/courses');
+      container.innerHTML = `
+        <h2 class="section-title">Courses</h2>
+        <p class="card-subtitle">Goldendale is seeded. Red/Gold hole yards are labeled estimated when official split yardage is missing.</p>
+        <div class="grid grid-2">${courses.map((c) => `
+          <div class="card card-clickable" onclick="dashboard.renderCourseEdit(${c.id})">
+            <div class="card-title">${_esc(c.name)}</div>
+            <div class="card-subtitle">${_esc([c.address, c.city, c.state].filter(Boolean).join(', '))} · Par ${c.par} · ${c.num_holes} holes</div>
+          </div>`).join('')}</div>
+        <h3 class="section-title mt-lg">Add course</h3>
+        <form class="card" id="add-course-form">
+          <div class="form-group"><label>Name</label><input class="form-input" name="name" required></div>
+          <div class="grid grid-2">
+            <div class="form-group"><label>Holes</label><select class="form-input" name="num_holes"><option value="18">18</option><option value="9">9</option></select></div>
+            <div class="form-group"><label>Par</label><input class="form-input" name="par" type="number" value="72"></div>
+          </div>
+          <button class="btn btn-primary" type="submit">Add course</button>
+        </form>`;
+      document.getElementById('add-course-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(e.target);
+        try {
+          await api.post('/api/courses', { name: fd.get('name'), num_holes: Number(fd.get('num_holes')), par: Number(fd.get('par')) });
+          dashboard.renderCourses();
+        } catch (err) { _toast(err.message, 'error'); }
+      });
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${_esc(err.message)}</p></div>`;
+    }
+  },
+
+  async renderCourseEdit(id) {
+    const container = document.getElementById('app');
+    const course = await api.get('/api/courses/' + id);
+    container.innerHTML = `
+      <p><a href="#courses" onclick="event.preventDefault();app.navigate('#courses')">&larr; Courses</a></p>
+      <h2 class="section-title">${_esc(course.name)}</h2>
+      <form class="card" id="edit-course-form">
+        <div class="form-group"><label>Name</label><input class="form-input" name="name" value="${_esc(course.name)}"></div>
+        <div class="form-group"><label>Address</label><input class="form-input" name="address" value="${_esc(course.address || '')}"></div>
+        <div class="grid grid-2">
+          <div class="form-group"><label>City</label><input class="form-input" name="city" value="${_esc(course.city || '')}"></div>
+          <div class="form-group"><label>State</label><input class="form-input" name="state" value="${_esc(course.state || '')}"></div>
+        </div>
+        <div class="form-group"><label>Notes</label><input class="form-input" name="notes" value="${_esc(course.notes || '')}"></div>
+        <button class="btn btn-primary" type="submit">Save course</button>
+      </form>
+      <h3 class="section-title mt-lg">Tees</h3>
+      ${(course.tees || []).map((t) => `<div class="card"><strong>${_esc(t.name)}</strong> · ${t.yards || '?'} yds · ${t.rating}/${t.slope} · ${t.gender}${t.yards_estimated ? ' · <em>estimated yards</em>' : ''}</div>`).join('')}
+      <h3 class="section-title mt-lg">Holes</h3>
+      <div class="scorecard-container">
+        <table class="scorecard hole-admin">
+          <thead><tr><th>Hole</th><th>Par</th><th>SI</th><th>Yds</th><th></th></tr></thead>
+          <tbody>
+            ${(course.holes || []).map((h) => `
+              <tr>
+                <td>${h.hole_number}</td>
+                <td><input class="score-input" data-hole="${h.hole_number}" data-f="par" value="${h.par}"></td>
+                <td><input class="score-input" data-hole="${h.hole_number}" data-f="si" value="${h.stroke_index}"></td>
+                <td><input class="score-input" data-hole="${h.hole_number}" data-f="yards" value="${h.yards || ''}">${h.yards_estimated ? '<span class="est-label">est.</span>' : ''}</td>
+                <td></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <button class="btn btn-primary mt-md" id="save-holes">Save holes</button>`;
+
+    document.getElementById('edit-course-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      await api.put('/api/courses/' + id, {
+        name: fd.get('name'), address: fd.get('address'), city: fd.get('city'), state: fd.get('state'), notes: fd.get('notes'),
+      });
+      _toast('Course saved', 'success');
+    });
+    document.getElementById('save-holes').addEventListener('click', async () => {
+      const holes = {};
+      container.querySelectorAll('[data-hole]').forEach((input) => {
+        const n = input.dataset.hole;
+        holes[n] = holes[n] || { hole_number: Number(n) };
+        if (input.dataset.f === 'par') holes[n].par = Number(input.value);
+        if (input.dataset.f === 'si') holes[n].stroke_index = Number(input.value);
+        if (input.dataset.f === 'yards') holes[n].yards = input.value === '' ? null : Number(input.value);
+      });
+      await api.put('/api/courses/' + id, { holes: Object.values(holes) });
+      _toast('Holes saved', 'success');
+    });
+  },
 };
 
-/* ---- Helper: extract course name ---- */
-function _courseName(round) {
-  if (round.course) return round.course;
-  if (round.name) {
-    var parts = round.name.split(' - ');
-    return parts.length > 1 ? parts.slice(1).join(' - ') : round.name;
-  }
-  return 'Course ' + round.round_number;
-}
-
-/* ---- Helper: HTML-escape ---- */
 function _esc(str) {
   if (str === null || str === undefined) return '';
-  var div = document.createElement('div');
+  const div = document.createElement('div');
   div.appendChild(document.createTextNode(String(str)));
   return div.innerHTML;
 }
 
-/* ---- Helper: toast notification ---- */
 function _toast(message, type) {
-  var existing = document.querySelector('.toast');
+  const existing = document.querySelector('.toast');
   if (existing) existing.remove();
-
-  var el = document.createElement('div');
+  const el = document.createElement('div');
   el.className = 'toast' + (type ? ' toast-' + type : '');
   el.textContent = message;
   document.body.appendChild(el);
-
-  setTimeout(function () {
-    if (el.parentNode) el.remove();
-  }, 3000);
+  setTimeout(() => el.remove(), 3200);
 }
 
 window.dashboard = dashboard;
 window._esc = _esc;
 window._toast = _toast;
-window._courseName = _courseName;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bandon Dunes Retreat | Match Play Championship</title>
+  <title>Goldendale Scorecard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -11,24 +11,24 @@
 </head>
 <body>
 
-  <!-- ===== HEADER / NAVIGATION ===== -->
   <header class="header">
     <div class="header-inner">
       <div class="header-brand">
         <a href="#dashboard" class="brand-link">
-          <span class="brand-title">Bandon Dunes Retreat</span>
-          <span class="brand-subtitle">Match Play Championship</span>
+          <span class="brand-title">Goldendale Scorecard</span>
+          <span class="brand-subtitle">1901 N Columbus Ave</span>
         </a>
       </div>
 
       <nav class="nav" id="main-nav">
-        <a href="#dashboard" class="nav-link active" data-route="dashboard">Dashboard</a>
-        <a href="#rounds" class="nav-link" data-route="rounds">Rounds</a>
-        <a href="#leaderboard" class="nav-link" data-route="leaderboard">Leaderboard</a>
-        <a href="#players" class="nav-link" data-route="players">Players</a>
+        <a href="#dashboard" class="nav-link active" data-route="dashboard">Rounds</a>
+        <a href="#create" class="nav-link" data-route="create">New Round</a>
+        <a href="#courses" class="nav-link admin-only" data-route="courses" style="display:none">Courses</a>
+        <a href="#profile" class="nav-link" data-route="profile">Profile</a>
       </nav>
 
       <div class="header-actions">
+        <span class="unsynced-badge" id="unsynced-badge" hidden>Unsynced 0</span>
         <button class="btn btn-accent btn-sm" id="login-btn">Sign In</button>
         <div class="user-menu" id="user-menu" style="display:none">
           <span class="user-name" id="user-name"></span>
@@ -44,28 +44,24 @@
     </div>
   </header>
 
-  <!-- ===== MAIN CONTENT ===== -->
   <main class="main">
-    <div class="container" id="app">
-      <!-- Views are rendered here by the router -->
-    </div>
+    <div class="container" id="app"></div>
   </main>
 
-  <!-- ===== AUTH MODAL ===== -->
   <div class="modal-overlay" id="auth-modal">
     <div class="modal">
       <button class="modal-close" id="modal-close" aria-label="Close modal">&times;</button>
 
       <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">Match Play Championship</h2>
-        <p class="modal-subtitle">Welcome to Bandon Dunes</p>
+        <h2 class="modal-title" id="modal-title">Goldendale Scorecard</h2>
+        <p class="modal-subtitle">Goldendale Golf Club · WA 98620</p>
         <div class="modal-tabs">
           <button class="modal-tab active" id="tab-login" data-tab="login">Sign In</button>
           <button class="modal-tab" id="tab-register" data-tab="register">Register</button>
+          <button class="modal-tab" id="tab-magic" data-tab="magic">Magic link</button>
         </div>
       </div>
 
-      <!-- Login Form -->
       <form class="auth-form" id="login-form">
         <div class="form-group">
           <label for="login-email">Email</label>
@@ -77,13 +73,13 @@
         </div>
         <div class="form-error" id="login-error"></div>
         <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        <button type="button" class="btn btn-secondary btn-block" id="forgot-btn">Forgot password</button>
       </form>
 
-      <!-- Register Form -->
       <form class="auth-form" id="register-form" style="display:none">
         <div class="form-group">
-          <label for="register-name">Full Name</label>
-          <input type="text" id="register-name" class="form-input" placeholder="John Smith" required>
+          <label for="register-name">Display name</label>
+          <input type="text" id="register-name" class="form-input" placeholder="Your name" required>
         </div>
         <div class="form-group">
           <label for="register-email">Email</label>
@@ -94,16 +90,56 @@
           <input type="password" id="register-password" class="form-input" placeholder="Create a password" required minlength="6">
         </div>
         <div class="form-group">
-          <label for="register-handicap">Handicap Index</label>
-          <input type="number" id="register-handicap" class="form-input" placeholder="e.g. 12.4" step="0.1" min="0" max="54" required>
+          <label for="register-handicap">Handicap index (optional)</label>
+          <input type="text" id="register-handicap" class="form-input" placeholder="12.4 or +2">
+        </div>
+        <div class="form-group">
+          <label for="register-tee">Home tee (optional)</label>
+          <input type="text" id="register-tee" class="form-input" placeholder="White/Blue">
         </div>
         <div class="form-error" id="register-error"></div>
         <button type="submit" class="btn btn-primary btn-block">Create Account</button>
       </form>
+
+      <form class="auth-form" id="magic-form" style="display:none">
+        <p class="modal-help">We'll create a one-time sign-in link. Email delivery is not configured in this deploy — the link is shown so you can open it.</p>
+        <div class="form-group">
+          <label for="magic-email">Email</label>
+          <input type="email" id="magic-email" class="form-input" placeholder="you@example.com" required>
+        </div>
+        <div class="form-error" id="magic-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Get magic link</button>
+        <div id="magic-result" class="auth-result"></div>
+      </form>
+
+      <form class="auth-form" id="forgot-form" style="display:none">
+        <div class="form-group">
+          <label for="forgot-email">Email</label>
+          <input type="email" id="forgot-email" class="form-input" placeholder="you@example.com" required>
+        </div>
+        <div class="form-error" id="forgot-error"></div>
+        <button type="submit" class="btn btn-primary btn-block">Create reset link</button>
+        <div id="forgot-result" class="auth-result"></div>
+      </form>
     </div>
   </div>
 
-  <!-- ===== SCRIPTS (loaded in dependency order) ===== -->
+  <div class="score-input-overlay" id="score-overlay" hidden>
+    <div class="score-input-box">
+      <div class="score-input-title" id="score-overlay-title">Hole score</div>
+      <div class="score-input-label" id="score-overlay-label"></div>
+      <div class="stepper">
+        <button type="button" class="btn btn-secondary stepper-btn" id="score-minus">−</button>
+        <input type="number" id="score-overlay-input" class="form-input" inputmode="numeric" min="1" max="15">
+        <button type="button" class="btn btn-secondary stepper-btn" id="score-plus">+</button>
+      </div>
+      <div class="score-input-actions">
+        <button type="button" class="btn btn-secondary" id="score-clear">Clear</button>
+        <button type="button" class="btn btn-primary" id="score-save">Save</button>
+      </div>
+    </div>
+  </div>
+
   <script src="js/api.js"></script>
   <script src="js/auth.js"></script>
   <script src="js/dashboard.js"></script>

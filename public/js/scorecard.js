@@ -1,255 +1,361 @@
-/**
- * Scorecard + Round Detail Views
- */
 const scorecard = {
-  async renderRound(roundId) {
-    const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading round...</div>';
+  state: null,
+  pollTimer: null,
+  overlay: null,
 
-    try {
-      const round = await api.get(`/api/rounds/${roundId}`);
-      const matches = await api.get(`/api/matches?round=${round.round_number}`);
-
-      const frontMatches = matches.filter(m => m.half === 'front');
-      const backMatches = matches.filter(m => m.half === 'back');
-
-      container.innerHTML = `
-        <div style="margin-bottom:1rem">
-          <a href="#dashboard" onclick="event.preventDefault();app.navigate('#dashboard')" style="color:var(--primary);text-decoration:none;font-size:0.85rem">&larr; Back to Dashboard</a>
-        </div>
-        <div class="card">
-          <h2 style="color:var(--primary)">${round.name}</h2>
-          <p style="color:var(--text-light)">
-            ${round.course_name || ''} &bull; ${round.num_holes || 18} holes &bull; Par ${round.course_par || 72}
-          </p>
-          <span class="badge badge-${round.status}">${round.status}</span>
-          ${auth.currentUser?.is_admin && round.status === 'upcoming' ? `
-            <button class="btn btn-sm btn-primary" style="margin-left:0.5rem" onclick="scorecard.activateRound(${round.id})">Activate Round</button>
-          ` : ''}
-          ${auth.currentUser?.is_admin && round.status === 'active' ? `
-            <button class="btn btn-sm btn-secondary" style="margin-left:0.5rem" onclick="scorecard.completeRound(${round.id})">Complete Round</button>
-          ` : ''}
-        </div>
-
-        ${round.foursomes && round.foursomes.length > 0 ? `
-          <h2 class="section-title">Foursomes</h2>
-          <div class="grid grid-2">
-            ${round.foursomes.map(f => `
-              <div class="foursome-card">
-                <div class="group-label">Group ${f.group_label}</div>
-                <div class="player-list">
-                  ${f.players ? f.players.map(p => `<span class="player-pill">${p.name} (${p.handicap})</span>`).join('') : ''}
-                </div>
-              </div>
-            `).join('')}
-          </div>
-        ` : '<div class="empty-state"><p>Schedule not yet generated for this round.</p></div>'}
-
-        ${frontMatches.length > 0 ? `
-          <h2 class="section-title">Front 9 Matches</h2>
-          ${frontMatches.map(m => this.renderMatchCard(m)).join('')}
-        ` : ''}
-
-        ${backMatches.length > 0 ? `
-          <h2 class="section-title">Back 9 Matches</h2>
-          ${backMatches.map(m => this.renderMatchCard(m)).join('')}
-        ` : ''}
-      `;
-    } catch (err) {
-      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
+  stopPoll() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
   },
 
-  renderMatchCard(m) {
-    const statusBadge = m.status === 'completed'
-      ? (m.result_text ? `<span class="badge badge-completed">${m.result_text}</span>` : '')
-      : `<span class="badge badge-${m.status}">${m.status}</span>`;
-    const winner = m.winner_id === m.player1_id ? m.player1_name : m.winner_id === m.player2_id ? m.player2_name : null;
+  async renderRound(id) {
+    this.stopPoll();
+    const container = document.getElementById('app');
+    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading scorecard...</div>';
+    try {
+      const state = await api.get('/api/rounds/' + id);
+      this.state = state;
+      this.draw(state);
+      this.pollTimer = setInterval(() => this.refresh(id, true), 5000);
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${_esc(err.message)}</p></div>`;
+    }
+  },
 
-    return `
-      <div class="match-card" onclick="app.navigate('#match/${m.id}')">
-        <div class="half-label">${m.half} 9</div>
-        <div class="players">
-          <span${m.winner_id === m.player1_id ? ' style="color:var(--success)"' : ''}>${m.player1_name} (${m.player1_handicap})</span>
-          <span class="vs">vs</span>
-          <span${m.winner_id === m.player2_id ? ' style="color:var(--success)"' : ''}>${m.player2_name} (${m.player2_handicap})</span>
-        </div>
-        <div style="margin-top:0.5rem">${statusBadge} ${winner ? `<span style="font-size:0.8rem;color:var(--text-light)">${winner} wins</span>` : ''}</div>
+  async refresh(id, silent) {
+    try {
+      await api.flushQueue();
+      const state = await api.get('/api/rounds/' + id + '/live');
+      this.state = state;
+      this.draw(state, silent);
+    } catch {
+      /* keep current view while offline */
+    }
+  },
+
+  isOrganizer(state) {
+    const user = auth.currentUser;
+    if (!user) return false;
+    if (state.round.organizer_id === user.id) return true;
+    return (state.members || []).some((m) => m.player_id === user.id && m.role === 'organizer');
+  },
+
+  draw(state) {
+    const container = document.getElementById('app');
+    const r = state.round;
+    const holes = state.holes || [];
+    const organizer = this.isOrganizer(state);
+    const formatLabel = r.format === 'match_play' ? 'Match play' : `${r.gross_balls} gross + ${r.net_balls} net`;
+    const teeNote = r.tee?.yards_estimated ? ' · Red/Gold hole yards estimated' : '';
+
+    const outHoles = holes.filter((h) => h.hole_number <= 9);
+    const inHoles = holes.filter((h) => h.hole_number >= 10);
+
+    container.innerHTML = `
+      <div class="round-toolbar">
+        <a href="#dashboard" onclick="event.preventDefault();app.navigate('#dashboard')">&larr; Rounds</a>
+        <span class="badge badge-${_esc(r.status)}">${_esc(r.status)}</span>
+        <span class="unsynced-inline" id="unsynced-inline"></span>
       </div>
+      <div class="card">
+        <h2 class="card-title">${_esc(r.name)}</h2>
+        <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}${teeNote}</p>
+        <p class="join-row">Join code <strong>${_esc(r.joinCode || r.join_code)}</strong>
+          <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.joinUrl || '')}')">Copy join link</button>
+          <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.publicUrl || '')}')">Copy public board</button>
+        </p>
+      </div>
+
+      ${organizer ? this.settingsBar(state) : ''}
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">Scorecard</span>
+          <span class="card-subtitle">Tap a cell. Dots are handicap strokes. Colors are vs par.</span>
+        </div>
+        <div class="scorecard-container high-contrast">
+          <table class="scorecard team-scorecard">
+            <thead>
+              <tr>
+                <th>Hole</th>
+                ${holes.map((h) => `<th>${h.hole_number}</th>`).join('')}
+                ${outHoles.length ? '<th>OUT</th>' : ''}
+                ${inHoles.length ? '<th>IN</th>' : ''}
+                <th>TOT</th>
+              </tr>
+              <tr class="par-row">
+                <th class="row-label">Par / SI</th>
+                ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
+                ${outHoles.length ? `<th>${outHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
+                ${inHoles.length ? `<th>${inHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
+                <th>${holes.reduce((s, h) => s + h.par, 0)}</th>
+              </tr>
+              <tr class="yds-row">
+                <th class="row-label">Yds${holes.some((h) => h.yards_estimated) ? ' *' : ''}</th>
+                ${holes.map((h) => `<th>${h.yards || '—'}${h.yards_estimated ? '<span class="est-label">est</span>' : ''}</th>`).join('')}
+                ${outHoles.length ? `<th>${outHoles.reduce((s, h) => s + (h.yards || 0), 0) || ''}</th>` : ''}
+                ${inHoles.length ? `<th>${inHoles.reduce((s, h) => s + (h.yards || 0), 0) || ''}</th>` : ''}
+                <th>${holes.reduce((s, h) => s + (h.yards || 0), 0) || ''}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${this.playerRows(state, holes, outHoles, inHoles)}
+              ${r.format === 'team_net' ? this.teamRows(state, holes, outHoles, inHoles) : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      ${r.format === 'match_play' ? this.matchBlock(state) : this.resultsPreview(state)}
     `;
+    this.bindOverlay();
+    api.updateBadge();
   },
 
-  async renderMatch(matchId) {
-    const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading match...</div>';
+  settingsBar(state) {
+    const r = state.round;
+    return `
+      <div class="admin-bar" style="display:flex">
+        <span class="admin-bar-label">Organizer</span>
+        <button class="btn btn-sm btn-accent" onclick="scorecard.addGuest()">Add guest</button>
+        <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance teams</button>
+        ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
+        <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
+        <label class="tiny-label">Allowance
+          <select onchange="scorecard.updateSettings({allowance: Number(this.value), recomputeHandicaps:true})">
+            ${[75,80,90,100].map((a) => `<option value="${a}" ${r.allowance === a ? 'selected' : ''}>${a}%</option>`).join('')}
+          </select>
+        </label>
+        <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
+      </div>
+      <div class="card">
+        <div class="card-title">Players (${state.members.length}/20)</div>
+        <div class="player-list">${state.members.map((m) => `
+          <span class="player-pill">${_esc(m.display_name)} · H ${m.playing_handicap ?? m.handicap ?? '—'} ${m.team_id ? '' : '· individual'} ${m.is_guest ? '· guest' : ''}
+            ${this.isOrganizer(state) ? `<button class="linkish" onclick="scorecard.editMember(${m.id})">edit</button>` : ''}
+          </span>`).join('')}</div>
+      </div>`;
+  },
 
-    try {
-      const match = await api.get(`/api/matches/${matchId}`);
-      const isParticipant = auth.currentUser && (auth.currentUser.id === match.player1_id || auth.currentUser.id === match.player2_id);
-      const canEdit = (isParticipant || auth.currentUser?.is_admin) && match.status !== 'completed';
-      const startHole = match.half === 'front' ? 1 : 10;
-      const endHole = match.half === 'front' ? 9 : 18;
-      const holeNumbers = [];
-      for (let h = startHole; h <= endHole; h++) holeNumbers.push(h);
+  playerRows(state, holes, outHoles, inHoles) {
+    return state.members.map((m) => {
+      const cells = holes.map((h) => {
+        const hs = m.holes.find((x) => x.holeNumber === h.hole_number);
+        const cls = this.vsParClass(hs?.gross, h.par);
+        const dots = Math.max(0, hs?.strokes || 0);
+        const plus = (hs?.strokes || 0) < 0;
+        return `<td class="sc-cell-editable ${cls} ${dots ? 'dots-' + Math.min(dots, 3) : ''} ${plus ? 'dots-plus' : ''}"
+          onclick="scorecard.openEditor(${state.round.id},${m.id},${h.hole_number},'${_esc(m.display_name)}',${hs?.gross ?? 'null'},${h.par})">
+          <span class="gross">${hs?.gross ?? ''}</span>
+          ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
+        </td>`;
+      }).join('');
+      return `
+        <tr class="row-player">
+          <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
+          ${cells}
+          ${outHoles.length ? `<td class="sc-total">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
+          ${inHoles.length ? `<td class="sc-total">${m.inGross ?? ''} <span class="net-mini">${m.inNet ?? ''}</span></td>` : ''}
+          <td class="sc-total"><strong>${m.totalGross ?? ''}</strong> <span class="net-mini">${m.totalNet ?? ''}</span></td>
+        </tr>`;
+    }).join('');
+  },
 
-      // Build hole data map
-      const holeData = {};
-      (match.holes || []).forEach(h => { holeData[h.hole_number] = h; });
+  teamRows(state, holes, outHoles, inHoles) {
+    return (state.teams || []).map((team) => `
+      <tr class="row-team">
+        <td class="row-label">${_esc(team.name)}${state.winner && state.winner.id === team.id ? ' ★' : ''}</td>
+        ${holes.map((h) => {
+          const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
+          const title = (hole?.balls || []).map((b) => `${b.name} ${b.score}${b.type === 'gross' ? 'G' : 'N'}`).join(', ');
+          return `<td title="${_esc(title)}" class="${hole?.incomplete ? 'incomplete' : ''}">${hole?.total ?? ''}</td>`;
+        }).join('')}
+        ${outHoles.length ? `<td class="sc-total">${team.out ?? ''}</td>` : ''}
+        ${inHoles.length ? `<td class="sc-total">${team.inn ?? ''}</td>` : ''}
+        <td class="sc-total"><strong>${team.total ?? ''}</strong></td>
+      </tr>`).join('');
+  },
 
-      // Course holes for par
-      let courseHoles = {};
-      try {
-        const roundData = await api.get(`/api/rounds/${match.round_id}`);
-        if (roundData.course_holes) roundData.course_holes.forEach(h => { courseHoles[h.hole_number] = h; });
-      } catch {}
-
-      // Running match score
-      let runningScore = 0;
-      const runningScores = {};
-      holeNumbers.forEach(h => {
-        const d = holeData[h];
-        if (d) {
-          if (d.hole_winner_id === match.player1_id) runningScore++;
-          else if (d.hole_winner_id === match.player2_id) runningScore--;
-        }
-        runningScores[h] = runningScore;
-      });
-
-      const stateText = match.current_state?.status_text || 'Not started';
-
-      container.innerHTML = `
-        <div style="margin-bottom:1rem">
-          <a href="#round/${match.round_id}" onclick="event.preventDefault();app.navigate('#round/${match.round_id}')" style="color:var(--primary);text-decoration:none;font-size:0.85rem">&larr; Back to Round</a>
+  resultsPreview(state) {
+    const winner = state.winner;
+    return `
+      <div class="card">
+        <div class="card-header"><span class="card-title">Live results</span></div>
+        ${winner ? `<p><strong>Leading: ${_esc(winner.name)}</strong> · ${_esc(String(winner.total))}</p>` : '<p>Enter scores to see team totals.</p>'}
+        <p class="card-subtitle">Tie-break: back 9, last 6, last 3, 18, hardest SI. Incomplete holes are flagged.</p>
+        <div class="welcome-actions">
+          <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
+          <a class="btn btn-secondary btn-sm" href="/api/rounds/${state.round.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('#lb/${_esc(state.round.public_token || '')}')">Public board</button>
         </div>
+      </div>`;
+  },
 
-        <div class="card" style="text-align:center">
-          <div style="font-size:0.75rem;color:var(--text-light);text-transform:uppercase;letter-spacing:1px">${match.round_name || 'Round'} &bull; ${match.half} 9</div>
-          <div style="display:flex;justify-content:center;align-items:center;gap:1.5rem;margin:1rem 0">
-            <div>
-              <div style="font-size:1.3rem;font-weight:700">${match.player1_name}</div>
-              <div style="font-size:0.8rem;color:var(--text-light)">Handicap: ${match.player1_handicap}</div>
+  matchBlock(state) {
+    const matches = state.matches || [];
+    return `
+      <div class="card">
+        <div class="card-title">Match play</div>
+        ${matches.length === 0 ? '<p>Organizer can generate pairings. 8 players use the retreat rotation; otherwise players are paired by handicap.</p>' : ''}
+        ${matches.map((m) => `
+          <div class="match-card">
+            <div class="players">
+              <span>${_esc(m.member1?.display_name || 'P1')}</span>
+              <span class="vs">vs</span>
+              <span>${_esc(m.member2?.display_name || 'P2')}</span>
             </div>
-            <div style="font-size:0.9rem;color:var(--text-muted);font-weight:600">VS</div>
-            <div>
-              <div style="font-size:1.3rem;font-weight:700">${match.player2_name}</div>
-              <div style="font-size:0.8rem;color:var(--text-light)">Handicap: ${match.player2_handicap}</div>
-            </div>
-          </div>
-          <div class="match-result ${match.status === 'completed' ? (match.winner_id ? 'won' : 'halved') : ''}">${match.result_text || stateText}</div>
-          ${match.handicap_strokes > 0 ? `<div style="font-size:0.8rem;color:var(--text-light);margin-top:0.5rem">${match.strokes_receiver === 'player1' ? match.player1_name : match.player2_name} receives ${match.handicap_strokes} stroke${match.handicap_strokes > 1 ? 's' : ''}</div>` : ''}
-        </div>
-
-        <div class="card">
-          <div class="card-header"><span class="card-title">Scorecard</span></div>
-          <div class="scorecard-container">
-            <table class="scorecard">
-              <thead>
-                <tr>
-                  <th>Hole</th>
-                  ${holeNumbers.map(h => `<th>${h}</th>`).join('')}
-                  <th>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="par-row">
-                  <td class="row-label">Par</td>
-                  ${holeNumbers.map(h => `<td>${courseHoles[h]?.par || holeData[h]?.par || '-'}</td>`).join('')}
-                  <td>${holeNumbers.reduce((s, h) => s + (courseHoles[h]?.par || holeData[h]?.par || 0), 0)}</td>
-                </tr>
-                <tr>
-                  <td class="row-label">${match.player1_name}${match.stroke_holes?.length ? ' *' : ''}</td>
-                  ${holeNumbers.map(h => {
-                    const d = holeData[h];
-                    const isStroke = match.strokes_receiver === 'player1' && match.stroke_holes?.includes(h);
-                    const cls = d ? (d.hole_winner_id === match.player1_id ? 'hole-won' : d.hole_winner_id === match.player2_id ? 'hole-lost' : d.hole_winner_id === null && d.player1_strokes ? 'hole-halved' : '') : '';
-                    if (canEdit) {
-                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="12" value="${d?.player1_strokes || ''}" data-hole="${h}" data-player="1" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
-                    }
-                    return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}">${d?.player1_strokes || '-'}</td>`;
-                  }).join('')}
-                  <td style="font-weight:700">${Object.values(holeData).reduce((s, h) => s + (h.player1_strokes || 0), 0) || '-'}</td>
-                </tr>
-                <tr>
-                  <td class="row-label">${match.player2_name}${match.stroke_holes?.length ? '' : ''}</td>
-                  ${holeNumbers.map(h => {
-                    const d = holeData[h];
-                    const isStroke = match.strokes_receiver === 'player2' && match.stroke_holes?.includes(h);
-                    const cls = d ? (d.hole_winner_id === match.player2_id ? 'hole-won' : d.hole_winner_id === match.player1_id ? 'hole-lost' : d.hole_winner_id === null && d.player2_strokes ? 'hole-halved' : '') : '';
-                    if (canEdit) {
-                      return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}"><input type="number" class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="12" value="${d?.player2_strokes || ''}" data-hole="${h}" data-player="2" onchange="scorecard.saveScore(${matchId}, ${h}, this)"></td>`;
-                    }
-                    return `<td class="${cls} ${isStroke ? 'stroke-cell' : ''}">${d?.player2_strokes || '-'}</td>`;
-                  }).join('')}
-                  <td style="font-weight:700">${Object.values(holeData).reduce((s, h) => s + (h.player2_strokes || 0), 0) || '-'}</td>
-                </tr>
-                <tr class="status-row">
-                  <td class="row-label">Status</td>
-                  ${holeNumbers.map(h => {
-                    const s = runningScores[h];
-                    if (s === undefined || !holeData[h]) return '<td>-</td>';
-                    if (s > 0) return `<td style="color:var(--success)">${s}UP</td>`;
-                    if (s < 0) return `<td style="color:var(--danger)">${Math.abs(s)}DN</td>`;
-                    return '<td>AS</td>';
-                  }).join('')}
-                  <td></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          ${canEdit ? `<div style="text-align:center;margin-top:1rem"><button class="btn btn-primary" onclick="scorecard.finalizeMatch(${matchId})">Finalize Match</button></div>` : ''}
-        </div>
-      `;
-    } catch (err) {
-      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
-    }
+            <div>${_esc(m.resultText || 'All Square')}</div>
+          </div>`).join('')}
+      </div>`;
   },
 
-  async saveScore(matchId, holeNumber, inputEl) {
-    const row = inputEl.closest('tr');
-    const player = inputEl.dataset.player;
-    const allInputs = row.closest('tbody').querySelectorAll(`input[data-hole="${holeNumber}"]`);
-    const p1Input = [...allInputs].find(i => i.dataset.player === '1');
-    const p2Input = [...allInputs].find(i => i.dataset.player === '2');
+  vsParClass(gross, par) {
+    if (gross == null || par == null) return '';
+    const d = gross - par;
+    if (d <= -2) return 'vs-eagle';
+    if (d === -1) return 'vs-birdie';
+    if (d === 0) return 'vs-par';
+    if (d === 1) return 'vs-bogey';
+    return 'vs-double';
+  },
 
-    const p1 = parseInt(p1Input?.value);
-    const p2 = parseInt(p2Input?.value);
-    if (!p1 || !p2) return; // Wait for both scores
+  openEditor(roundId, memberId, holeNumber, name, current, par) {
+    this.overlay = { roundId, memberId, holeNumber, name, par };
+    const overlay = document.getElementById('score-overlay');
+    const input = document.getElementById('score-overlay-input');
+    document.getElementById('score-overlay-title').textContent = name;
+    document.getElementById('score-overlay-label').textContent = `Hole ${holeNumber} · Par ${par} · Gross 1–15`;
+    input.value = current == null ? par : current;
+    overlay.hidden = false;
+    overlay.classList.add('active');
+    input.focus();
+    input.select();
+  },
 
+  bindOverlay() {
+    const overlay = document.getElementById('score-overlay');
+    const input = document.getElementById('score-overlay-input');
+    if (!overlay || overlay.dataset.bound) return;
+    overlay.dataset.bound = '1';
+    document.getElementById('score-minus').onclick = () => {
+      input.value = Math.max(1, (Number(input.value) || 1) - 1);
+    };
+    document.getElementById('score-plus').onclick = () => {
+      input.value = Math.min(15, (Number(input.value) || 0) + 1);
+    };
+    document.getElementById('score-save').onclick = () => this.saveOverlay();
+    document.getElementById('score-clear').onclick = () => this.saveOverlay(true);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.hidden = true;
+        overlay.classList.remove('active');
+      }
+    });
+  },
+
+  async saveOverlay(clear) {
+    if (!this.overlay) return;
+    const overlay = document.getElementById('score-overlay');
+    const input = document.getElementById('score-overlay-input');
+    overlay.hidden = true;
+    overlay.classList.remove('active');
     try {
-      await api.put(`/api/matches/${matchId}/score`, {
-        holeNumber, player1Strokes: p1, player2Strokes: p2
+      const state = await api.post(`/api/rounds/${this.overlay.roundId}/scores`, {
+        memberId: this.overlay.memberId,
+        holeNumber: this.overlay.holeNumber,
+        gross: clear ? null : Number(input.value),
       });
-      // Refresh to show updated colors
-      this.renderMatch(matchId);
+      this.state = state;
+      this.draw(state);
     } catch (err) {
-      alert('Error saving score: ' + err.message);
+      _toast(err.message, err.offline ? '' : 'error');
+      if (err.offline && this.state) this.draw(this.state);
     }
   },
 
-  async finalizeMatch(matchId) {
-    if (!confirm('Finalize this match? This cannot be undone.')) return;
+  async addGuest() {
+    const name = prompt('Guest name');
+    if (!name) return;
+    const handicap = prompt('Guest handicap (optional)', '');
     try {
-      const result = await api.put(`/api/matches/${matchId}/finalize`);
-      alert(`Match complete! ${result.winner_name ? result.winner_name + ' wins ' + result.result_text : 'Match halved (A/S)'}`);
-      this.renderMatch(matchId);
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
+      const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, { name, handicap });
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
   },
 
-  async activateRound(roundId) {
+  async balanceTeams() {
+    const n = prompt('How many teams?', '2');
+    if (!n) return;
     try {
-      await api.put(`/api/rounds/${roundId}/status`, { status: 'active' });
-      this.renderRound(roundId);
-    } catch (err) { alert('Error: ' + err.message); }
+      const state = await api.post(`/api/rounds/${this.state.round.id}/teams/balance`, { teamCount: Number(n) });
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
   },
 
-  async completeRound(roundId) {
+  async generateMatches() {
     try {
-      await api.put(`/api/rounds/${roundId}/status`, { status: 'completed' });
-      this.renderRound(roundId);
-    } catch (err) { alert('Error: ' + err.message); }
-  }
+      const state = await api.post(`/api/rounds/${this.state.round.id}/matches/generate`);
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async setStatus(status) {
+    try {
+      const state = await api.put(`/api/rounds/${this.state.round.id}`, { status });
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async updateSettings(body) {
+    try {
+      const state = await api.put(`/api/rounds/${this.state.round.id}`, body);
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async editMember(memberId) {
+    const member = this.state.members.find((m) => m.id === memberId);
+    const hcp = prompt('Playing handicap (editable mid-round)', member.playing_handicap ?? member.handicap ?? '');
+    if (hcp === null) return;
+    try {
+      const state = await api.put(`/api/rounds/${this.state.round.id}/members/${memberId}`, { playingHandicap: hcp });
+      this.state = state;
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  copy(text) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => _toast('Copied', 'success')).catch(() => prompt('Copy this link', text));
+  },
+
+  async copyText() {
+    try {
+      const text = await api.get(`/api/rounds/${this.state.round.id}/results.txt`);
+      this.copy(typeof text === 'string' ? text : JSON.stringify(text));
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async downloadCsv(e) {
+    e.preventDefault();
+    const token = api.getToken();
+    const res = await fetch(`/api/rounds/${this.state.round.id}/results.csv`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'goldendale-round.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };
 
 window.scorecard = scorecard;

@@ -1,75 +1,64 @@
-/**
- * Leaderboard View
- */
 const leaderboardView = {
-  async render() {
+  async renderPublic(token) {
     const container = document.getElementById('app');
-    container.innerHTML = '<div class="loading">Loading leaderboard...</div>';
-
+    container.innerHTML = '<div class="loading">Loading public board...</div>';
     try {
-      const leaderboard = await api.get('/api/leaderboard');
-      const user = auth.currentUser;
-
-      container.innerHTML = `
-        <h2 class="section-title">Leaderboard</h2>
-        <div class="card">
-          <table class="leaderboard-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Player</th>
-                <th>HCP</th>
-                <th>Played</th>
-                <th>W</th>
-                <th>L</th>
-                <th>H</th>
-                <th>Points</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${leaderboard.map((p, i) => {
-                const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : '';
-                const userClass = p.player_id === user?.id ? 'current-user' : '';
-                return `
-                  <tr class="${rankClass} ${userClass}">
-                    <td class="rank-cell">${i + 1}</td>
-                    <td style="font-weight:600">${p.name}</td>
-                    <td>${p.handicap}</td>
-                    <td>${p.matches_played}</td>
-                    <td style="color:var(--success);font-weight:600">${p.wins}</td>
-                    <td style="color:var(--danger);font-weight:600">${p.losses}</td>
-                    <td style="color:var(--halved);font-weight:600">${p.halves}</td>
-                    <td class="points-cell">${p.points}</td>
-                  </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>
-
-        ${leaderboard.length === 0 ? `
-          <div class="empty-state">
-            <div class="emoji">&#127942;</div>
-            <h3>No matches completed yet</h3>
-            <p>Standings will appear once matches are finalized.</p>
-          </div>
-        ` : ''}
-
-        <h2 class="section-title">Tournament Rules</h2>
-        <div class="card">
-          <ul style="padding-left:1.5rem;line-height:2">
-            <li>All 28 unique match pairings covered across 5 rounds</li>
-            <li>Every player shares a foursome with every other player at least once</li>
-            <li>No match repeats more than twice</li>
-            <li>Front 9 and Back 9 have different opponents within your foursome</li>
-            <li>Scoring: Win = 1 point, Halve = 0.5 points, Loss = 0 points</li>
-            <li>Handicap strokes applied per hole based on stroke index</li>
-          </ul>
-        </div>
-      `;
+      const state = await api.get('/api/public/' + encodeURIComponent(token));
+      this.draw(state, true);
+      if (this._timer) clearInterval(this._timer);
+      this._timer = setInterval(async () => {
+        try {
+          const next = await api.get('/api/public/' + encodeURIComponent(token) + '/live');
+          this.draw(next, true);
+        } catch { /* ignore */ }
+      }, 5000);
     } catch (err) {
-      container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${err.message}</p></div>`;
+      container.innerHTML = `<div class="empty-state"><h3>Board not found</h3><p>${_esc(err.message)}</p></div>`;
     }
-  }
+  },
+
+  draw(state, readOnly) {
+    const container = document.getElementById('app');
+    const r = state.round;
+    container.innerHTML = `
+      <div class="welcome-hero">
+        <div class="welcome-title">${_esc(r.name)}</div>
+        <div class="welcome-subtitle">${_esc(r.course?.name || 'Goldendale Golf Club')} · read-only public board</div>
+      </div>
+      ${state.winner ? `<div class="card"><h3>Winning / leading team: ${_esc(state.winner.name)}</h3><p>Team total ${state.winner.total}</p></div>` : ''}
+      <div class="card">
+        <table class="leaderboard-table">
+          <thead><tr><th>#</th><th>Team</th><th>OUT</th><th>IN</th><th>Total</th></tr></thead>
+          <tbody>
+            ${(state.teams || []).map((t, i) => `
+              <tr class="${i === 0 ? 'rank-1' : ''}">
+                <td class="rank-cell">${i + 1}</td>
+                <td class="player-cell">${_esc(t.name)}${t.incomplete ? ' *' : ''}</td>
+                <td class="numeric-cell">${t.out ?? '—'}</td>
+                <td class="numeric-cell">${t.inn ?? '—'}</td>
+                <td class="points-cell">${t.total ?? '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Players</div>
+        <table class="leaderboard-table">
+          <thead><tr><th>Player</th><th>HCP</th><th>Gross</th><th>Net</th></tr></thead>
+          <tbody>
+            ${state.members.map((m) => `
+              <tr>
+                <td>${_esc(m.display_name)}</td>
+                <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
+                <td>${m.totalGross ?? '—'}</td>
+                <td>${m.totalNet ?? '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      ${readOnly ? '<p class="card-subtitle">No login required. Scores update automatically.</p>' : ''}
+    `;
+  },
 };
 
 window.leaderboardView = leaderboardView;
