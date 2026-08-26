@@ -357,6 +357,51 @@ async function runScenario(base) {
   console.log('  team     ' + teamHole.total);
 }
 
+async function runDemoScenario(base) {
+  const stamp = Date.now();
+  const registered = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Demo Host',
+      email: `scorecard.demo.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const token = registered.token;
+  const created = await api(base, 'POST', '/api/rounds', {
+    token,
+    body: {
+      name: 'Demo foursome — Kurt, Chase, Brian',
+      format: 'team_net',
+      holes: '18',
+      allowance: 100,
+      grossBalls: 1,
+      netBalls: 2,
+      dualCount: false,
+    },
+  });
+  const roundId = created.round.id;
+  const state = await api(base, 'POST', `/api/rounds/${roundId}/demo/foursome`, { token });
+  const expected = [
+    { name: 'Kurt', hcp: 9, gross: 75, net: 66 },
+    { name: 'Chase', hcp: 12, gross: 85, net: 73 },
+    { name: 'Brian', hcp: 15, gross: 95, net: 80 },
+  ];
+  for (const want of expected) {
+    const member = state.members.find((m) => m.display_name === want.name);
+    if (!member) fail('demo missing ' + want.name);
+    assertEqual(Number(member.playing_handicap), want.hcp, want.name + ' HCP');
+    assertEqual(member.totalGross, want.gross, want.name + ' 18-hole gross');
+    assertEqual(member.totalNet, want.net, want.name + ' 18-hole net');
+    const team = state.teams.find((t) => t.id === member.team_id);
+    if (!team || team.name !== 'Team 1') fail(want.name + ' should be on Team 1');
+  }
+  const host = state.members.find((m) => m.display_name === 'Demo Host');
+  if (host && host.holes && host.holes.some((h) => h.gross != null)) {
+    fail('demo must not invent host scores');
+  }
+  console.log('PASS demo foursome Kurt 75/66 · Chase 85/73 · Brian 95/80');
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -390,6 +435,7 @@ async function main() {
 
   try {
     await runScenario(base);
+    await runDemoScenario(base);
   } finally {
     if (child) {
       child.kill('SIGTERM');

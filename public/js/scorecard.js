@@ -50,7 +50,9 @@ const scorecard = {
   },
 
   async renderRound(id, screen) {
-    this.screen = screen === 'settings' || screen === 'results' ? screen : 'play';
+    this.screen = screen === 'settings' || screen === 'results' || screen === 'dashboard'
+      ? (screen === 'dashboard' ? 'results' : screen)
+      : 'play';
     this.stopPoll();
     const container = document.getElementById('app');
     const cached = this.readCache(id);
@@ -213,6 +215,76 @@ const scorecard = {
 
   writeErrorBanner() {
     return `<div class="write-error" id="write-error" ${this.writeError ? '' : 'hidden'}>${_esc(this.writeError)}</div>`;
+  },
+
+  playerComplete(member, holes) {
+    return (holes || []).every((h) => {
+      const hs = (member.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return hs && hs.gross != null;
+    });
+  },
+
+  groupHasEighteen(state) {
+    const holes = state.holes || [];
+    const members = state.members || [];
+    if (!holes.length || !members.length) return false;
+    const holeHasScore = (h) => members.some((m) => {
+      const hs = (m.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return hs && hs.gross != null;
+    });
+    return holes.every(holeHasScore) || members.some((m) => this.playerComplete(m, holes));
+  },
+
+  eighteenBanner(state) {
+    if (!this.groupHasEighteen(state)) return '';
+    return `
+      <div class="eighteen-done" id="eighteen-done">
+        <p><strong>18 holes are in.</strong> Open the results board for this game.</p>
+        <button type="button" class="btn btn-accent" onclick="scorecard.showScreen('results')">See dashboard / Round results</button>
+      </div>`;
+  },
+
+  addPlayerPanel(state) {
+    if (!this.isOrganizer(state)) return '';
+    return `
+      <div class="card add-player-card" id="add-player-card">
+        <h3 class="card-title">Add a player</h3>
+        <p class="card-subtitle">Name, handicap, and team. A foursome or up to 15. This is how you add the next name.</p>
+        <form class="add-guest-row" onsubmit="event.preventDefault();scorecard.addGuestFromForm('live')">
+          <input class="form-input" id="live-add-guest-name" placeholder="Name" required>
+          <input class="form-input" id="live-add-guest-hcp" placeholder="HCP">
+          <select class="form-input team-pick" id="live-add-guest-team">
+            <option value="Team 1" selected>Team 1</option>
+            ${this.teamChoices(state).filter((n) => n !== 'Team 1').map((n) => `<option value="${_esc(n)}">${_esc(n)}</option>`).join('')}
+          </select>
+          <button class="btn btn-accent" type="submit">Add player</button>
+        </form>
+        <button type="button" class="btn btn-secondary" onclick="scorecard.addDemoFoursome()">Add Kurt, Chase &amp; Brian (75 / 85 / 95)</button>
+      </div>`;
+  },
+
+  ballsCountedText(state, memberId) {
+    let g = 0;
+    let n = 0;
+    for (const team of state.teams || []) {
+      for (const hole of team.holes || []) {
+        for (const ball of hole.balls || []) {
+          if (Number(ball.playerId) === Number(memberId)) {
+            if (ball.type === 'gross') g += 1;
+            else n += 1;
+          }
+        }
+      }
+    }
+    const bits = [];
+    if (g) bits.push(g + 'G');
+    if (n) bits.push(n + 'N');
+    return bits.join(' · ') || '—';
+  },
+
+  teamNameFor(state, member) {
+    const team = (state.teams || []).find((t) => t.id === member.team_id);
+    return team ? team.name : 'Individual';
   },
 
   commitScore(memberId, holeNumber, gross) {
@@ -399,6 +471,16 @@ const scorecard = {
     this.paintBallLine(slim.holeNumber);
     this.paintEndTotals();
     this.paintPlayerTotals();
+    this.ensureEighteenBanner();
+  },
+
+  ensureEighteenBanner() {
+    if (!this.state || this.screen !== 'play') return;
+    if (!this.groupHasEighteen(this.state)) return;
+    if (document.getElementById('eighteen-done')) return;
+    const bar = document.querySelector('.round-toolbar');
+    if (!bar) return;
+    bar.insertAdjacentHTML('afterend', this.eighteenBanner(this.state));
   },
 
   isOrganizer(state) {
@@ -433,7 +515,7 @@ const scorecard = {
         <span class="badge badge-${_esc(r.status)}" data-status-badge>${_esc(r.status)}</span>
         <span class="unsynced-inline" id="unsynced-inline"></span>
         ${extra || ''}
-        <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('results')">Results</button>
+        <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.showScreen('results')">See dashboard</button>
         ${organizer ? '<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
       </div>`;
   },
@@ -441,8 +523,8 @@ const scorecard = {
   showScreen(screen) {
     const id = this.state && this.state.round && this.state.round.id;
     if (!id) return;
-    if (screen === 'settings' || screen === 'results') {
-      app.navigate('#round/' + id + '/' + screen);
+    if (screen === 'settings' || screen === 'results' || screen === 'dashboard') {
+      app.navigate('#round/' + id + '/' + (screen === 'results' ? 'dashboard' : screen));
       return;
     }
     app.navigate('#round/' + id);
@@ -499,6 +581,8 @@ const scorecard = {
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode('full')">Full card</button>`)}
       ${this.writeErrorBanner()}
+      ${this.eighteenBanner(state)}
+      ${this.addPlayerPanel(state)}
       <div class="card hole-view" id="hole-view">
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel}</p>
@@ -573,6 +657,8 @@ const scorecard = {
     container.innerHTML = `
       ${this.toolbar(state, holeToggle)}
       ${this.writeErrorBanner()}
+      ${this.eighteenBanner(state)}
+      ${this.addPlayerPanel(state)}
       <div class="card">
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
@@ -635,9 +721,58 @@ const scorecard = {
 
   drawResults(state) {
     const container = document.getElementById('app');
+    const r = state.round;
+    const teamFormat = r.format === 'team_net';
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
-      ${state.round.format === 'match_play' ? this.matchBlock(state) : this.resultsPreview(state)}
+      <div class="card results-board" id="results-board">
+        <h2 class="card-title">Round results</h2>
+        <p class="card-subtitle">${_esc(r.name)} · ${_esc(r.course?.name || 'Goldendale Golf Club')} · ${teamFormat ? '1 gross + 2 net' : 'Match play'}</p>
+        <p class="race-strip">${_esc(this.raceStripText(state))}</p>
+        <div class="roster-table-wrap">
+          <table class="roster-table results-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Team</th>
+                <th>HCP</th>
+                <th>Gross</th>
+                <th>Net</th>
+                ${teamFormat ? '<th>Balls counted</th><th>Team total</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${(state.members || []).map((m) => {
+                const team = (state.teams || []).find((t) => t.id === m.team_id);
+                return `<tr>
+                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
+                  <td>${_esc(this.teamNameFor(state, m))}</td>
+                  <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
+                  <td>${m.totalGross ?? '—'}</td>
+                  <td>${m.totalNet ?? '—'}</td>
+                  ${teamFormat ? `<td>${_esc(this.ballsCountedText(state, m.id))}</td><td>${team && team.total != null ? team.total : '—'}</td>` : ''}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${teamFormat ? `
+          <h3 class="section-title">Balls counted by hole</h3>
+          <p class="card-subtitle">Lowest 1 gross + lowest 2 nets. Three different players unless dual-count is on.</p>
+          <div class="ball-board">${(state.holeResults || []).map((hr) => {
+            const bits = (hr.teams || []).map((t) => {
+              const balls = (t.balls || []).map((b) => `${b.name} ${b.score}${b.type === 'gross' ? 'G' : 'N'}`).join(' · ');
+              return `${t.teamName} ${t.total ?? '—'} (${balls || '—'})`;
+            }).join(' · ');
+            return `<div>Hole ${hr.holeNumber}: ${_esc(bits)}</div>`;
+          }).join('')}</div>
+        ` : this.matchBlock(state)}
+        <div class="welcome-actions mt-md">
+          <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
+          <a class="btn btn-secondary btn-sm" href="/api/rounds/${r.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('#lb/${_esc(r.public_token || '')}')">Public board</button>
+        </div>
+      </div>
     `;
     api.updateBadge();
   },
@@ -1026,10 +1161,11 @@ const scorecard = {
     } catch (err) { _toast(err.message, 'error'); }
   },
 
-  async addGuestFromForm() {
-    const name = (document.getElementById('add-guest-name') || {}).value;
-    const handicap = (document.getElementById('add-guest-hcp') || {}).value;
-    const teamName = (document.getElementById('add-guest-team') || {}).value;
+  async addGuestFromForm(which) {
+    const prefix = which === 'live' ? 'live-add-guest-' : 'add-guest-';
+    const name = (document.getElementById(prefix + 'name') || {}).value;
+    const handicap = (document.getElementById(prefix + 'hcp') || {}).value;
+    const teamName = (document.getElementById(prefix + 'team') || {}).value;
     if (!name) return;
     try {
       const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, {
@@ -1056,6 +1192,17 @@ const scorecard = {
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addDemoFoursome() {
+    if (!this.state) return;
+    try {
+      const state = await api.post(`/api/rounds/${this.state.round.id}/demo/foursome`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+      _toast('Kurt, Chase, and Brian are on Team 1 with 18 holes in.', 'success');
     } catch (err) { _toast(err.message, 'error'); }
   },
 

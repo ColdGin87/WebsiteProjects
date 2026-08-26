@@ -2641,6 +2641,50 @@ img {
   margin: 8px 0;
 }
 
+.add-player-card {
+  border: 2px solid var(--accent);
+  margin-bottom: 12px;
+}
+
+.add-player-card .card-title {
+  font-size: 1.1rem;
+}
+
+.eighteen-done {
+  background: #E8F5E9;
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.eighteen-done p {
+  margin: 0;
+  font-size: 1rem;
+  color: #1A1A1A;
+}
+
+.eighteen-done .btn {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.results-table th,
+.results-table td {
+  font-size: 1rem;
+}
+
+.ball-board {
+  font-size: 0.875rem;
+  color: #333;
+  line-height: 1.5;
+}
+
 .is-current-hole {
   box-shadow: inset 0 -3px 0 var(--accent);
 }
@@ -2667,5 +2711,12 @@ img {
   #score-overlay-input {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .add-player-card .add-guest-row .form-input,
+  .add-player-card .add-guest-row .btn,
+  .add-player-card > .btn {
+    flex: 1 1 100%;
+    width: 100%;
   }
 }

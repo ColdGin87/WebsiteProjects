@@ -12,6 +12,7 @@ const {
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
 const { resultsText } = require('../lib/compute/roundState');
+const { DEMO_FOURSOME, demoGrossTotal } = require('../lib/seed/demoFoursome');
 
 describe('playingHandicap', () => {
   it('keeps whole numbers', () => {
@@ -244,6 +245,33 @@ describe('autoBalanceTeams', () => {
     // 1 (4) → T1, 2 (8) → T2, 3 (10) → T2, 4 (12) → T1, 5 (18) → T1, 6 (24) → T2
     assert.deepEqual(teams[0].memberIds, [1, 4, 5]);
     assert.deepEqual(teams[1].memberIds, [2, 3, 6]);
+  });
+});
+
+describe('demo foursome Kurt / Chase / Brian', () => {
+  it('uses locked dots so 75/85/95 become nets 66/73/80', () => {
+    const expected = [
+      { name: 'Kurt', gross: 75, net: 66, strokes: 9 },
+      { name: 'Chase', gross: 85, net: 73, strokes: 12 },
+      { name: 'Brian', gross: 95, net: 80, strokes: 15 },
+    ];
+    DEMO_FOURSOME.forEach((player, i) => {
+      assert.equal(player.holes.length, 18, player.name + ' 18 holes');
+      assert.equal(demoGrossTotal(player), expected[i].gross, player.name + ' gross');
+      player.holes.forEach((g) => {
+        assert.ok(g >= 1 && g <= 15, player.name + ' hole in 1–15');
+      });
+      let strokeSum = 0;
+      let netSum = 0;
+      player.holes.forEach((gross, idx) => {
+        const si = [1, 5, 9, 17, 3, 7, 15, 13, 11, 2, 6, 10, 18, 4, 8, 16, 14, 12][idx];
+        const strokes = strokesOnHole(player.playingHandicap, si);
+        strokeSum += strokes;
+        netSum += netScore(gross, strokes);
+      });
+      assert.equal(strokeSum, expected[i].strokes, player.name + ' strokes');
+      assert.equal(netSum, expected[i].net, player.name + ' net');
+    });
   });
 });
 

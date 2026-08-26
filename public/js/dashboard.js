@@ -38,6 +38,7 @@ const dashboard = {
           <div class="welcome-actions">
             <a class="btn btn-accent btn-sm" href="#create" onclick="event.preventDefault();app.navigate('#create')">New round</a>
             <button class="btn btn-outline-light btn-sm" onclick="dashboard.promptJoin()">Join with code</button>
+            <button class="btn btn-outline-light btn-sm" onclick="dashboard.openDemoFoursome()">Open Kurt / Chase / Brian demo</button>
           </div>
         </div>
         <div class="stats-row">
@@ -66,6 +67,24 @@ const dashboard = {
           <span class="code-chip">${_esc(r.join_code)}</span>
         </div>
       </div>`).join('')}</div>`;
+  },
+
+  async openDemoFoursome() {
+    try {
+      const created = await api.post('/api/rounds', {
+        name: 'Demo foursome — Kurt, Chase, Brian',
+        format: 'team_net',
+        holes: '18',
+        allowance: 100,
+        grossBalls: 1,
+        netBalls: 2,
+        dualCount: false,
+      });
+      const state = await api.post(`/api/rounds/${created.round.id}/demo/foursome`);
+      app.navigate('#round/' + state.round.id);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
   },
 
   async promptJoin() {
