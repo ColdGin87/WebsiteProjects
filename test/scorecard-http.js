@@ -294,6 +294,60 @@ async function runScenario(base) {
   });
   assertEqual(since.status, 304, 'unchanged live since');
 
+  const playerA = live.members.find((m) => m.display_name === 'A');
+  assertEqual(playerA.totalGross, 5, 'player A TOT after hole 1');
+  const team1 = live.teams.find((t) => t.name === 'Team 1') || live.teams[0];
+  assertEqual(team1.total, 16, 'team 1 running total after hole 1');
+
+  const extras = [
+    { name: 'Cole Jan', handicap: 12, playingHandicap: 12, teamName: 'Team 3' },
+    { name: 'Pat', handicap: 9, teamName: 'Team 2' },
+    { name: 'Riley', handicap: 14, teamName: 'Team 2' },
+    { name: 'Jordan', handicap: 6, teamName: 'Team 2' },
+    { name: 'Sam', handicap: 15, teamName: 'Team 2' },
+    { name: 'Alex', handicap: 10, teamName: 'Team 3' },
+    { name: 'Casey', handicap: 7, teamName: 'Team 3' },
+    { name: 'Morgan', handicap: 13, teamName: 'Team 4' },
+    { name: 'Quinn', handicap: 5, teamName: 'Team 4' },
+    { name: 'Drew', handicap: 16, teamName: 'Team 4' },
+  ];
+  state = await api(base, 'POST', `/api/rounds/${roundId}/guests/bulk`, { token, body: { guests: extras } });
+  if (state.members.length < 15) fail('roster should hold about 15 players, got ' + state.members.length);
+  const cole = state.members.find((m) => m.display_name === 'Cole Jan');
+  if (!cole) fail('Cole Jan missing');
+  const team3 = state.teams.find((t) => t.name === 'Team 3');
+  if (!team3) fail('Team 3 was not created from the picker');
+  assertEqual(cole.team_id, team3.id, 'Cole Jan on team 3');
+  const still16 = (state.teams.find((t) => t.name === 'Team 1') || {}).holes || [];
+  const hole1again = still16.find((h) => h.holeNumber === 1);
+  assertEqual(hole1again && hole1again.total, 16, 'team 1 hole 1 stays 16 after roster grow');
+
+  const friend = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Friend Two',
+      email: `scorecard.friend.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: friend.token,
+    body: { code: live.round.join_code || live.round.joinCode },
+  });
+  const friendMember = joined.members.find((m) => m.display_name === 'Friend Two');
+  if (!friendMember) fail('friend did not join the round');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: friend.token,
+    body: { memberId: friendMember.id, holeNumber: 2, gross: 4 },
+  });
+  const organizerSees = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const friendSeen = organizerSees.members.find((m) => m.display_name === 'Friend Two');
+  const friendHole = friendSeen && (friendSeen.holes || []).find((h) => h.holeNumber === 2);
+  assertEqual(friendHole && friendHole.gross, 4, 'organizer sees friend score');
+  const friendSees = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: friend.token });
+  const teamFromFriend = (friendSees.teams || []).find((t) => t.name === 'Team 1');
+  const friendHole1 = (teamFromFriend && teamFromFriend.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(friendHole1 && friendHole1.total, 16, 'friend sees live team 1 hole 1');
+
   console.log('PASS Goldendale four-player hole 1');
   console.log('  course   Goldendale Golf Club 18 holes');
   console.log('  players  A/B/C/D  H 4/11/18/24');

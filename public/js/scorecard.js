@@ -6,6 +6,9 @@ const scorecard = {
   cardMode: null,
   currentHole: 1,
   expandedHole: null,
+  focusCell: null,
+  writeError: '',
+  _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
 
   stopPoll() {
@@ -178,7 +181,205 @@ const scorecard = {
   applyLocalScore(memberId, holeNumber, gross) {
     if (!this.state) return;
     this.writeMemberHole(memberId, holeNumber, gross, null, null);
+    const member = this.state.members.find((m) => m.id === memberId);
+    if (member) this.recomputePlayerTotals(member);
     this.paintScoreCell(memberId, holeNumber);
+    this.paintPlayerTotals(memberId);
+  },
+
+  recomputePlayerTotals(member) {
+    const holes = member.holes || [];
+    const sum = (arr, key) => {
+      const vals = arr.filter((h) => h[key] != null);
+      return vals.length ? vals.reduce((s, h) => s + h[key], 0) : null;
+    };
+    const outHoles = holes.filter((h) => h.holeNumber <= 9);
+    const inHoles = holes.filter((h) => h.holeNumber >= 10);
+    member.outGross = sum(outHoles, 'gross');
+    member.inGross = sum(inHoles, 'gross');
+    member.totalGross = sum(holes, 'gross');
+    member.outNet = sum(outHoles, 'net');
+    member.inNet = sum(inHoles, 'net');
+    member.totalNet = sum(holes, 'net');
+  },
+
+  showWriteError(message) {
+    this.writeError = message || '';
+    const el = document.getElementById('write-error');
+    if (!el) return;
+    el.hidden = !message;
+    el.textContent = message || '';
+  },
+
+  writeErrorBanner() {
+    return `<div class="write-error" id="write-error" ${this.writeError ? '' : 'hidden'}>${_esc(this.writeError)}</div>`;
+  },
+
+  commitScore(memberId, holeNumber, gross) {
+    if (!this.state) return;
+    this.showWriteError('');
+    this.applyLocalScore(memberId, holeNumber, gross);
+    const roundId = this.state.round.id;
+    api.postScore(`/api/rounds/${roundId}/scores`, { memberId, holeNumber, gross })
+      .then((slim) => {
+        if (!slim || slim.ok !== true) {
+          this.showWriteError('Score did not save. Totals on the card may be incomplete.');
+          return;
+        }
+        this.applySlimPost(slim);
+        this.paintPlayerTotals(memberId);
+        this.paintRaceStrip();
+        this.paintEndTotals();
+        this.writeCache(roundId, this.state);
+      })
+      .catch((err) => {
+        if (err.offline) {
+          this.showWriteError('Saved on this phone. Will sync when you are back online.');
+        } else {
+          this.showWriteError('Score did not save: ' + err.message);
+        }
+      });
+  },
+
+  onScoreInput(e) {
+    const input = e.target;
+    const raw = String(input.value || '').replace(/\D/g, '').slice(0, 2);
+    input.value = raw;
+    if (raw === '') return;
+    const n = Number(raw);
+    if (this._oneTimer) {
+      clearTimeout(this._oneTimer);
+      this._oneTimer = null;
+    }
+    if (n >= 2 && n <= 9) {
+      this.commitTyped(input, n, true);
+    } else if (n >= 10 && n <= 15) {
+      this.commitTyped(input, n, true);
+    } else if (n > 15) {
+      this.showWriteError('Gross must be 1–15.');
+      input.value = '';
+    } else if (n === 1) {
+      this._oneTimer = setTimeout(() => {
+        if (input.value === '1') this.commitTyped(input, 1, true);
+      }, 450);
+    }
+  },
+
+  onScoreBlur(e) {
+    const input = e.target;
+    if (this._oneTimer) {
+      clearTimeout(this._oneTimer);
+      this._oneTimer = null;
+    }
+    const raw = String(input.value || '').trim();
+    if (raw === '') {
+      const member = this.state && this.state.members.find((m) => m.id === Number(input.dataset.member));
+      const hs = member && (member.holes || []).find((h) => h.holeNumber === Number(input.dataset.hole));
+      if (hs && hs.gross != null) this.commitTyped(input, null, false);
+      return;
+    }
+    const n = Number(raw);
+    if (Number.isInteger(n) && n >= 1 && n <= 15) {
+      if (!input.dataset.committed || Number(input.dataset.committed) !== n) {
+        this.commitTyped(input, n, false);
+      }
+    } else {
+      this.showWriteError('Gross must be 1–15.');
+    }
+  },
+
+  onScoreKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.onScoreBlur(e);
+      this.focusNextHole(Number(e.target.dataset.member), Number(e.target.dataset.hole));
+    }
+  },
+
+  commitTyped(input, gross, advance) {
+    const memberId = Number(input.dataset.member);
+    const holeNumber = Number(input.dataset.hole);
+    input.dataset.committed = gross == null ? '' : String(gross);
+    this.focusCell = { memberId, holeNumber };
+    this.currentHole = holeNumber;
+    this.commitScore(memberId, holeNumber, gross);
+    this.paintCurrentHoleChrome();
+    if (advance) this.focusNextHole(memberId, holeNumber);
+  },
+
+  focusNextHole(memberId, holeNumber) {
+    const holes = (this.state && this.state.holes) || [];
+    const idx = holes.findIndex((h) => h.hole_number === holeNumber);
+    const next = holes[idx + 1];
+    if (!next) return;
+    this.currentHole = next.hole_number;
+    this.paintCurrentHoleChrome();
+    const el = document.querySelector(`input.score-input[data-member="${memberId}"][data-hole="${next.hole_number}"]`);
+    if (el) {
+      el.focus();
+      el.select();
+    }
+  },
+
+  paintCurrentHoleChrome() {
+    const n = this.currentHole;
+    document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
+      th.classList.toggle('is-current-hole', Number(th.dataset.holeH) === n);
+    });
+    const label = document.getElementById('hole-number');
+    if (label) label.textContent = 'Hole ' + n;
+    const nav = document.querySelector('.hole-nav-label');
+    if (nav) nav.textContent = 'Hole ' + n;
+    const meta = document.getElementById('hole-meta');
+    const hole = this.holeMeta(this.state, n);
+    if (meta) meta.textContent = `Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}`;
+    this.paintTeamHole(n);
+    this.paintBallLine(n);
+    this.paintRaceStrip();
+  },
+
+  bindScoreInputs() {
+    document.querySelectorAll('input.score-input[data-member]').forEach((input) => {
+      if (input.dataset.bound) return;
+      input.dataset.bound = '1';
+      input.addEventListener('input', (e) => this.onScoreInput(e));
+      input.addEventListener('blur', (e) => this.onScoreBlur(e));
+      input.addEventListener('keydown', (e) => this.onScoreKey(e));
+      input.addEventListener('focus', (e) => {
+        this.focusCell = {
+          memberId: Number(e.target.dataset.member),
+          holeNumber: Number(e.target.dataset.hole),
+        };
+        this.currentHole = this.focusCell.holeNumber;
+        this.paintCurrentHoleChrome();
+      });
+      input.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.openEditorFromInput(input);
+      });
+    });
+  },
+
+  openEditorFromInput(input) {
+    const memberId = Number(input.dataset.member);
+    const holeNumber = Number(input.dataset.hole);
+    const member = this.state.members.find((m) => m.id === memberId);
+    const hole = this.holeMeta(this.state, holeNumber);
+    const hs = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    this.openEditor(this.state.round.id, memberId, holeNumber, member.display_name, hs?.gross ?? null, hole.par);
+  },
+
+  openStepperFallback() {
+    if (!this.state) return;
+    const focus = this.focusCell || {
+      memberId: this.state.members[0] && this.state.members[0].id,
+      holeNumber: this.currentHole,
+    };
+    const member = this.state.members.find((m) => m.id === focus.memberId) || this.state.members[0];
+    if (!member) return;
+    const hole = this.holeMeta(this.state, focus.holeNumber || this.currentHole);
+    const hs = (member.holes || []).find((h) => h.holeNumber === (focus.holeNumber || this.currentHole));
+    this.openEditor(this.state.round.id, member.id, focus.holeNumber || this.currentHole, member.display_name, hs?.gross ?? null, hole.par);
   },
 
   applySlimPost(slim) {
@@ -196,6 +397,8 @@ const scorecard = {
     this.paintTeamHole(slim.holeNumber);
     this.paintRaceStrip();
     this.paintBallLine(slim.holeNumber);
+    this.paintEndTotals();
+    this.paintPlayerTotals();
   },
 
   isOrganizer(state) {
@@ -217,6 +420,7 @@ const scorecard = {
     if (this.isHoleView()) this.drawHoleView(state);
     else this.drawFullCard(state);
     this.bindOverlay();
+    this.bindScoreInputs();
     api.updateBadge();
   },
 
@@ -289,65 +493,61 @@ const scorecard = {
     const formatLabel = r.format === 'match_play' ? 'Match play' : `${r.gross_balls} gross + ${r.net_balls} net`;
     const balls = this.ballLineText(state, holeNumber);
     const race = this.raceStripText(state);
+    const outHoles = holes.filter((h) => h.hole_number <= 9);
+    const inHoles = holes.filter((h) => h.hole_number >= 10);
 
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode('full')">Full card</button>`)}
+      ${this.writeErrorBanner()}
       <div class="card hole-view" id="hole-view">
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel}</p>
         <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
         <div class="race-strip" id="race-strip">${_esc(race)}</div>
-        <p class="hole-meta">Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}</p>
-        <div class="hole-players" id="hole-players">
-          ${this.holePlayerRows(state, holeNumber, hole.par)}
-        </div>
+        <p class="hole-meta" id="hole-meta">Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}</p>
         ${r.format === 'team_net' ? `
           <div class="hole-teams" id="hole-teams">${this.holeTeamTotals(state, holeNumber)}</div>
           <div class="ball-line" id="ball-line">${_esc(balls)}</div>
         ` : ''}
+        <div class="scorecard-container high-contrast" id="scorecard-scroll">
+          ${this.scoreTable(state, holes, outHoles, inHoles)}
+        </div>
+        <div class="end-totals" id="end-totals">${this.endTotalsHtml(state)}</div>
       </div>
       <div class="hole-nav thumb-zone" id="hole-nav">
         <button type="button" class="btn btn-secondary" id="hole-prev" ${holes[0] && holeNumber <= holes[0].hole_number ? 'disabled' : ''}>Prev</button>
         <span class="hole-nav-label">Hole ${holeNumber}</span>
+        <button type="button" class="btn btn-secondary" id="hole-stepper">Stepper</button>
         <button type="button" class="btn btn-secondary" id="hole-next" ${holes[holes.length - 1] && holeNumber >= holes[holes.length - 1].hole_number ? 'disabled' : ''}>Next</button>
       </div>
     `;
     const prev = document.getElementById('hole-prev');
     const next = document.getElementById('hole-next');
+    const stepper = document.getElementById('hole-stepper');
     if (prev) prev.onclick = () => this.shiftHole(-1);
     if (next) next.onclick = () => this.shiftHole(1);
-  },
-
-  holePlayerRows(state, holeNumber, par) {
-    return (state.members || []).map((m) => {
-      const hs = (m.holes || []).find((x) => x.holeNumber === holeNumber);
-      return this.holePlayerRowHtml(m, hs, holeNumber, par);
-    }).join('');
-  },
-
-  holePlayerRowHtml(member, hs, holeNumber, par) {
-    const cls = this.vsParClass(hs?.gross, par);
-    const dots = Math.max(0, hs?.strokes || 0);
-    const plus = (hs?.strokes || 0) < 0;
-    return `<button type="button" class="hole-player-row" data-member="${member.id}" data-hole="${holeNumber}"
-        onclick="scorecard.openEditor(${this.state.round.id},${member.id},${holeNumber},'${_esc(member.display_name)}',${hs?.gross ?? 'null'},${par})">
-        <span class="hole-player-name">${_esc(member.display_name)}</span>
-        <span class="hole-player-score sc-cell-editable ${cls} ${dots ? 'dots-' + Math.min(dots, 3) : ''} ${plus ? 'dots-plus' : ''}"
-          data-score-cell="${member.id}:${holeNumber}">
-          <span class="gross">${hs?.gross ?? ''}</span>
-          ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
-        </span>
-      </button>`;
+    if (stepper) stepper.onclick = () => this.openStepperFallback();
   },
 
   holeTeamTotals(state, holeNumber) {
     return (state.teams || []).map((team) => {
       const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
       return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
-        <span>${_esc(team.name)}</span>
+        <span>${_esc(team.name)} hole</span>
         <strong data-team-hole="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
+        <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
       </div>`;
     }).join('');
+  },
+
+  endTotalsHtml(state) {
+    const teams = (state.teams || []).map((t) => `${t.name} ${t.total ?? '—'}`).join(' · ');
+    return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
+  },
+
+  paintEndTotals() {
+    const el = document.getElementById('end-totals');
+    if (el && this.state) el.textContent = this.endTotalsHtml(this.state);
   },
 
   shiftHole(delta) {
@@ -372,6 +572,7 @@ const scorecard = {
 
     container.innerHTML = `
       ${this.toolbar(state, holeToggle)}
+      ${this.writeErrorBanner()}
       <div class="card">
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
@@ -379,32 +580,38 @@ const scorecard = {
       <div class="card">
         <div class="card-header"><span class="card-title">Scorecard</span></div>
         <div class="scorecard-container high-contrast" id="scorecard-scroll">
-          <table class="scorecard team-scorecard" id="full-scorecard">
-            <thead>
-              <tr>
-                <th>Hole</th>
-                ${holes.map((h) => `<th class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`).join('')}
-                ${outHoles.length ? '<th>OUT</th>' : ''}
-                ${inHoles.length ? '<th>IN</th>' : ''}
-                <th>TOT</th>
-              </tr>
-              <tr class="par-row">
-                <th class="row-label">Par / SI</th>
-                ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
-                ${outHoles.length ? `<th>${outHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
-                ${inHoles.length ? `<th>${inHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
-                <th>${holes.reduce((s, h) => s + h.par, 0)}</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${this.playerRows(state, holes, outHoles, inHoles)}
-              ${r.format === 'team_net' ? this.teamRows(state, holes, outHoles, inHoles) : ''}
-            </tbody>
-          </table>
+          ${this.scoreTable(state, holes, outHoles, inHoles)}
         </div>
+        <div class="end-totals" id="end-totals">${this.endTotalsHtml(state)}</div>
         <div class="ball-reveal" id="ball-reveal">${this.expandedHole ? 'Hole ' + this.expandedHole + ' · ' + _esc(this.ballLineText(state, this.expandedHole)) : ''}</div>
       </div>
     `;
+  },
+
+  scoreTable(state, holes, outHoles, inHoles) {
+    return `
+      <table class="scorecard team-scorecard" id="full-scorecard">
+        <thead>
+          <tr>
+            <th>Hole</th>
+            ${holes.map((h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`).join('')}
+            ${outHoles.length ? '<th>OUT</th>' : ''}
+            ${inHoles.length ? '<th>IN</th>' : ''}
+            <th>TOT</th>
+          </tr>
+          <tr class="par-row">
+            <th class="row-label">Par / SI</th>
+            ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
+            ${outHoles.length ? `<th>${outHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
+            ${inHoles.length ? `<th>${inHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
+            <th>${holes.reduce((s, h) => s + h.par, 0)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${this.playerRows(state, holes, outHoles, inHoles)}
+          ${state.round.format === 'team_net' ? this.teamRows(state, holes, outHoles, inHoles) : ''}
+        </tbody>
+      </table>`;
   },
 
   drawSettings(state) {
@@ -435,13 +642,31 @@ const scorecard = {
     api.updateBadge();
   },
 
+  teamChoices(state) {
+    const names = new Set((state.teams || []).map((t) => t.name));
+    for (let i = 1; i <= 5; i++) names.add('Team ' + i);
+    return [...names].sort((a, b) => {
+      const na = Number((a.match(/(\d+)/) || [])[1] || 99);
+      const nb = Number((b.match(/(\d+)/) || [])[1] || 99);
+      return na - nb || a.localeCompare(b);
+    });
+  },
+
+  teamSelectHtml(state, member, extraClass) {
+    const current = (state.teams || []).find((t) => t.id === member.team_id);
+    return `<select class="form-input team-pick ${extraClass || ''}" data-member-team="${member.id}"
+      onchange="scorecard.assignTeam(${member.id}, this.value)">
+      <option value="">Individual</option>
+      ${this.teamChoices(state).map((n) => `<option value="${_esc(n)}" ${current && current.name === n ? 'selected' : ''}>${_esc(n)}</option>`).join('')}
+    </select>`;
+  },
+
   settingsBar(state) {
     const r = state.round;
     return `
       <div class="admin-bar" style="display:flex">
         <span class="admin-bar-label">Organizer</span>
-        <button class="btn btn-sm btn-accent" onclick="scorecard.addGuest()">Add guest</button>
-        <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance teams</button>
+        <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance (helper)</button>
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
         <label class="tiny-label">Allowance
@@ -453,28 +678,73 @@ const scorecard = {
       </div>
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
-        <div class="player-list">${state.members.map((m) => `
-          <span class="player-pill">${_esc(m.display_name)} · H ${m.playing_handicap ?? m.handicap ?? '—'} ${m.team_id ? '' : '· individual'} ${m.is_guest ? '· guest' : ''}
-            ${this.isOrganizer(state) ? `<button class="linkish" onclick="scorecard.editMember(${m.id})">edit</button>` : ''}
-          </span>`).join('')}</div>
+        <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3…). Four-man teams, 1 gross + 2 net. Auto-balance is only a helper.</p>
+        <form class="add-guest-row" id="add-guest-form" onsubmit="event.preventDefault();scorecard.addGuestFromForm()">
+          <input class="form-input" id="add-guest-name" placeholder="Name" required>
+          <input class="form-input" id="add-guest-hcp" placeholder="HCP">
+          <select class="form-input team-pick" id="add-guest-team">
+            <option value="">Individual</option>
+            ${this.teamChoices(state).map((n) => `<option value="${_esc(n)}">${_esc(n)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm btn-accent" type="submit">Add player</button>
+        </form>
+        <div class="roster-table-wrap">
+          <table class="roster-table">
+            <thead><tr><th>Player</th><th>HCP</th><th>Team</th><th></th></tr></thead>
+            <tbody>
+              ${state.members.map((m) => `
+                <tr>
+                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
+                  <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
+                  <td>${this.teamSelectHtml(state, m)}</td>
+                  <td><button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <label class="tiny-label" for="bulk-guests">Add several (one per line: Name, handicap, team)</label>
+        <textarea class="form-input" id="bulk-guests" rows="4" placeholder="Cole Jan, 12, 3"></textarea>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.addBulkGuests()">Add names</button>
       </div>`;
   },
 
+  groupedMembers(state) {
+    const used = new Set();
+    const groups = [];
+    const teams = [...(state.teams || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
+    for (const team of teams) {
+      const members = (state.members || []).filter((m) => m.team_id === team.id);
+      members.forEach((m) => used.add(m.id));
+      groups.push({ team, members });
+    }
+    const rest = (state.members || []).filter((m) => !used.has(m.id));
+    if (rest.length) groups.push({ team: null, members: rest });
+    return groups;
+  },
+
   playerRows(state, holes, outHoles, inHoles) {
-    return state.members.map((m) => {
-      const cells = holes.map((h) => {
-        const hs = m.holes.find((x) => x.holeNumber === h.hole_number);
-        return this.scoreCellHtml(state, m, h, hs);
-      }).join('');
-      return `
-        <tr class="row-player" data-member-row="${m.id}">
-          <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
-          ${cells}
-          ${outHoles.length ? `<td class="sc-total" data-out="${m.id}">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
-          ${inHoles.length ? `<td class="sc-total" data-in="${m.id}">${m.inGross ?? ''} <span class="net-mini">${m.inNet ?? ''}</span></td>` : ''}
-          <td class="sc-total" data-tot="${m.id}"><strong>${m.totalGross ?? ''}</strong> <span class="net-mini">${m.totalNet ?? ''}</span></td>
-        </tr>`;
+    const extra = (outHoles.length ? 1 : 0) + (inHoles.length ? 1 : 0) + 1;
+    return this.groupedMembers(state).map((group) => {
+      const label = group.team ? group.team.name : 'Individual';
+      const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
+      const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, outHoles, inHoles)).join('');
+      return head + rows;
     }).join('');
+  },
+
+  onePlayerRow(state, m, holes, outHoles, inHoles) {
+    const cells = holes.map((h) => {
+      const hs = (m.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return this.scoreCellHtml(state, m, h, hs);
+    }).join('');
+    return `
+      <tr class="row-player" data-member-row="${m.id}">
+        <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
+        ${cells}
+        ${outHoles.length ? `<td class="sc-total" data-out="${m.id}">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
+        ${inHoles.length ? `<td class="sc-total" data-in="${m.id}">${m.inGross ?? ''} <span class="net-mini">${m.inNet ?? ''}</span></td>` : ''}
+        <td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${m.totalGross ?? ''}</strong> <span class="net-mini">${m.totalNet ?? ''}</span></td>
+      </tr>`;
   },
 
   scoreCellHtml(state, member, hole, hs) {
@@ -482,9 +752,11 @@ const scorecard = {
     const dots = Math.max(0, hs?.strokes || 0);
     const plus = (hs?.strokes || 0) < 0;
     return `<td class="sc-cell-editable ${cls} ${dots ? 'dots-' + Math.min(dots, 3) : ''} ${plus ? 'dots-plus' : ''}"
-      data-score-cell="${member.id}:${hole.hole_number}"
-      onclick="scorecard.openEditor(${state.round.id},${member.id},${hole.hole_number},'${_esc(member.display_name)}',${hs?.gross ?? 'null'},${hole.par})">
-      <span class="gross">${hs?.gross ?? ''}</span>
+      data-score-cell="${member.id}:${hole.hole_number}">
+      <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
+        data-member="${member.id}" data-hole="${hole.hole_number}"
+        data-committed="${hs?.gross ?? ''}"
+        value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
       ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
     </td>`;
   },
@@ -581,15 +853,40 @@ const scorecard = {
     const hole = this.holeMeta(this.state, holeNumber);
     const cells = document.querySelectorAll('[data-score-cell="' + memberId + ':' + holeNumber + '"]');
     cells.forEach((cell) => {
-      cell.className = this.cellClassList(hs, hole.par) + (cell.classList.contains('hole-player-score') ? ' hole-player-score' : '');
-      cell.innerHTML = `<span class="gross">${hs?.gross ?? ''}</span>${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}`;
+      const input = cell.querySelector('input.score-input');
+      cell.className = this.cellClassList(hs, hole.par);
+      if (input) {
+        if (document.activeElement !== input) {
+          input.value = hs?.gross ?? '';
+          input.dataset.committed = hs?.gross ?? '';
+        }
+        let net = cell.querySelector('.net-mini');
+        if (hs?.gross != null) {
+          if (!net) {
+            net = document.createElement('span');
+            net.className = 'net-mini';
+            cell.appendChild(net);
+          }
+          net.textContent = hs.net;
+        } else if (net) {
+          net.remove();
+        }
+      }
     });
-    const row = document.querySelector('.hole-player-row[data-member="' + memberId + '"][data-hole="' + holeNumber + '"]');
-    if (row) {
-      row.setAttribute(
-        'onclick',
-        `scorecard.openEditor(${this.state.round.id},${memberId},${holeNumber},'${_esc(member.display_name)}',${hs?.gross ?? 'null'},${hole.par})`
-      );
+  },
+
+  paintPlayerTotals(memberId) {
+    if (!this.state) return;
+    const members = memberId
+      ? this.state.members.filter((m) => m.id === memberId)
+      : this.state.members;
+    for (const member of members) {
+      const out = document.querySelector('[data-out="' + member.id + '"]');
+      if (out) out.innerHTML = `${member.outGross ?? ''} <span class="net-mini">${member.outNet ?? ''}</span>`;
+      const inn = document.querySelector('[data-in="' + member.id + '"]');
+      if (inn) inn.innerHTML = `${member.inGross ?? ''} <span class="net-mini">${member.inNet ?? ''}</span>`;
+      const tot = document.querySelector('[data-tot="' + member.id + '"]');
+      if (tot) tot.innerHTML = `<strong>${member.totalGross ?? ''}</strong> <span class="net-mini">${member.totalNet ?? ''}</span>`;
     }
   },
 
@@ -630,50 +927,27 @@ const scorecard = {
   patchUI() {
     if (!this.state) return;
     if (this.screen !== 'play') return;
-    if (this.isHoleView()) {
-      if (!document.getElementById('hole-view')) {
-        this.draw(this.state);
-        return;
-      }
-      const holeNumber = this.currentHole;
-      const hole = this.holeMeta(this.state, holeNumber);
-      const players = document.getElementById('hole-players');
-      if (players && players.children.length !== (this.state.members || []).length) {
-        this.draw(this.state);
-        return;
-      }
-      for (const member of this.state.members || []) {
-        this.paintScoreCell(member.id, holeNumber);
-        const row = document.querySelector('.hole-player-row[data-member="' + member.id + '"]');
-        if (row) {
-          const name = row.querySelector('.hole-player-name');
-          if (name) name.textContent = member.display_name;
-        }
-      }
-      this.paintTeamHole(holeNumber);
-      this.paintRaceStrip();
-      this.paintBallLine(holeNumber);
-      return;
-    }
     const table = document.getElementById('full-scorecard');
     if (!table) {
       this.draw(this.state);
       return;
     }
+    const rows = table.querySelectorAll('tr.row-player');
+    if (rows.length !== (this.state.members || []).length) {
+      this.draw(this.state);
+      return;
+    }
     for (const member of this.state.members || []) {
       for (const hs of member.holes || []) this.paintScoreCell(member.id, hs.holeNumber);
-      const out = document.querySelector('[data-out="' + member.id + '"]');
-      if (out) out.innerHTML = `${member.outGross ?? ''} <span class="net-mini">${member.outNet ?? ''}</span>`;
-      const inn = document.querySelector('[data-in="' + member.id + '"]');
-      if (inn) inn.innerHTML = `${member.inGross ?? ''} <span class="net-mini">${member.inNet ?? ''}</span>`;
-      const tot = document.querySelector('[data-tot="' + member.id + '"]');
-      if (tot) tot.innerHTML = `<strong>${member.totalGross ?? ''}</strong> <span class="net-mini">${member.totalNet ?? ''}</span>`;
+      this.paintPlayerTotals(member.id);
     }
     for (const team of this.state.teams || []) {
       for (const hole of team.holes || []) this.paintTeamHole(hole.holeNumber);
     }
     this.paintRaceStrip();
-    this.paintBallLine(this.expandedHole);
+    this.paintBallLine(this.currentHole);
+    this.paintEndTotals();
+    this.paintCurrentHoleChrome();
   },
 
   setThumbNavHidden(hidden) {
@@ -722,18 +996,11 @@ const scorecard = {
   saveOverlay(clear) {
     if (!this.overlay) return;
     const input = document.getElementById('score-overlay-input');
-    const { roundId, memberId, holeNumber } = this.overlay;
+    const { memberId, holeNumber } = this.overlay;
     const gross = clear ? null : Number(input.value);
     this.closeEditor();
-    this.applyLocalScore(memberId, holeNumber, gross);
-    api.postScore(`/api/rounds/${roundId}/scores`, { memberId, holeNumber, gross })
-      .then((slim) => {
-        this.applySlimPost(slim);
-        if (this.state) this.writeCache(roundId, this.state);
-      })
-      .catch((err) => {
-        _toast(err.message, err.offline ? '' : 'error');
-      });
+    this.commitScore(memberId, holeNumber, gross);
+    this.focusNextHole(memberId, holeNumber);
   },
 
   async addGuest() {
@@ -743,6 +1010,7 @@ const scorecard = {
       fields: [
         { name: 'name', label: 'Guest name', required: true, placeholder: 'Name' },
         { name: 'handicap', label: 'Handicap (optional)', placeholder: '12.4 or +2' },
+        { name: 'teamName', label: 'Team (1, 2, 3… or blank)', placeholder: '3' },
       ],
     });
     if (!values) return;
@@ -750,6 +1018,51 @@ const scorecard = {
       const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, {
         name: values.name,
         handicap: values.handicap,
+        teamName: values.teamName || null,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addGuestFromForm() {
+    const name = (document.getElementById('add-guest-name') || {}).value;
+    const handicap = (document.getElementById('add-guest-hcp') || {}).value;
+    const teamName = (document.getElementById('add-guest-team') || {}).value;
+    if (!name) return;
+    try {
+      const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, {
+        name: name.trim(),
+        handicap,
+        teamName: teamName || null,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addBulkGuests() {
+    const raw = (document.getElementById('bulk-guests') || {}).value || '';
+    const guests = raw.split(/\n/).map((line) => {
+      const parts = line.split(',').map((s) => s.trim()).filter((s, i) => s || i === 0);
+      if (!parts[0]) return null;
+      return { name: parts[0], handicap: parts[1] || null, teamName: parts[2] || null };
+    }).filter(Boolean);
+    if (!guests.length) return;
+    try {
+      const state = await api.post(`/api/rounds/${this.state.round.id}/guests/bulk`, { guests });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async assignTeam(memberId, teamName) {
+    try {
+      const state = await api.put(`/api/rounds/${this.state.round.id}/members/${memberId}`, {
+        teamName: teamName || '',
       });
       this.state = state;
       this.writeCache(state.round.id, state);
