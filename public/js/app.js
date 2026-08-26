@@ -1,3 +1,25 @@
+function svcApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = (typeof window !== 'undefined' && typeof window.apiClient === 'function')
+    ? window.apiClient()
+    : ((typeof window !== 'undefined' && window.api) || (typeof api === 'object' ? api : {}) || {});
+  if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+  if (typeof window !== 'undefined' && typeof window.callApi === 'function') {
+    return window.callApi.apply(null, arguments);
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = localStorage.getItem('goldendale_scorecard_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch { /* ignore */ }
+  const init = { method: 'POST', headers, body: JSON.stringify(args[1] || {}) };
+  return fetch(args[0], init).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
 const app = {
   init() {
     auth.init();
@@ -102,7 +124,7 @@ const app = {
       return;
     }
     try {
-      const state = await api.post('/api/rounds/join', { code });
+      const state = await svcApi('post', '/api/rounds/join', { code });
       this.navigate('#round/' + state.round.id);
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><h3>Could not join</h3><p>${_esc(err.message)}</p></div>`;

@@ -1,3 +1,32 @@
+function svcApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = (typeof window !== 'undefined' && typeof window.apiClient === 'function')
+    ? window.apiClient()
+    : ((typeof window !== 'undefined' && window.api) || (typeof api === 'object' ? api : {}) || {});
+  if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+  if (typeof window !== 'undefined' && typeof window.callApi === 'function') {
+    return window.callApi.apply(null, arguments);
+  }
+  if (method === 'updateBadge' || method === 'flushInBackground') return;
+  if (method === 'getToken') {
+    try { return localStorage.getItem('goldendale_scorecard_token'); } catch { return null; }
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = localStorage.getItem('goldendale_scorecard_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch { /* ignore */ }
+  const http = method === 'put' ? 'PUT' : (method === 'get' || method === 'getLive') ? 'GET' : 'POST';
+  const init = { method: http, headers };
+  if (http !== 'GET') init.body = JSON.stringify(args[1] || {});
+  return fetch(args[0], init).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
 const scorecard = {
   state: null,
   pollTimer: null,
@@ -12,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826e',
+  ASSET_V: '20260826f',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -67,7 +96,7 @@ const scorecard = {
       container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading scorecard...</div>';
     }
     try {
-      const state = await api.get('/api/rounds/' + id);
+      const state = await svcApi('get', '/api/rounds/' + id);
       this.state = state;
       this.writeCache(id, state);
       this.currentHole = this.pickCurrentHole(state);
@@ -95,17 +124,17 @@ const scorecard = {
   },
 
   refresh(id) {
-    api.flushInBackground();
+    svcApi('flushInBackground');
     this.refreshLive(id);
   },
 
   async refreshLive(id) {
     try {
-      const patch = await api.getLive('/api/rounds/' + id + '/live', this.state && this.state.updatedAt);
+      const patch = await svcApi('getLive', '/api/rounds/' + id + '/live', this.state && this.state.updatedAt);
       if (!patch || patch.notModified) return;
       if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
       if (this.rosterChanged(patch)) {
-        const full = await api.get('/api/rounds/' + id);
+        const full = await svcApi('get', '/api/rounds/' + id);
         this.state = full;
         this.writeCache(id, full);
         this.draw(full);
@@ -323,7 +352,7 @@ const scorecard = {
     this.showWriteError('');
     this.applyLocalScore(memberId, holeNumber, gross);
     const roundId = this.state.round.id;
-    api.postScore(`/api/rounds/${roundId}/scores`, { memberId, holeNumber, gross })
+    svcApi('postScore', `/api/rounds/${roundId}/scores`, { memberId, holeNumber, gross })
       .then((slim) => {
         if (!slim || slim.ok !== true) {
           this.showWriteError('Score did not save. Totals on the card may be incomplete.');
@@ -546,7 +575,7 @@ const scorecard = {
     else this.drawFullCard(state);
     this.bindOverlay();
     this.bindScoreInputs();
-    api.updateBadge();
+    svcApi('updateBadge');
   },
 
   toolbar(state, extra) {
@@ -848,7 +877,7 @@ const scorecard = {
       </div>
       ${organizer ? this.settingsBar(state) : '<div class="card"><p>Only the organizer can change teams and guests.</p></div>'}
     `;
-    api.updateBadge();
+    svcApi('updateBadge');
   },
 
   drawResults(state) {
@@ -906,7 +935,7 @@ const scorecard = {
         </div>
       </div>
     `;
-    api.updateBadge();
+    svcApi('updateBadge');
   },
 
   teamChoices(state) {
@@ -1376,7 +1405,7 @@ const scorecard = {
     });
     if (!values) return;
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests`, {
         name: values.name,
         handicap: values.handicap,
         teamName: values.teamName || null,
@@ -1394,7 +1423,7 @@ const scorecard = {
     const teamName = (document.getElementById(prefix + 'team') || {}).value;
     if (!name) return;
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/guests`, {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests`, {
         name: name.trim(),
         handicap,
         teamName: teamName || null,
@@ -1415,7 +1444,7 @@ const scorecard = {
     }).filter(Boolean);
     if (!guests.length) return;
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/guests/bulk`, { guests });
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests/bulk`, { guests });
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
@@ -1425,7 +1454,7 @@ const scorecard = {
   async addDemoFoursome() {
     if (!this.state) return;
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/demo/foursome`);
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/demo/foursome`);
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
@@ -1435,7 +1464,7 @@ const scorecard = {
 
   async assignTeam(memberId, teamName) {
     try {
-      const state = await api.put(`/api/rounds/${this.state.round.id}/members/${memberId}`, {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
         teamName: teamName || '',
       });
       this.state = state;
@@ -1452,7 +1481,7 @@ const scorecard = {
     });
     if (!values) return;
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/teams/balance`, {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams/balance`, {
         teamCount: Number(values.teamCount),
       });
       this.state = state;
@@ -1463,7 +1492,7 @@ const scorecard = {
 
   async generateMatches() {
     try {
-      const state = await api.post(`/api/rounds/${this.state.round.id}/matches/generate`);
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/matches/generate`);
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
@@ -1472,7 +1501,7 @@ const scorecard = {
 
   async setStatus(status) {
     try {
-      const state = await api.put(`/api/rounds/${this.state.round.id}`, { status });
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}`, { status });
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
@@ -1481,7 +1510,7 @@ const scorecard = {
 
   async updateSettings(body) {
     try {
-      const state = await api.put(`/api/rounds/${this.state.round.id}`, body);
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}`, body);
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
@@ -1502,7 +1531,7 @@ const scorecard = {
     });
     if (!values) return;
     try {
-      const state = await api.put(`/api/rounds/${this.state.round.id}/members/${memberId}`, {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
         playingHandicap: values.playingHandicap,
       });
       this.state = state;
@@ -1524,14 +1553,14 @@ const scorecard = {
 
   async copyText() {
     try {
-      const text = await api.get(`/api/rounds/${this.state.round.id}/results.txt`);
+      const text = await svcApi('get', `/api/rounds/${this.state.round.id}/results.txt`);
       this.copy(typeof text === 'string' ? text : JSON.stringify(text));
     } catch (err) { _toast(err.message, 'error'); }
   },
 
   async downloadCsv(e) {
     e.preventDefault();
-    const token = api.getToken();
+    const token = svcApi('getToken');
     const res = await fetch(`/api/rounds/${this.state.round.id}/results.csv`, {
       headers: token ? { Authorization: 'Bearer ' + token } : {},
     });

@@ -1,3 +1,32 @@
+function svcApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = (typeof window !== 'undefined' && typeof window.apiClient === 'function')
+    ? window.apiClient()
+    : ((typeof window !== 'undefined' && window.api) || (typeof api === 'object' ? api : {}) || {});
+  if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+  if (typeof window !== 'undefined' && typeof window.callApi === 'function') {
+    return window.callApi.apply(null, arguments);
+  }
+  if (method === 'updateBadge' || method === 'flushInBackground') return;
+  if (method === 'getToken') {
+    try { return localStorage.getItem('goldendale_scorecard_token'); } catch { return null; }
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = localStorage.getItem('goldendale_scorecard_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch { /* ignore */ }
+  const http = method === 'put' ? 'PUT' : (method === 'get' || method === 'getLive') ? 'GET' : 'POST';
+  const init = { method: http, headers };
+  if (http !== 'GET') init.body = JSON.stringify(args[1] || {});
+  return fetch(args[0], init).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
 const dashboard = {
   async render() {
     const container = document.getElementById('app');
@@ -27,7 +56,7 @@ const dashboard = {
     }
 
     try {
-      const rounds = await api.get('/api/rounds');
+      const rounds = await svcApi('get', '/api/rounds');
       const live = rounds.filter((r) => r.status === 'live' || r.status === 'setup');
       const done = rounds.filter((r) => r.status === 'completed');
 
@@ -71,7 +100,7 @@ const dashboard = {
 
   async openDemoFoursome() {
     try {
-      const created = await api.post('/api/rounds', {
+      const created = await svcApi('post', '/api/rounds', {
         name: 'Demo foursome — Kurt, Chase, Brian',
         format: 'team_net',
         holes: '18',
@@ -80,7 +109,7 @@ const dashboard = {
         netBalls: 2,
         dualCount: false,
       });
-      const state = await api.post(`/api/rounds/${created.round.id}/demo/foursome`);
+      const state = await svcApi('post', `/api/rounds/${created.round.id}/demo/foursome`);
       app.navigate('#round/' + state.round.id);
     } catch (err) {
       _toast(err.message, 'error');
@@ -103,7 +132,7 @@ const dashboard = {
     });
     if (!values) return;
     try {
-      const state = await api.post('/api/rounds/join', { code: values.code });
+      const state = await svcApi('post', '/api/rounds/join', { code: values.code });
       app.navigate('#round/' + state.round.id);
     } catch (err) {
       _toast(err.message, 'error');
@@ -118,11 +147,11 @@ const dashboard = {
     }
     container.innerHTML = '<div class="loading">Loading courses...</div>';
     try {
-      const courses = await api.get('/api/courses');
+      const courses = await svcApi('get', '/api/courses');
       const goldendale = courses.find((c) => c.name === 'Goldendale Golf Club') || courses[0];
       let tees = [];
       if (goldendale) {
-        const detail = await api.get('/api/courses/' + goldendale.id);
+        const detail = await svcApi('get', '/api/courses/' + goldendale.id);
         tees = detail.tees || [];
       }
       container.innerHTML = `
@@ -179,7 +208,7 @@ const dashboard = {
         </form>`;
 
       document.getElementById('create-course').addEventListener('change', async (e) => {
-        const detail = await api.get('/api/courses/' + e.target.value);
+        const detail = await svcApi('get', '/api/courses/' + e.target.value);
         const teeSel = document.getElementById('create-tee');
         teeSel.innerHTML = (detail.tees || []).map((t) =>
           `<option value="${t.id}">${_esc(t.name)} · ${t.rating}/${t.slope}${t.yards_estimated ? ' (est. yards)' : ''}</option>`
@@ -190,7 +219,7 @@ const dashboard = {
         e.preventDefault();
         const fd = new FormData(e.target);
         try {
-          const state = await api.post('/api/rounds', {
+          const state = await svcApi('post', '/api/rounds', {
             name: fd.get('name'),
             courseId: Number(fd.get('courseId')),
             teeId: fd.get('teeId') ? Number(fd.get('teeId')) : null,
@@ -231,7 +260,7 @@ const dashboard = {
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
-        const updated = await api.put('/api/auth/me', {
+        const updated = await svcApi('put', '/api/auth/me', {
           name: fd.get('name'),
           handicap: fd.get('handicap') || null,
           homeTee: fd.get('homeTee') || null,
@@ -252,7 +281,7 @@ const dashboard = {
     }
     container.innerHTML = '<div class="loading">Loading courses...</div>';
     try {
-      const courses = await api.get('/api/courses');
+      const courses = await svcApi('get', '/api/courses');
       container.innerHTML = `
         <h2 class="section-title">Courses</h2>
         <p class="card-subtitle">Goldendale is seeded. Red/Gold hole yards are labeled estimated when official split yardage is missing.</p>
@@ -274,7 +303,7 @@ const dashboard = {
         e.preventDefault();
         const fd = new FormData(e.target);
         try {
-          await api.post('/api/courses', { name: fd.get('name'), num_holes: Number(fd.get('num_holes')), par: Number(fd.get('par')) });
+          await svcApi('post', '/api/courses', { name: fd.get('name'), num_holes: Number(fd.get('num_holes')), par: Number(fd.get('par')) });
           dashboard.renderCourses();
         } catch (err) { _toast(err.message, 'error'); }
       });
@@ -285,7 +314,7 @@ const dashboard = {
 
   async renderCourseEdit(id) {
     const container = document.getElementById('app');
-    const course = await api.get('/api/courses/' + id);
+    const course = await svcApi('get', '/api/courses/' + id);
     container.innerHTML = `
       <p><a href="#courses" onclick="event.preventDefault();app.navigate('#courses')">&larr; Courses</a></p>
       <h2 class="section-title">${_esc(course.name)}</h2>
@@ -322,7 +351,7 @@ const dashboard = {
     document.getElementById('edit-course-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      await api.put('/api/courses/' + id, {
+      await svcApi('put', '/api/courses/' + id, {
         name: fd.get('name'), address: fd.get('address'), city: fd.get('city'), state: fd.get('state'), notes: fd.get('notes'),
       });
       _toast('Course saved', 'success');
@@ -336,7 +365,7 @@ const dashboard = {
         if (input.dataset.f === 'si') holes[n].stroke_index = Number(input.value);
         if (input.dataset.f === 'yards') holes[n].yards = input.value === '' ? null : Number(input.value);
       });
-      await api.put('/api/courses/' + id, { holes: Object.values(holes) });
+      await svcApi('put', '/api/courses/' + id, { holes: Object.values(holes) });
       _toast('Holes saved', 'success');
     });
   },

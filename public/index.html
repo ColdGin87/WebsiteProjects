@@ -4,7 +4,92 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Goldendale Scorecard</title>
-  <link rel="stylesheet" href="css/styles.css?v=20260826e">
+  <link rel="stylesheet" href="css/styles.css?v=20260826f">
+  <script>
+  (function () {
+    var KEY = 'goldendale_scorecard_token';
+    function token() {
+      try { return localStorage.getItem(KEY); } catch (e) { return null; }
+    }
+    function headers() {
+      var h = { 'Content-Type': 'application/json' };
+      var t = token();
+      if (t) h.Authorization = 'Bearer ' + t;
+      return h;
+    }
+    function parse(res) {
+      if (res.status === 304) return { notModified: true };
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+        return data;
+      });
+    }
+    function rawGet(path) {
+      return fetch(path, { method: 'GET', headers: headers() }).then(parse);
+    }
+    function rawPost(path, body) {
+      return fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(body || {}) }).then(parse);
+    }
+    function rawPut(path, body) {
+      return fetch(path, { method: 'PUT', headers: headers(), body: JSON.stringify(body || {}) }).then(parse);
+    }
+    function rawDel(path) {
+      return fetch(path, { method: 'DELETE', headers: headers() }).then(parse);
+    }
+    function rawGetLive(path, updatedAt) {
+      var url = path;
+      var h = headers();
+      if (updatedAt) {
+        h['If-None-Match'] = '"' + updatedAt + '"';
+        url += (path.indexOf('?') >= 0 ? '&' : '?') + 'since=' + encodeURIComponent(updatedAt);
+      }
+      return fetch(url, { method: 'GET', headers: h }).then(parse);
+    }
+    function attach(api) {
+      if (!api || typeof api !== 'object') api = {};
+      if (typeof api.get !== 'function') api.get = rawGet;
+      if (typeof api.post !== 'function') api.post = rawPost;
+      if (typeof api.put !== 'function') api.put = rawPut;
+      if (typeof api.del !== 'function') api.del = rawDel;
+      if (typeof api.getLive !== 'function') api.getLive = rawGetLive;
+      if (typeof api.postScore !== 'function') api.postScore = rawPost;
+      if (typeof api.setToken !== 'function') api.setToken = function (t) { try { localStorage.setItem(KEY, t); } catch (e) {} };
+      if (typeof api.getToken !== 'function') api.getToken = token;
+      if (typeof api.clearToken !== 'function') api.clearToken = function () { try { localStorage.removeItem(KEY); } catch (e) {} };
+      if (typeof api.updateBadge !== 'function') api.updateBadge = function () {};
+      if (typeof api.flushInBackground !== 'function') api.flushInBackground = function () {};
+      return api;
+    }
+    function apiClient() {
+      window.api = attach(window.api);
+      return window.api;
+    }
+    function callApi(method) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      var client = apiClient();
+      if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+      if (method === 'get') return rawGet(args[0]);
+      if (method === 'post' || method === 'postScore') return rawPost(args[0], args[1]);
+      if (method === 'put') return rawPut(args[0], args[1]);
+      if (method === 'del') return rawDel(args[0]);
+      if (method === 'getLive') return rawGetLive(args[0], args[1]);
+      if (method === 'getToken') return token();
+      if (method === 'setToken') { try { localStorage.setItem(KEY, args[0]); } catch (e) {} return; }
+      if (method === 'clearToken') { try { localStorage.removeItem(KEY); } catch (e) {} return; }
+      if (method === 'updateBadge' || method === 'flushInBackground') return;
+      return rawGet(args[0]);
+    }
+    window.rawGet = rawGet;
+    window.rawPost = rawPost;
+    window.rawPut = rawPut;
+    window.rawDel = rawDel;
+    window.rawGetLive = rawGetLive;
+    window.attachApiHelpers = attach;
+    window.apiClient = apiClient;
+    window.callApi = callApi;
+    window.api = attach(window.api);
+  })();
+  </script>
 </head>
 <body>
 
@@ -136,61 +221,13 @@
     </div>
   </div>
 
-  <script src="js/vsPar.js?v=20260826e"></script>
-  <script src="js/api.js?v=20260826e"></script>
-  <script src="js/auth.js?v=20260826e"></script>
-  <script src="js/dashboard.js?v=20260826e"></script>
-  <script src="js/scorecard.js?v=20260826e"></script>
-  <script src="js/leaderboard.js?v=20260826e"></script>
-  <script src="js/app.js?v=20260826e"></script>
-  <script>
-  (function () {
-    var KEY = 'goldendale_scorecard_token';
-    function rawPost(path, body) {
-      return fetch(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {})
-      }).then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (data) {
-          if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
-          return data;
-        });
-      });
-    }
-    function rawGet(path) {
-      var headers = { 'Content-Type': 'application/json' };
-      try {
-        var token = localStorage.getItem(KEY);
-        if (token) headers.Authorization = 'Bearer ' + token;
-      } catch (e) {}
-      return fetch(path, { method: 'GET', headers: headers }).then(function (res) {
-        return res.json().catch(function () { return {}; }).then(function (data) {
-          if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
-          return data;
-        });
-      });
-    }
-    function attach(api) {
-      if (!api || typeof api !== 'object') api = {};
-      if (typeof api.post !== 'function') api.post = rawPost;
-      if (typeof api.get !== 'function') api.get = rawGet;
-      if (typeof api.setToken !== 'function') {
-        api.setToken = function (t) { try { localStorage.setItem(KEY, t); } catch (e) {} };
-      }
-      if (typeof api.getToken !== 'function') {
-        api.getToken = function () { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
-      }
-      if (typeof api.clearToken !== 'function') {
-        api.clearToken = function () { try { localStorage.removeItem(KEY); } catch (e) {} };
-      }
-      return api;
-    }
-    window.api = attach(window.api);
-    window.apiClient = function () { return attach(window.api); };
-    window.rawPost = rawPost;
-  })();
-  </script>
+  <script src="js/vsPar.js?v=20260826f"></script>
+  <script src="js/api.js?v=20260826f"></script>
+  <script src="js/auth.js?v=20260826f"></script>
+  <script src="js/dashboard.js?v=20260826f"></script>
+  <script src="js/scorecard.js?v=20260826f"></script>
+  <script src="js/leaderboard.js?v=20260826f"></script>
+  <script src="js/app.js?v=20260826f"></script>
 
 </body>
 </html>

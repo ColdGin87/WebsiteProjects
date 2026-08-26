@@ -28,6 +28,28 @@ function rawGet(path) {
     /* ignore */
   }
   return fetch(path, { method: 'GET', headers: headers }).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
+function rawGetLive(path, updatedAt) {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch {
+    /* ignore */
+  }
+  let url = path;
+  if (updatedAt) {
+    headers['If-None-Match'] = '"' + updatedAt + '"';
+    url += (String(path).includes('?') ? '&' : '?') + 'since=' + encodeURIComponent(updatedAt);
+  }
+  return fetch(url, { method: 'GET', headers: headers }).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
     return data;
@@ -74,6 +96,10 @@ function attachApiHelpers(target) {
   if (typeof api.get !== 'function') api.get = rawGet;
   if (typeof api.put !== 'function') api.put = rawPut;
   if (typeof api.del !== 'function') api.del = rawDel;
+  if (typeof api.getLive !== 'function') api.getLive = rawGetLive;
+  if (typeof api.postScore !== 'function') api.postScore = rawPost;
+  if (typeof api.updateBadge !== 'function') api.updateBadge = function updateBadge() {};
+  if (typeof api.flushInBackground !== 'function') api.flushInBackground = function flushInBackground() {};
   if (typeof api.setToken !== 'function') {
     api.setToken = function setToken(token) {
       try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch { /* ignore */ }
@@ -99,6 +125,32 @@ function apiClient() {
   attachApiHelpers(base);
   if (typeof window !== 'undefined') window.api = base;
   return base;
+}
+
+function callApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = apiClient();
+  if (client && typeof client[method] === 'function') {
+    return client[method].apply(client, args);
+  }
+  if (method === 'get') return rawGet(args[0]);
+  if (method === 'post' || method === 'postScore') return rawPost(args[0], args[1]);
+  if (method === 'put') return rawPut(args[0], args[1]);
+  if (method === 'del') return rawDel(args[0]);
+  if (method === 'getLive') return rawGetLive(args[0], args[1]);
+  if (method === 'getToken') {
+    try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
+  }
+  if (method === 'setToken') {
+    try { localStorage.setItem(AUTH_TOKEN_KEY, args[0]); } catch { /* ignore */ }
+    return;
+  }
+  if (method === 'clearToken') {
+    try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* ignore */ }
+    return;
+  }
+  if (method === 'updateBadge' || method === 'flushInBackground') return;
+  return rawGet(args[0]);
 }
 
 const auth = {
@@ -302,6 +354,11 @@ const auth = {
 
 window.auth = auth;
 window.apiClient = apiClient;
+window.callApi = callApi;
+window.rawGet = rawGet;
 window.rawPost = rawPost;
+window.rawPut = rawPut;
+window.rawDel = rawDel;
+window.rawGetLive = rawGetLive;
 window.attachApiHelpers = attachApiHelpers;
 if (typeof window !== 'undefined') window.api = attachApiHelpers(window.api);

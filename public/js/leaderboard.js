@@ -1,3 +1,29 @@
+function svcApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = (typeof window !== 'undefined' && typeof window.apiClient === 'function')
+    ? window.apiClient()
+    : ((typeof window !== 'undefined' && window.api) || (typeof api === 'object' ? api : {}) || {});
+  if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+  if (typeof window !== 'undefined' && typeof window.callApi === 'function') {
+    return window.callApi.apply(null, arguments);
+  }
+  if (method === 'updateBadge' || method === 'flushInBackground') return;
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = localStorage.getItem('goldendale_scorecard_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch { /* ignore */ }
+  const http = method === 'getLive' || method === 'get' ? 'GET' : 'POST';
+  const init = { method: http, headers };
+  if (http !== 'GET') init.body = JSON.stringify(args[1] || {});
+  return fetch(args[0], init).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
 const leaderboardView = {
   state: null,
   token: null,
@@ -14,7 +40,7 @@ const leaderboardView = {
       container.innerHTML = '<div class="loading">Loading public board...</div>';
     }
     try {
-      const state = await api.get('/api/public/' + encodeURIComponent(token));
+      const state = await svcApi('get', '/api/public/' + encodeURIComponent(token));
       this.state = state;
       scorecard.writeCache('public:' + token, state);
       this.draw(state, true);
@@ -29,11 +55,11 @@ const leaderboardView = {
 
   async refresh(token) {
     try {
-      const patch = await api.getLive('/api/public/' + encodeURIComponent(token) + '/live', this.state && this.state.updatedAt);
+      const patch = await svcApi('getLive', '/api/public/' + encodeURIComponent(token) + '/live', this.state && this.state.updatedAt);
       if (!patch || patch.notModified) return;
       if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
       if (!this.state || !this.state.teams) {
-        const full = await api.get('/api/public/' + encodeURIComponent(token));
+        const full = await svcApi('get', '/api/public/' + encodeURIComponent(token));
         this.state = full;
         this.draw(full, true);
         return;

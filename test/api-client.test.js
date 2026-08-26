@@ -165,9 +165,31 @@ describe('api client login helpers', () => {
     const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     assert.match(html, /js\/api\.js\?v=/);
     assert.match(html, /js\/auth\.js\?v=/);
+    assert.match(html, /js\/dashboard\.js\?v=/);
     assert.match(html, /css\/styles\.css\?v=/);
+    const fallbackAt = html.indexOf('function rawGet');
+    const apiTagAt = html.indexOf('js/api.js');
+    assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt, 'fetch fallback must load before js/api.js');
     const vercel = fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8');
     assert.doesNotMatch(vercel, /max-age=86400/);
     assert.match(vercel, /must-revalidate/);
+  });
+
+  it('home screen get works when window.api.get is missing', async () => {
+    const calls = [];
+    const ctx = loadBrowserScript('api.js', browserContext(async (url, init) => {
+      calls.push({ url, method: init.method });
+      return jsonResponse([{ id: 1, status: 'live' }]);
+    }));
+    loadBrowserScript('auth.js', ctx);
+    delete ctx.window.api.get;
+    delete ctx.window.api.request;
+    assert.equal(typeof ctx.window.api.get, 'undefined');
+    const client = ctx.apiClient();
+    assert.equal(typeof client.get, 'function');
+    const rows = await ctx.callApi('get', '/api/rounds');
+    assert.equal(calls[0].url, '/api/rounds');
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(rows[0].status, 'live');
   });
 });

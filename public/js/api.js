@@ -226,11 +226,20 @@ api.put = function put(path, body) { return this.request('PUT', path, body); };
 api.del = function del(path) { return this.request('DELETE', path); };
 
 ensureApiMethods(api);
-window.api = api;
+if (typeof window !== 'undefined') {
+  if (window.api && window.api !== api && typeof window.api === 'object') {
+    ensureApiMethods(window.api);
+    if (typeof window.attachApiHelpers === 'function') window.attachApiHelpers(window.api);
+  }
+  window.api = api;
+  if (typeof window.attachApiHelpers === 'function') window.attachApiHelpers(window.api);
+}
 window.ensureApiMethods = ensureApiMethods;
 ensureApiMethods(window.api);
-window.addEventListener('online', () => api.flushInBackground());
+window.addEventListener('online', () => {
+  if (typeof api.flushInBackground === 'function') api.flushInBackground();
+});
 document.addEventListener('DOMContentLoaded', () => {
-  api.updateBadge();
-  api.flushInBackground();
+  if (typeof api.updateBadge === 'function') api.updateBadge();
+  if (typeof api.flushInBackground === 'function') api.flushInBackground();
 });
