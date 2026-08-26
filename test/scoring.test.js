@@ -13,6 +13,7 @@ const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../li
 const { appBaseUrl } = require('../lib/tokens');
 const { resultsText } = require('../lib/compute/roundState');
 const { DEMO_FOURSOME, demoGrossTotal } = require('../lib/seed/demoFoursome');
+const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
 
 describe('playingHandicap', () => {
   it('keeps whole numbers', () => {
@@ -177,6 +178,37 @@ describe('Goldendale required team hole', () => {
     assert.equal(new Set(ids).size, 3);
     assert.equal(team.balls.filter((b) => b.type === 'gross').length, 1);
     assert.equal(team.balls.filter((b) => b.type === 'net').length, 2);
+    assert.equal(holeTeamVsPar(team.total, 5), 1, 'team 16 vs par 5 is +1 display only');
+  });
+});
+
+describe('stroke dots and team vs-par display', () => {
+  it('paints 1 / 2 / 3 marks and a distinct plus', () => {
+    assert.deepEqual(strokeDotMarks(1), { plus: false, count: 1 });
+    assert.deepEqual(strokeDotMarks(2), { plus: false, count: 2 });
+    assert.deepEqual(strokeDotMarks(3), { plus: false, count: 3 });
+    assert.deepEqual(strokeDotMarks(4), { plus: false, count: 3 });
+    assert.deepEqual(strokeDotMarks(0), { plus: false, count: 0 });
+    assert.deepEqual(strokeDotMarks(-1), { plus: true, count: 0 });
+  });
+
+  it('formats hole vs par as E / -2 / +1', () => {
+    assert.equal(formatVsPar(0), 'E');
+    assert.equal(formatVsPar(-2), '-2');
+    assert.equal(formatVsPar(1), '+1');
+    assert.equal(holeTeamVsPar(13, 5), -2);
+    assert.equal(formatVsPar(holeTeamVsPar(13, 5)), '-2');
+  });
+
+  it('running line is the sum of hole vs-par through that hole', () => {
+    const holes = [
+      { holeNumber: 1, par: 5, total: 13 },
+      { holeNumber: 2, par: 4, total: 12 },
+    ];
+    assert.equal(runningTeamVsPar(holes, 1), -2);
+    assert.equal(formatVsPar(runningTeamVsPar(holes, 1)), '-2');
+    assert.equal(runningTeamVsPar(holes, 2), -2);
+    assert.equal(formatVsPar(runningTeamVsPar(holes, 2)), '-2');
   });
 });
 

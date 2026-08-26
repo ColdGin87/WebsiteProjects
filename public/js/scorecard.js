@@ -617,9 +617,12 @@ const scorecard = {
     return (state.teams || []).map((team) => {
       const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
       return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
-        <span>${_esc(team.name)} hole</span>
-        <strong data-team-hole="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
-        <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
+        <div class="hole-team-scoreline">
+          <span>${_esc(team.name)} hole</span>
+          <strong data-team-hole-score="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
+          <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
+        </div>
+        ${this.vsParLinesHtml(state, team, holeNumber)}
       </div>`;
     }).join('');
   },
@@ -883,17 +886,53 @@ const scorecard = {
   },
 
   scoreCellHtml(state, member, hole, hs) {
-    const cls = this.vsParClass(hs?.gross, hole.par);
-    const dots = Math.max(0, hs?.strokes || 0);
-    const plus = (hs?.strokes || 0) < 0;
-    return `<td class="sc-cell-editable ${cls} ${dots ? 'dots-' + Math.min(dots, 3) : ''} ${plus ? 'dots-plus' : ''}"
-      data-score-cell="${member.id}:${hole.hole_number}">
-      <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
-        data-member="${member.id}" data-hole="${hole.hole_number}"
-        data-committed="${hs?.gross ?? ''}"
-        value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
+    const cls = this.cellClassList(hs, hole.par);
+    return `<td class="${cls}" data-score-cell="${member.id}:${hole.hole_number}">
+      <div class="gross-box">
+        <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
+          data-member="${member.id}" data-hole="${hole.hole_number}"
+          data-committed="${hs?.gross ?? ''}"
+          value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
+        ${this.strokeDotsHtml(hs?.strokes)}
+      </div>
       ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
     </td>`;
+  },
+
+  strokeDotsHtml(strokes) {
+    const marks = (window.vsPar && window.vsPar.strokeDotMarks)
+      ? window.vsPar.strokeDotMarks(strokes)
+      : { plus: false, count: 0 };
+    if (marks.plus) {
+      return '<span class="stroke-dots stroke-dots-plus" aria-label="plus handicap"><i class="dot-plus">+</i></span>';
+    }
+    if (!marks.count) return '';
+    const dots = Array.from({ length: marks.count }, () => '<i class="dot"></i>').join('');
+    return `<span class="stroke-dots dots-${marks.count}" aria-label="${marks.count} stroke${marks.count > 1 ? 's' : ''}">${dots}</span>`;
+  },
+
+  vsParPair(state, team, holeNumber) {
+    const vp = window.vsPar || {};
+    const course = (state.holes || []).find((h) => h.hole_number === holeNumber);
+    const teamHole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
+    const holeVal = vp.holeTeamVsPar ? vp.holeTeamVsPar(teamHole && teamHole.total, course && course.par) : null;
+    const runRows = (state.holes || []).map((h) => {
+      const th = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return { holeNumber: h.hole_number, par: h.par, total: th && th.total };
+    });
+    const runVal = vp.runningTeamVsPar ? vp.runningTeamVsPar(runRows, holeNumber) : null;
+    return {
+      holeText: vp.formatVsPar ? (vp.formatVsPar(holeVal) || '—') : '—',
+      runText: vp.formatVsPar ? (vp.formatVsPar(runVal) || '—') : '—',
+    };
+  },
+
+  vsParLinesHtml(state, team, holeNumber) {
+    const pair = this.vsParPair(state, team, holeNumber);
+    return `<div class="vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
+      <div class="vs-par-hole"><span class="vs-par-label">Hole</span> ${pair.holeText}</div>
+      <div class="vs-par-run"><span class="vs-par-label">Running</span> ${pair.runText}</div>
+    </div>`;
   },
 
   teamRows(state, holes, outHoles, inHoles) {
@@ -902,8 +941,11 @@ const scorecard = {
         <td class="row-label">${_esc(team.name)}</td>
         ${holes.map((h) => {
           const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
-          return `<td data-team-hole="${team.id}:${h.hole_number}" class="${hole?.incomplete ? 'incomplete' : ''}"
-            onclick="scorecard.revealHoleBalls(${h.hole_number})">${hole?.total ?? ''}</td>`;
+          return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
+            onclick="scorecard.revealHoleBalls(${h.hole_number})">
+            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${hole?.total ?? ''}</span>
+            ${this.vsParLinesHtml(state, team, h.hole_number)}
+          </td>`;
         }).join('')}
         ${outHoles.length ? `<td class="sc-total">${team.out ?? ''}</td>` : ''}
         ${inHoles.length ? `<td class="sc-total">${team.inn ?? ''}</td>` : ''}
@@ -995,6 +1037,15 @@ const scorecard = {
           input.value = hs?.gross ?? '';
           input.dataset.committed = hs?.gross ?? '';
         }
+        const box = cell.querySelector('.gross-box') || cell;
+        const nextDots = this.strokeDotsHtml(hs?.strokes);
+        const currentDots = box.querySelector('.stroke-dots');
+        if (nextDots) {
+          if (currentDots) currentDots.outerHTML = nextDots;
+          else box.insertAdjacentHTML('beforeend', nextDots);
+        } else if (currentDots) {
+          currentDots.remove();
+        }
         let net = cell.querySelector('.net-mini');
         if (hs?.gross != null) {
           if (!net) {
@@ -1030,13 +1081,29 @@ const scorecard = {
     for (const team of this.state.teams || []) {
       const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
       document.querySelectorAll('[data-team-hole="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
-        el.textContent = hole?.total ?? '';
         el.classList.toggle('incomplete', !!hole?.incomplete);
+      });
+      document.querySelectorAll('[data-team-hole-score="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
+        el.textContent = hole?.total ?? '';
       });
       const wrap = document.querySelector('[data-team-total="' + team.id + '"]');
       if (wrap) wrap.classList.toggle('incomplete', !!hole?.incomplete);
       const tot = document.querySelector('[data-team-tot="' + team.id + '"]');
       if (tot) tot.textContent = team.total ?? '';
+      this.paintTeamVsPar(team);
+    }
+  },
+
+  paintTeamVsPar(team) {
+    if (!this.state || !team) return;
+    for (const course of this.state.holes || []) {
+      const pair = this.vsParPair(this.state, team, course.hole_number);
+      document.querySelectorAll('[data-vs-par="' + team.id + ':' + course.hole_number + '"]').forEach((el) => {
+        const holeEl = el.querySelector('.vs-par-hole');
+        const runEl = el.querySelector('.vs-par-run');
+        if (holeEl) holeEl.innerHTML = '<span class="vs-par-label">Hole</span> ' + pair.holeText;
+        if (runEl) runEl.innerHTML = '<span class="vs-par-label">Running</span> ' + pair.runText;
+      });
     }
   },
 

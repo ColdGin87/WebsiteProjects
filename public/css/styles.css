@@ -1011,6 +1011,68 @@ img {
   opacity: 0.5;
 }
 
+.sc-cell-editable.dots-1::after,
+.sc-cell-editable.dots-2::after,
+.sc-cell-editable.dots-3::after,
+.sc-cell-editable.dots-plus::after {
+  display: none;
+}
+
+.gross-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.gross-box .score-input {
+  padding-bottom: 12px;
+}
+
+.stroke-dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.stroke-dots .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px #000;
+  display: inline-block;
+}
+
+.stroke-dots.dots-3 .dot:nth-child(1),
+.stroke-dots.dots-3 .dot:nth-child(2),
+.stroke-dots.dots-3 .dot:nth-child(3) {
+  display: inline-block;
+}
+
+.stroke-dots .dot-plus {
+  display: inline-block;
+  color: #1565C0;
+  font-size: 0.85rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.stroke-dots-plus {
+  top: 2px;
+  right: 3px;
+  bottom: auto;
+  left: auto;
+  width: auto;
+}
+
 /* Score comparison colors */
 .sc-birdie {
   color: var(--danger);
@@ -2333,54 +2395,10 @@ img {
 .dots-3,
 .dots-plus {
   position: relative;
-  padding-bottom: 10px;
 }
 
-.dots-1::after,
-.dots-2::after,
-.dots-3::after {
-  content: '';
-  position: absolute;
-  bottom: 2px;
-  left: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px #000;
-}
-
-.dots-1::after {
-  transform: translateX(-50%);
-}
-
-.dots-2::after {
-  transform: translateX(-8px);
-  box-shadow: 0 0 0 1px #000, 10px 0 0 0 var(--accent), 10px 0 0 1px #000;
-}
-
-.dots-3::after {
-  transform: translateX(-13px);
-  box-shadow:
-    0 0 0 1px #000,
-    10px 0 0 0 var(--accent), 10px 0 0 1px #000,
-    20px 0 0 0 var(--accent), 20px 0 0 1px #000;
-}
-
-.dots-plus::before {
-  content: '+';
-  position: absolute;
-  top: 1px;
-  right: 3px;
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  color: #1565C0;
-  font-size: 0.85rem;
-  font-weight: 800;
-  line-height: 1;
+.dots-plus .gross-box .score-input {
+  padding-top: 10px;
 }
 
 .row-team td {
@@ -2519,12 +2537,51 @@ img {
 
 .hole-team-total {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   min-height: 44px;
   font-size: 1rem;
   font-weight: 700;
   padding: 6px 0;
+  gap: 4px;
+}
+
+.hole-team-scoreline {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.vs-par-lines {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.vs-par-label {
+  color: #555;
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+.team-hole-cell {
+  vertical-align: top;
+}
+
+.team-hole-cell .team-hole-score {
+  display: block;
+  font-weight: 800;
+}
+
+.team-hole-cell .vs-par-lines {
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 1px;
+  margin-top: 4px;
 }
 
 .hole-team-total.incomplete,
@@ -2718,5 +2775,9 @@ img {
   .add-player-card > .btn {
     flex: 1 1 100%;
     width: 100%;
+  }
+
+  .hole-team-total .vs-par-lines {
+    font-size: 0.9rem;
   }
 }
