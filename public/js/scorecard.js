@@ -41,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826f',
+  ASSET_V: '20260826g',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -441,11 +441,11 @@ const scorecard = {
 
   focusNextHole(memberId, holeNumber) {
     if (this.isHoleView()) {
-      const members = (this.state && this.state.members) || [];
-      const idx = members.findIndex((m) => m.id === memberId);
-      const next = members[idx + 1];
+      const rows = Array.from(document.querySelectorAll('#hole-players .hole-player-row'));
+      const idx = rows.findIndex((row) => Number(row.dataset.memberRow) === memberId);
+      const next = rows[idx + 1];
       if (!next) return;
-      const el = document.querySelector(`input.score-input[data-member="${next.id}"][data-hole="${holeNumber}"]`);
+      const el = next.querySelector(`input.score-input[data-hole="${holeNumber}"]`);
       if (el) {
         el.focus();
         el.select();
@@ -665,34 +665,39 @@ const scorecard = {
     }).join(' · ');
   },
 
-  holePlayersHtml(state, holeNumber) {
+  holePlayerRowHtml(state, member, holeNumber) {
     const hole = this.holeMeta(state, holeNumber);
-    return `<div class="hole-players" id="hole-players">${(state.members || []).map((member) => {
-      const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
-      const cls = this.cellClassList(hs, hole.par);
-      return `<div class="hole-player-row" data-member-row="${member.id}">
-        <span class="hole-player-name">${_esc(member.display_name)}</span>
-        <div class="hole-player-score ${cls}" data-score-cell="${member.id}:${holeNumber}">
-          <div class="gross-box">
-            <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
-              data-member="${member.id}" data-hole="${holeNumber}"
-              data-committed="${hs?.gross ?? ''}"
-              value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
-            ${this.strokeDotsHtml(hs?.strokes)}
-          </div>
+    const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
+    const cls = this.cellClassList(hs, hole.par);
+    return `<div class="hole-player-row" data-member-row="${member.id}">
+      <span class="hole-player-name">${_esc(member.display_name)}</span>
+      <div class="hole-player-score ${cls}" data-score-cell="${member.id}:${holeNumber}">
+        <div class="gross-box">
+          <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
+            data-member="${member.id}" data-hole="${holeNumber}"
+            data-committed="${hs?.gross ?? ''}"
+            value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
+          ${this.strokeDotsHtml(hs?.strokes)}
         </div>
-      </div>`;
+        ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
+      </div>
+    </div>`;
+  },
+
+  holePlayersHtml(state, holeNumber) {
+    const groups = this.groupedMembers(state).filter((group) => (group.members || []).length);
+    return `<div class="hole-players" id="hole-players">${groups.map((group) => {
+      const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
+      const teamHtml = group.team ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+      return `<section class="hole-team-group" data-team-group="${group.team ? group.team.id : 'none'}">${rows}${teamHtml}</section>`;
     }).join('')}</div>`;
   },
 
   drawHoleView(state) {
     this.ensureVsPar();
     const container = document.getElementById('app');
-    const r = state.round;
     const holeNumber = this.pickCurrentHole(state);
     this.currentHole = holeNumber;
-    const hole = this.holeMeta(state, holeNumber);
-    const formatLabel = r.format === 'match_play' ? 'Match play' : `${r.gross_balls} gross + ${r.net_balls} net`;
     const race = this.raceStripText(state);
 
     container.innerHTML = `
@@ -700,14 +705,11 @@ const scorecard = {
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
       <div class="card hole-view" id="hole-view">
-        <h2 class="card-title">${_esc(r.name)}</h2>
-        <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel}</p>
-        <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
-        <div class="race-strip" id="race-strip">${_esc(race)}</div>
-        <p class="hole-meta" id="hole-meta">Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}</p>
+        <div class="hole-chrome">
+          <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+          <div class="race-strip" id="race-strip">${_esc(race)}</div>
+        </div>
         ${this.holePlayersHtml(state, holeNumber)}
-        ${r.format === 'team_net' ? `<div class="hole-teams" id="hole-teams">${this.holeTeamTotals(state, holeNumber)}</div>` : ''}
-        <div class="end-totals" id="end-totals">${this.endTotalsHtml(state)}</div>
         ${this.addPlayerPanel(state)}
       </div>
       <div class="hole-nav thumb-zone" id="hole-nav"></div>
@@ -730,11 +732,9 @@ const scorecard = {
     const o = this.overlay || {};
     const value = o.current == null ? (o.par ?? '') : o.current;
     return `<div class="score-stepper" id="hole-stepper-bar">
-      <span class="hole-nav-label" id="score-overlay-title">${_esc(o.name || 'Score')}</span>
       <button type="button" class="btn btn-secondary stepper-btn" id="score-minus">−</button>
-      <input type="number" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" min="1" max="15" value="${value}">
+      <input type="number" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" min="1" max="15" value="${value}" aria-label="${_esc(o.name || 'Score')}">
       <button type="button" class="btn btn-secondary stepper-btn" id="score-plus">+</button>
-      <button type="button" class="btn btn-secondary" id="score-clear">Clear</button>
       <button type="button" class="btn btn-secondary" id="score-done">Done</button>
     </div>`;
   },
@@ -770,19 +770,21 @@ const scorecard = {
     if (stepper) stepper.onclick = () => this.openStepperFallback();
   },
 
+  oneHoleTeamTotal(state, team, holeNumber) {
+    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
+      <div class="hole-team-scoreline">
+        <span>${_esc(team.name)} hole</span>
+        <strong data-team-hole-score="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
+        <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
+      </div>
+      ${this.teamBallsHtml(team, holeNumber)}
+      ${this.vsParLinesHtml(state, team, holeNumber)}
+    </div>`;
+  },
+
   holeTeamTotals(state, holeNumber) {
-    return (state.teams || []).map((team) => {
-      const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
-      return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
-        <div class="hole-team-scoreline">
-          <span>${_esc(team.name)} hole</span>
-          <strong data-team-hole-score="${team.id}:${holeNumber}">${hole?.total ?? ''}</strong>
-          <span class="running-total">run <span data-team-tot="${team.id}">${team.total ?? ''}</span></span>
-        </div>
-        ${this.teamBallsHtml(team, holeNumber)}
-        ${this.vsParLinesHtml(state, team, holeNumber)}
-      </div>`;
-    }).join('');
+    return (state.teams || []).map((team) => this.oneHoleTeamTotal(state, team, holeNumber)).join('');
   },
 
   endTotalsHtml(state) {
@@ -795,13 +797,55 @@ const scorecard = {
     if (el && this.state) el.textContent = this.endTotalsHtml(this.state);
   },
 
+  retargetHoleView(holeNumber) {
+    document.querySelectorAll('#hole-players .hole-player-row').forEach((row) => {
+      const memberId = row.dataset.memberRow;
+      const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
+      const cell = row.querySelector('[data-score-cell]');
+      if (cell) cell.setAttribute('data-score-cell', memberId + ':' + holeNumber);
+      const input = row.querySelector('input.score-input');
+      if (input) {
+        input.dataset.hole = String(holeNumber);
+        input.setAttribute('aria-label', (member ? member.display_name : 'Player') + ' hole ' + holeNumber);
+      }
+    });
+    document.querySelectorAll('#hole-players [data-team-total]').forEach((wrap) => {
+      const teamId = wrap.dataset.teamTotal;
+      const score = wrap.querySelector('[data-team-hole-score]');
+      if (score) score.setAttribute('data-team-hole-score', teamId + ':' + holeNumber);
+      const vs = wrap.querySelector('[data-vs-par]');
+      if (vs) vs.setAttribute('data-vs-par', teamId + ':' + holeNumber);
+    });
+  },
+
   shiftHole(delta) {
     const holes = (this.state && this.state.holes) || [];
     const idx = holes.findIndex((h) => h.hole_number === this.currentHole);
     const next = holes[idx + delta];
     if (!next) return;
+    const focused = document.activeElement;
+    const keepMember = focused && focused.classList && focused.classList.contains('score-input')
+      ? Number(focused.dataset.member)
+      : null;
     this.currentHole = next.hole_number;
-    this.draw(this.state);
+    const holeView = document.getElementById('hole-view');
+    const players = document.getElementById('hole-players');
+    const rows = players ? players.querySelectorAll('.hole-player-row') : [];
+    const rosterOk = this.isHoleView() && holeView && players
+      && rows.length === ((this.state.members || []).length);
+    if (!rosterOk) {
+      this.draw(this.state);
+      return;
+    }
+    this.retargetHoleView(this.currentHole);
+    for (const member of this.state.members || []) this.paintScoreCell(member.id, this.currentHole);
+    this.paintTeamHole(this.currentHole);
+    this.paintCurrentHoleChrome();
+    this.renderHoleNav();
+    if (keepMember) {
+      const el = document.querySelector(`#hole-players input.score-input[data-member="${keepMember}"]`);
+      if (el) el.focus();
+    }
   },
 
   drawFullCard(state) {
@@ -1188,7 +1232,8 @@ const scorecard = {
     const cells = document.querySelectorAll('[data-score-cell="' + memberId + ':' + holeNumber + '"]');
     cells.forEach((cell) => {
       const input = cell.querySelector('input.score-input');
-      cell.className = this.cellClassList(hs, hole.par);
+      const holeRow = cell.classList.contains('hole-player-score');
+      cell.className = (holeRow ? 'hole-player-score ' : '') + this.cellClassList(hs, hole.par);
       if (input) {
         if (document.activeElement !== input) {
           input.value = hs?.gross ?? '';

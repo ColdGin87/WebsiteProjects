@@ -173,6 +173,9 @@ describe('api client login helpers', () => {
     const vercel = fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8');
     assert.doesNotMatch(vercel, /max-age=86400/);
     assert.match(vercel, /must-revalidate/);
+    assert.match(vercel, /max-age=60/);
+    assert.match(vercel, /stale-while-revalidate=86400/);
+    assert.match(vercel, /no-cache, must-revalidate/);
   });
 
   it('home screen get works when window.api.get is missing', async () => {

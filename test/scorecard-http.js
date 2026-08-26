@@ -407,8 +407,8 @@ async function runCacheHeaders(base) {
   if (!js.ok) fail('GET /js/api.js failed');
   const jsCache = js.headers.get('cache-control') || '';
   if (/max-age=86400/i.test(jsCache)) fail('js must not 86400-cache: ' + jsCache);
-  if (!/must-revalidate|no-cache|max-age=0/i.test(jsCache)) {
-    fail('js Cache-Control should revalidate, got ' + jsCache);
+  if (!/max-age=60|must-revalidate|no-cache|max-age=0/i.test(jsCache)) {
+    fail('js Cache-Control should revalidate or use a short max-age, got ' + jsCache);
   }
   const html = await fetch(base + '/');
   if (!html.ok) fail('GET / failed');

@@ -50,7 +50,7 @@ app.use(express.static(path.join(__dirname, '../public'), {
     if (/\.html$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     } else if (/\.(css|js)$/i.test(filePath)) {
-      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+      res.setHeader('Cache-Control', 'public, max-age=60, stale-while-revalidate=86400');
     }
   },
 }));
