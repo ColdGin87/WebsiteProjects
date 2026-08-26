@@ -1,6 +1,6 @@
 const AUTH_TOKEN_KEY = 'goldendale_scorecard_token';
 
-function authFetch(method, path, body) {
+function rawPost(path, body) {
   const headers = { 'Content-Type': 'application/json' };
   try {
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
@@ -8,84 +8,97 @@ function authFetch(method, path, body) {
   } catch {
     /* ignore */
   }
-  const init = { method, headers };
-  if (body != null && method !== 'GET' && method !== 'HEAD') {
-    init.body = JSON.stringify(body);
-  }
-  return fetch(path, init).then(async (res) => {
-    let data = null;
-    const contentType = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
-    if (contentType.includes('application/json')) {
-      try { data = await res.json(); } catch { data = null; }
-    } else {
-      try { data = await res.text(); } catch { data = null; }
-    }
-    if (!res.ok) {
-      const msg = (data && (data.error || data.message)) || ('HTTP ' + res.status);
-      const err = new Error(typeof msg === 'string' ? msg : 'Request failed.');
-      err.status = res.status;
-      throw err;
-    }
+  return fetch(path, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(body || {}),
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
     return data;
   });
 }
 
-function apiClient() {
-  const raw = (typeof window !== 'undefined' && window.api)
-    || (typeof api !== 'undefined' ? api : null);
-  const base = raw && typeof raw === 'object' ? raw : {};
-
-  if (typeof window !== 'undefined' && typeof window.ensureApiMethods === 'function') {
-    try { window.ensureApiMethods(base); } catch { /* keep going */ }
-  }
-
-  const request = typeof base.request === 'function'
-    ? base.request.bind(base)
-    : function request(method, path, body) { return authFetch(method, path, body); };
-
-  const client = {
-    request,
-    get: typeof base.get === 'function'
-      ? base.get.bind(base)
-      : function get(path) { return request('GET', path); },
-    post: typeof base.post === 'function'
-      ? base.post.bind(base)
-      : function post(path, body) { return request('POST', path, body); },
-    put: typeof base.put === 'function'
-      ? base.put.bind(base)
-      : function put(path, body) { return request('PUT', path, body); },
-    del: typeof base.del === 'function'
-      ? base.del.bind(base)
-      : function del(path) { return request('DELETE', path); },
-    setToken: typeof base.setToken === 'function'
-      ? base.setToken.bind(base)
-      : function setToken(token) {
-        try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch { /* ignore */ }
-      },
-    getToken: typeof base.getToken === 'function'
-      ? base.getToken.bind(base)
-      : function getToken() {
-        try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
-      },
-    clearToken: typeof base.clearToken === 'function'
-      ? base.clearToken.bind(base)
-      : function clearToken() {
-        try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* ignore */ }
-      },
-  };
-
+function rawGet(path) {
+  const headers = { 'Content-Type': 'application/json' };
   try {
-    if (typeof base.request !== 'function') base.request = request;
-    if (typeof base.post !== 'function') base.post = client.post;
-    if (typeof base.get !== 'function') base.get = client.get;
-    if (typeof base.put !== 'function') base.put = client.put;
-    if (typeof base.del !== 'function') base.del = client.del;
-    if (typeof window !== 'undefined' && !window.api) window.api = base;
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (token) headers.Authorization = 'Bearer ' + token;
   } catch {
-    /* frozen stale client — returned wrapper still signs in */
+    /* ignore */
   }
+  return fetch(path, { method: 'GET', headers: headers }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
 
-  return client;
+function rawPut(path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch {
+    /* ignore */
+  }
+  return fetch(path, {
+    method: 'PUT',
+    headers: headers,
+    body: JSON.stringify(body || {}),
+  }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
+function rawDel(path) {
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch {
+    /* ignore */
+  }
+  return fetch(path, { method: 'DELETE', headers: headers }).then(async (res) => {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
+function attachApiHelpers(target) {
+  const api = target && typeof target === 'object' ? target : {};
+  if (typeof api.post !== 'function') api.post = rawPost;
+  if (typeof api.get !== 'function') api.get = rawGet;
+  if (typeof api.put !== 'function') api.put = rawPut;
+  if (typeof api.del !== 'function') api.del = rawDel;
+  if (typeof api.setToken !== 'function') {
+    api.setToken = function setToken(token) {
+      try { localStorage.setItem(AUTH_TOKEN_KEY, token); } catch { /* ignore */ }
+    };
+  }
+  if (typeof api.getToken !== 'function') {
+    api.getToken = function getToken() {
+      try { return localStorage.getItem(AUTH_TOKEN_KEY); } catch { return null; }
+    };
+  }
+  if (typeof api.clearToken !== 'function') {
+    api.clearToken = function clearToken() {
+      try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch { /* ignore */ }
+    };
+  }
+  return api;
+}
+
+function apiClient() {
+  let base = (typeof window !== 'undefined' && window.api)
+    || (typeof api !== 'undefined' ? api : null);
+  if (!base || typeof base !== 'object') base = {};
+  attachApiHelpers(base);
+  if (typeof window !== 'undefined') window.api = base;
+  return base;
 }
 
 const auth = {
@@ -194,11 +207,11 @@ const auth = {
     e.preventDefault();
     const errEl = document.getElementById('login-error');
     try {
-      const client = apiClient();
-      const data = await client.post('/api/auth/login', {
+      const data = await rawPost('/api/auth/login', {
         email: document.getElementById('login-email').value.trim(),
         password: document.getElementById('login-password').value,
       });
+      const client = apiClient();
       if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
@@ -212,14 +225,14 @@ const auth = {
     e.preventDefault();
     const errEl = document.getElementById('register-error');
     try {
-      const client = apiClient();
-      const data = await client.post('/api/auth/register', {
+      const data = await rawPost('/api/auth/register', {
         name: document.getElementById('register-name').value.trim(),
         email: document.getElementById('register-email').value.trim(),
         password: document.getElementById('register-password').value,
         handicap: document.getElementById('register-handicap').value.trim() || null,
         homeTee: document.getElementById('register-tee').value.trim() || null,
       });
+      const client = apiClient();
       if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
@@ -234,7 +247,7 @@ const auth = {
     const errEl = document.getElementById('magic-error');
     const out = document.getElementById('magic-result');
     try {
-      const data = await apiClient().post('/api/auth/magic-link', {
+      const data = await rawPost('/api/auth/magic-link', {
         email: document.getElementById('magic-email').value.trim(),
       });
       if (out) {
@@ -252,7 +265,7 @@ const auth = {
     const errEl = document.getElementById('forgot-error');
     const out = document.getElementById('forgot-result');
     try {
-      const data = await apiClient().post('/api/auth/forgot', {
+      const data = await rawPost('/api/auth/forgot', {
         email: document.getElementById('forgot-email').value.trim(),
       });
       if (out) {
@@ -266,15 +279,15 @@ const auth = {
   },
 
   async consumeMagic(token) {
+    const data = await rawPost('/api/auth/magic', { token });
     const client = apiClient();
-    const data = await client.post('/api/auth/magic', { token });
     if (client.setToken) client.setToken(data.token);
     this.setUser(data.user);
   },
 
   async consumeReset(token, password) {
+    const data = await rawPost('/api/auth/reset', { token, password });
     const client = apiClient();
-    const data = await client.post('/api/auth/reset', { token, password });
     if (client.setToken) client.setToken(data.token);
     this.setUser(data.user);
   },
@@ -289,3 +302,6 @@ const auth = {
 
 window.auth = auth;
 window.apiClient = apiClient;
+window.rawPost = rawPost;
+window.attachApiHelpers = attachApiHelpers;
+if (typeof window !== 'undefined') window.api = attachApiHelpers(window.api);

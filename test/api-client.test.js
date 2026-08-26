@@ -133,6 +133,34 @@ describe('api client login helpers', () => {
     assert.equal(calls[0].method, 'POST');
   });
 
+  it('apiClient never throws when window.api has neither post nor request', async () => {
+    const calls = [];
+    const fields = {
+      'login-email': { value: 'a@b.c' },
+      'login-password': { value: 'secret1' },
+      'login-error': { textContent: '' },
+    };
+    const ctx = browserContext(async (url, init) => {
+      calls.push({ url, method: init.method, body: init.body });
+      return jsonResponse({ token: 't', user: { name: 'David' } });
+    });
+    ctx.document.getElementById = (id) => fields[id] || null;
+    ctx.window.api = { stale: true };
+    loadBrowserScript('auth.js', ctx);
+    const authSrc = fs.readFileSync(path.join(ROOT, 'public/js/auth.js'), 'utf8');
+    assert.doesNotMatch(authSrc, /missing post/);
+    assert.doesNotMatch(authSrc, /hard[- ]refresh/i);
+    assert.match(authSrc, /function rawPost/);
+    assert.equal(typeof ctx.apiClient(), 'object');
+    const client = ctx.apiClient();
+    assert.equal(typeof client.post, 'function');
+    assert.equal(typeof ctx.window.api.post, 'function');
+    await ctx.auth.handleLogin({ preventDefault() {} });
+    assert.equal(calls[0].url, '/api/auth/login');
+    assert.equal(calls[0].method, 'POST');
+    assert.equal(ctx.auth.currentUser.name, 'David');
+  });
+
   it('index.html cache-busts unhashed js and css', () => {
     const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     assert.match(html, /js\/api\.js\?v=/);
