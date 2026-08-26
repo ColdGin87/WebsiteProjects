@@ -32,7 +32,7 @@ describe('Combined PR3 hole view', () => {
   });
 
   it('keeps Hole + race and drops title, par-si, and end-totals from hole view', () => {
-    const fn = sliceFn('drawHoleView(state)', 'holeNavButtonsHtml(holeNumber)');
+    const fn = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(fn, /hole-number/);
     assert.match(fn, /race-strip/);
     assert.match(fn, /holePlayersHtml/);
@@ -65,8 +65,23 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826g/);
-    assert.match(src, /ASSET_V:\s*'20260826g'/);
+    assert.match(html, /20260826h/);
+    assert.match(src, /ASSET_V:\s*'20260826h'/);
+  });
+
+  it('hole scoring toolbar is Back plus one overflow', () => {
+    const draw = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    assert.match(draw, /holeToolbar/);
+    assert.doesNotMatch(draw, /See dashboard/);
+    assert.doesNotMatch(draw, /Full card/);
+    const bar = sliceFn('holeToolbar(state) {', 'bindHoleOverflowDismiss');
+    assert.match(bar, />Back</);
+    assert.match(bar, /hole-overflow/);
+    assert.match(bar, /Full card/);
+    assert.match(bar, /Settings/);
+    assert.doesNotMatch(bar, /See dashboard/);
+    assert.match(src, /id="hole-players"/);
+    assert.match(src, /patchUI\(\)/);
   });
 
   it('team balls and vs-par are at least 0.875rem', () => {

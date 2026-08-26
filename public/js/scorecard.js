@@ -41,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826g',
+  ASSET_V: '20260826h',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -693,6 +693,45 @@ const scorecard = {
     }).join('')}</div>`;
   },
 
+  holeToolbar(state) {
+    const organizer = this.isOrganizer(state);
+    return `
+      <div class="round-toolbar hole-toolbar" id="hole-toolbar">
+        <a href="#dashboard" class="hole-back" onclick="event.preventDefault();app.navigate('#dashboard')">Back</a>
+        <span class="unsynced-inline" id="unsynced-inline"></span>
+        <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
+        <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
+          <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
+          ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
+        </div>
+      </div>`;
+  },
+
+  toggleHoleOverflow(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('hole-overflow-menu');
+    const btn = document.getElementById('hole-overflow');
+    if (!menu || !btn) return;
+    const open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.bindHoleOverflowDismiss();
+  },
+
+  bindHoleOverflowDismiss() {
+    if (this._overflowBound) return;
+    this._overflowBound = true;
+    document.addEventListener('click', (ev) => {
+      const menu = document.getElementById('hole-overflow-menu');
+      const btn = document.getElementById('hole-overflow');
+      if (!menu || menu.hidden) return;
+      if (btn && (btn === ev.target || btn.contains(ev.target))) return;
+      if (menu.contains(ev.target)) return;
+      menu.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+  },
+
   drawHoleView(state) {
     this.ensureVsPar();
     const container = document.getElementById('app');
@@ -701,7 +740,7 @@ const scorecard = {
     const race = this.raceStripText(state);
 
     container.innerHTML = `
-      ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode('full')">Full card</button>`)}
+      ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
       <div class="card hole-view" id="hole-view">
