@@ -7,7 +7,8 @@
     "dev": "node api/index.js",
     "build": "echo 'No build step required'",
     "start": "node api/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:scorecard": "node test/scorecard-http.js"
   },
   "dependencies": {
     "@libsql/client": "^0.14.0",

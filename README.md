@@ -67,6 +67,17 @@ Never put real Turso, JWT, or Supabase secrets in git. `.env` is gitignored. Onl
 
 ```bash
 npm test
+npm run test:scorecard
 ```
+
+`npm test` is the pure scoring module (no server).
+
+`npm run test:scorecard` is the automated scorecard filler: it signs up, creates a Goldendale 18-hole team round, adds guests A/B/C/D with handicaps 4/11/18/24, assigns Team 1, enters hole-1 gross 5/6/7/8, and **fails** unless dots are 1/1/1/2, nets are 4/5/6/6, and the team hole is **16**. It starts a temporary file-DB app (no Vercel secrets). To point it at an already running local server:
+
+```bash
+SCORECARD_TEST_URL=http://127.0.0.1:3000 npm run test:scorecard
+```
+
+This is an HTTP/API tester so CI can run it without a browser. Playwright is not required.
 
 Required case: players H 4, 11, 18, 24 on hole 1 (SI 1, par 5), gross 5/6/7/8 → nets 4/5/6/6 → team hole **16**.
