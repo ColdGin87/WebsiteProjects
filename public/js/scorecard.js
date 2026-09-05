@@ -41,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826j',
+  ASSET_V: '20260826l',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -1139,6 +1139,7 @@ const scorecard = {
         <label class="tiny-label" for="bulk-guests">Add several (one per line: Name, handicap, team)</label>
         <textarea class="form-input" id="bulk-guests" rows="4" placeholder="Cole Jan, 12, 3"></textarea>
         <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.addBulkGuests()">Add names</button>
+        <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.addDemoTeam1VsPar()">Open Team 1 vs-par demo</button>
       </div>`;
   },
 
@@ -1598,6 +1599,17 @@ const scorecard = {
       this.writeCache(state.round.id, state);
       this.draw(state);
       _toast('Kurt, Chase, and Brian are on Team 1 with 18 holes in.', 'success');
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addDemoTeam1VsPar() {
+    if (!this.state) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/demo/team1-vs-par`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+      _toast('Team 1 vs-par demo: ColdGin (H 3 received, par) + Kurt / Chase / Brian.', 'success');
     } catch (err) { _toast(err.message, 'error'); }
   },
 

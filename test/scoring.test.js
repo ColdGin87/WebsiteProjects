@@ -17,6 +17,16 @@ const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../li
 const { appBaseUrl } = require('../lib/tokens');
 const { resultsText } = require('../lib/compute/roundState');
 const { DEMO_FOURSOME, demoGrossTotal } = require('../lib/seed/demoFoursome');
+const {
+  DEMO_TEAM1_VS_PAR,
+  COLDGIN,
+  GOLDENDALE_PARS,
+  GOLDENDALE_SI,
+  demoPlayerNets,
+  team1VsParHoles,
+  team1VsParRace,
+  coldGinIsStrokesReceived,
+} = require('../lib/seed/demoTeam1VsPar');
 const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
 
 describe('playingHandicap', () => {
@@ -352,6 +362,59 @@ describe('demo foursome Kurt / Chase / Brian', () => {
       assert.equal(strokeSum, expected[i].strokes, player.name + ' strokes');
       assert.equal(netSum, expected[i].net, player.name + ' net');
     });
+  });
+});
+
+describe('Team 1 vs-par demo ColdGin / Kurt / Chase / Brian', () => {
+  it('keeps ColdGin HCP 3 as strokes received, not plus', () => {
+    assert.equal(COLDGIN.handicap, 3);
+    assert.equal(COLDGIN.playingHandicap, 3);
+    assert.ok(coldGinIsStrokesReceived());
+    assert.equal(strokesOnHole(3, 1), 1, 'SI 1 receives a stroke');
+    assert.equal(strokesOnHole(3, 2), 1, 'SI 2 receives a stroke');
+    assert.equal(strokesOnHole(3, 3), 1, 'SI 3 receives a stroke');
+    assert.equal(strokesOnHole(3, 4), 0, 'SI 4 does not');
+    assert.equal(strokesOnHole(3, 18), 0, 'easiest hole does not give a stroke back');
+    assert.equal(strokesOnHole('+3', 18), -1, '+3 would give a stroke on SI 18');
+    assert.notEqual(strokesOnHole(COLDGIN.playingHandicap, 18), -1);
+  });
+
+  it('ColdGin is par every hole and the other three keep 75/66 85/73 95/80', () => {
+    const names = DEMO_TEAM1_VS_PAR.map((p) => p.name);
+    assert.deepEqual(names, ['ColdGin', 'Kurt', 'Chase', 'Brian']);
+    DEMO_TEAM1_VS_PAR.forEach((p) => assert.equal(p.teamName, 'Team 1'));
+    assert.deepEqual(COLDGIN.holes, GOLDENDALE_PARS);
+    assert.equal(COLDGIN.holes.reduce((s, g) => s + g, 0), 72);
+    const coldNets = demoPlayerNets(COLDGIN);
+    assert.equal(coldNets.reduce((s, n) => s + n, 0), 69);
+    GOLDENDALE_SI.forEach((si, idx) => {
+      const want = si <= 3 ? GOLDENDALE_PARS[idx] - 1 : GOLDENDALE_PARS[idx];
+      assert.equal(coldNets[idx], want, 'ColdGin net hole ' + (idx + 1));
+    });
+    const locked = [
+      { name: 'Kurt', gross: 75, net: 66 },
+      { name: 'Chase', gross: 85, net: 73 },
+      { name: 'Brian', gross: 95, net: 80 },
+    ];
+    locked.forEach((want) => {
+      const player = DEMO_TEAM1_VS_PAR.find((p) => p.name === want.name);
+      assert.equal(demoGrossTotal(player), want.gross, want.name + ' gross');
+      assert.equal(demoPlayerNets(player).reduce((s, n) => s + n, 0), want.net, want.name + ' net');
+    });
+  });
+
+  it('best 1G+2N vs-par is computed hole-by-hole with a running race', () => {
+    const holes = team1VsParHoles();
+    const race = team1VsParRace(holes);
+    assert.equal(holes.length, 18);
+    assert.equal(holes[0].total, -2, 'hole 1 best 1G+2N with ColdGin at par');
+    holes.forEach((h) => {
+      assert.equal(typeof h.total, 'number');
+      assert.ok(h.balls.length >= 3, 'hole ' + h.holeNumber + ' counts 1G+2N');
+    });
+    const sum = holes.reduce((s, h) => s + h.total, 0);
+    assert.equal(race[17].race, sum);
+    assert.equal(race[0].race, holes[0].total);
   });
 });
 

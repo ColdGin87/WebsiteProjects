@@ -65,9 +65,9 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826j/);
-    assert.match(html, /js\/formats\.js\?v=20260826j/);
-    assert.match(src, /ASSET_V:\s*'20260826j'/);
+    assert.match(html, /20260826l/);
+    assert.match(html, /js\/formats\.js\?v=20260826l/);
+    assert.match(src, /ASSET_V:\s*'20260826l'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {

@@ -19,6 +19,12 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 
+const {
+  GOLDENDALE_PARS,
+  team1VsParHoles,
+  team1VsParRace,
+} = require('../lib/seed/demoTeam1VsPar');
+
 const ROOT = path.join(__dirname, '..');
 const PLAYERS = [
   { name: 'A', handicap: 4, gross: 5, dots: 1, net: 4 },
@@ -402,6 +408,67 @@ async function runDemoScenario(base) {
   console.log('PASS demo foursome Kurt 75/66 · Chase 85/73 · Brian 95/80');
 }
 
+async function runTeam1VsParDemo(base) {
+  const stamp = Date.now();
+  const registered = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Vs Par Reviewer',
+      email: `scorecard.team1.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const token = registered.token;
+  const created = await api(base, 'POST', '/api/rounds', {
+    token,
+    body: {
+      name: 'Team 1 vs-par demo — ColdGin, Kurt, Chase, Brian',
+      format: 'team_net',
+      holes: '18',
+      allowance: 100,
+      grossBalls: 1,
+      netBalls: 2,
+      dualCount: false,
+    },
+  });
+  const roundId = created.round.id;
+  const state = await api(base, 'POST', `/api/rounds/${roundId}/demo/team1-vs-par`, { token });
+  const expected = [
+    { name: 'ColdGin', hcp: 3, gross: 72, net: 69 },
+    { name: 'Kurt', hcp: 9, gross: 75, net: 66 },
+    { name: 'Chase', hcp: 12, gross: 85, net: 73 },
+    { name: 'Brian', hcp: 15, gross: 95, net: 80 },
+  ];
+  const team1 = state.teams.find((t) => t.name === 'Team 1');
+  if (!team1) fail('Team 1 missing on vs-par demo');
+  for (const want of expected) {
+    const member = state.members.find((m) => m.display_name === want.name);
+    if (!member) fail('team1 demo missing ' + want.name);
+    assertEqual(String(member.handicap), String(want.hcp), want.name + ' stored HCP is strokes received');
+    if (String(member.handicap).startsWith('+')) fail(want.name + ' HCP must not be stored as plus');
+    assertEqual(Number(member.playing_handicap), want.hcp, want.name + ' playing HCP');
+    assertEqual(member.totalGross, want.gross, want.name + ' 18-hole gross');
+    assertEqual(member.totalNet, want.net, want.name + ' 18-hole net');
+    assertEqual(member.team_id, team1.id, want.name + ' on Team 1');
+  }
+  const cold = state.members.find((m) => m.display_name === 'ColdGin');
+  for (let i = 1; i <= 18; i++) {
+    const scored = (cold.holes || []).find((h) => h.holeNumber === i);
+    assertEqual(scored && scored.gross, GOLDENDALE_PARS[i - 1], 'ColdGin hole ' + i + ' is par');
+  }
+  const wantHoles = team1VsParHoles();
+  const wantRace = team1VsParRace(wantHoles);
+  (team1.holes || []).forEach((h) => {
+    const want = wantHoles.find((x) => x.holeNumber === h.holeNumber);
+    assertEqual(h.total, want.total, 'Team 1 hole ' + h.holeNumber + ' vs-par');
+  });
+  assertEqual(team1.total, wantRace[17].race, 'Team 1 running vs-par race');
+  const host = state.members.find((m) => m.display_name === 'Vs Par Reviewer');
+  if (host && host.holes && host.holes.some((h) => h.gross != null)) {
+    fail('team1 demo must not invent host scores');
+  }
+  console.log('PASS Team 1 vs-par demo ColdGin 72/69 · Kurt 75/66 · Chase 85/73 · Brian 95/80 · race ' + team1.total);
+}
+
 async function runCacheHeaders(base) {
   const js = await fetch(base + '/js/api.js');
   if (!js.ok) fail('GET /js/api.js failed');
@@ -454,6 +521,7 @@ async function main() {
     await runCacheHeaders(base);
     await runScenario(base);
     await runDemoScenario(base);
+    await runTeam1VsParDemo(base);
   } finally {
     if (child) {
       child.kill('SIGTERM');
