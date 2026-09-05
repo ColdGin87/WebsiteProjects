@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905a',
+  ASSET_V: '20260905b',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
 
@@ -436,11 +436,11 @@ const scorecard = {
 
   nassauSegmentsForHole(holeNumber) {
     const hn = Number(holeNumber) || 1;
-    const bits = [];
-    if (hn <= 9) bits.push({ key: 'front', label: 'Front', end: 9 });
-    if (hn >= 10) bits.push({ key: 'back', label: 'Back', end: 18 });
-    bits.push({ key: 'overall', label: 'Overall', end: 18 });
-    return bits;
+    return [
+      { key: 'front', label: 'Front', end: 9, enabled: hn <= 9, hint: hn <= 9 ? 'dies at 9' : 'closed after 9' },
+      { key: 'back', label: 'Back', end: 18, enabled: hn >= 10, hint: hn >= 10 ? 'dies at 18' : 'starts hole 10' },
+      { key: 'overall', label: 'Overall', end: 18, enabled: true, hint: 'tap→18' },
+    ];
   },
 
   nassauSegLabel(segment) {
@@ -468,18 +468,17 @@ const scorecard = {
   },
 
   nassauRunText(seg) {
-    if (!seg) return '—';
+    if (!seg) return 'RUNNING —';
     const a = seg.holesWonA != null ? seg.holesWonA : 0;
     const b = seg.holesWonB != null ? seg.holesWonB : 0;
-    return `Run ${seg.status || '—'} (${a}–${b})`;
+    return `RUNNING ${seg.status || 'AS'} (${a}–${b})`;
   },
 
   nassauLineHtml(label, seg, holeNumber, teamA, teamB) {
     return `<div class="nassau-press-line">
       <div class="nassau-line-title">${_esc(label)}</div>
-      <div>${_esc(this.nassauThisHole(seg, holeNumber, teamA, teamB))}</div>
-      <div>${_esc(this.nassauByHole(seg))}</div>
       <div class="nassau-line-run">${_esc(this.nassauRunText(seg))}</div>
+      <div>${_esc(this.nassauThisHole(seg, holeNumber, teamA, teamB))}</div>
     </div>`;
   },
 
@@ -490,12 +489,14 @@ const scorecard = {
 
   nassauBoardInner(state) {
     const n = state && state.sideGames && state.sideGames.games && state.sideGames.games.nassau;
-    if (!n || !n.front) return '<div class="nassau-original">Nassau —</div>';
+    if (!n || !n.front) {
+      return '<div class="nassau-original">Nassau RUNNING — need two teams</div>';
+    }
     const hn = this.currentHole || 1;
     const presses = this.nassauPresses(state);
     const counts = ['front', 'back', 'overall'].map((seg) => {
       const c = this.nassauPressCount(state, seg);
-      const label = seg === 'front' ? 'F' : seg === 'back' ? 'B' : '18';
+      const label = seg === 'front' ? 'F' : seg === 'back' ? 'B' : 'O';
       return c ? `${label}${c}` : null;
     }).filter(Boolean);
     const badge = counts.length
@@ -518,14 +519,25 @@ const scorecard = {
 
   nassauPressButtonsHtml(state, holeNumber) {
     if (!this.isNassauOn(state)) return '';
-    return `<div class="nassau-press-wrap">${this.nassauSegmentsForHole(holeNumber).map((seg) => {
-      const c = this.nassauPressCount(state, seg.key);
-      return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${holeNumber}" onclick="scorecard.pressNassauFromHole(${holeNumber}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${holeNumber}">P ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}</button>`;
-    }).join('')}</div>`;
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    return `<div class="nassau-press-wrap" id="nassau-press-wrap">
+      <div class="nassau-press-heading">Nassau Press</div>
+      <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
+        const c = this.nassauPressCount(state, seg.key);
+        const disabled = seg.enabled === false ? ' disabled' : '';
+        return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
+      }).join('')}</div>
+    </div>`;
   },
 
   async pressNassauFromHole(holeNumber, segment) {
     if (!this.state || !this.isNassauOn(this.state)) return;
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    const seg = this.nassauSegmentsForHole(hn).find((s) => s.key === segment);
+    if (seg && seg.enabled === false) {
+      _toast(seg.hint || 'That Nassau segment is not open on this hole.', 'error');
+      return;
+    }
     const endHole = segment === 'front' ? 9 : 18;
     try {
       const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
@@ -1985,13 +1997,13 @@ const scorecard = {
         <div class="hole-chrome">
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+          ${this.nassauPressButtonsHtml(state, holeNumber)}
+          ${this.nassauBoardHtml(state)}
           ${this.vegasBoardHtml(state)}
           ${this.vegasPressButtonHtml(state, holeNumber)}
-          ${this.nassauBoardHtml(state)}
-          ${this.nassauPressButtonsHtml(state, holeNumber)}
           ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
-          ${this.pressableGames(state).length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to the end of that game or Nassau segment. Same dollars as the parent unless you change them.')}` : ''}
+          ${this.pressableGames(state).filter((g) => g.key !== 'nassau').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to 18 (Vegas games-running, Wolf, Nines). Nassau uses the Front / Back / Overall Press buttons above.')}` : ''}
         </div>
         ${this.wolfBarHtml(state, holeNumber)}
         ${this.kpPickerHtml(state, holeNumber)}
@@ -2222,6 +2234,8 @@ const scorecard = {
       ${this.addPlayerPanel(state)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
+        ${this.nassauPressButtonsHtml(state, this.currentHole || 1)}
+        ${this.nassauBoardHtml(state)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>
@@ -2776,7 +2790,7 @@ const scorecard = {
     const nassauBoard = document.getElementById('nassau-board');
     if (nassauBoard) nassauBoard.innerHTML = this.nassauBoardInner(this.state);
     this.replaceNode(
-      document.querySelector('.hole-chrome .nassau-press-wrap'),
+      document.getElementById('nassau-press-wrap') || document.querySelector('.hole-chrome .nassau-press-wrap'),
       this.nassauPressButtonsHtml(this.state, hn)
     );
     const ninesBoard = document.getElementById('nines-board');
@@ -3179,7 +3193,7 @@ const scorecard = {
         <h3>Vegas</h3>
         <p>2v2. Pair numbers, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104, 4 and 11 = 114). Not the Sunday game vs-par total. Press is a games-running count that starts at 1; each tap adds a game from that hole on. This-hole swing = difference × games running (5-point hole × 3 games = +15/−15). Two lines: this-hole difference, then RUNNING that names who is up and who is down (e.g. Team B up 20 · Team A down 20). Flip on gross birdie+. Both sides birdie+ flips both.</p>
         <h3>Nassau (NASA)</h3>
-        <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Front, Back, and Overall can be pressed independently. No auto 2-down.</p>
+        <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
         <h3>Wolf</h3>
         <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>

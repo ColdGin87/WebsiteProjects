@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905a/);
-    assert.match(html, /js\/formats\.js\?v=20260905a/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905a/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905a/);
-    assert.match(src, /ASSET_V:\s*'20260905a'/);
+    assert.match(html, /20260905b/);
+    assert.match(html, /js\/formats\.js\?v=20260905b/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905b/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905b/);
+    assert.match(src, /ASSET_V:\s*'20260905b'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -114,6 +114,19 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /nassauPressButtonsHtml/);
     assert.match(src, /pressNassauFromHole/);
     assert.match(src, /nassauPresses/);
+    const nassauBtns = sliceFn('nassauPressButtonsHtml(state, holeNumber)', 'async pressNassauFromHole');
+    assert.match(nassauBtns, /Press \$\{seg\.label\}/);
+    assert.match(nassauBtns, /nassau-press-wrap/);
+    const nassauSegs = sliceFn('nassauSegmentsForHole(holeNumber)', 'nassauSegLabel(segment)');
+    assert.match(nassauSegs, /key: 'front'/);
+    assert.match(nassauSegs, /key: 'back'/);
+    assert.match(nassauSegs, /key: 'overall'/);
+    const holeDraw = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    const pressAt = holeDraw.indexOf('nassauPressButtonsHtml');
+    const boardAt = holeDraw.indexOf('nassauBoardHtml');
+    assert.ok(pressAt >= 0 && boardAt > pressAt, 'Nassau Press sits on the hole card above running scores');
+    assert.match(css, /\.nassau-press-btn[\s\S]{0,240}min-height:\s*48px/);
+    assert.match(css, /\.nassau-press-btns[\s\S]{0,80}flex-direction:\s*column/);
     assert.match(src, /ninesBoardHtml/);
     assert.match(src, /nines-run/);
     assert.match(css, /\.nassau-press-btn/);
