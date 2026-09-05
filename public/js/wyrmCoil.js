@@ -1,7 +1,7 @@
 /**
  * Wyrm Coil — original birdie dragon slots overlay.
  * Casino-dragon mood only. Original name, art, and pay. Not a copy of any
- * cabinet. Fun layer. Toggle still applies. N spins = gross + net birdies.
+ * cabinet. Fun layer. Toggle still applies. N spins = better than par.
  */
 const WYRM_ICONS = [
   { key: 'coil', mark: '◎', label: 'Coil' },
@@ -91,12 +91,12 @@ const wyrmCoil = {
     const g = Number(slots.grossBirdies) || 0;
     const net = Number(slots.netBirdies) || 0;
     const label = n
-      ? `Play Wyrm Coil · ${n} spin${n === 1 ? '' : 's'} (${g} gross + ${net} net birdies)`
-      : 'Wyrm Coil · no birdies this round';
-    return `<div class="wyrm-coil-banner" id="wyrm-coil-banner">
-      <h3>Wyrm Coil</h3>
-      <p>Birdie dragon slots. Fun only — not a settle. ${n} spin${n === 1 ? '' : 's'} from this card.</p>
-      <button type="button" class="btn btn-accent" id="wyrm-coil-open">${label}</button>
+      ? `Spin your birdies · ${n} spin${n === 1 ? '' : 's'}`
+      : 'Wyrm Coil · no better-than-par scores';
+    return `<div class="wyrm-coil-banner wyrm-spin-door" id="wyrm-coil-banner">
+      <h3>Spin your birdies</h3>
+      <p>Wyrm Coil · fun only. ${g} gross + ${net} net better than par.</p>
+      <button type="button" class="btn btn-accent wyrm-spin-door-btn" id="wyrm-coil-open" ${n ? '' : 'disabled'}>${label}</button>
     </div>`;
   },
 
@@ -109,16 +109,7 @@ const wyrmCoil = {
   onNineteenthDrawn(state) {
     this.bindBanner();
     const slots = this.slotsFrom(state);
-    if (!slots.on) {
-      this.hide();
-      return;
-    }
-    const roundId = state && state.round && state.round.id;
-    if (this.open && document.getElementById('wyrm-coil-overlay')) return;
-    if (slots.spins > 0 && this.autoOpenedFor !== roundId) {
-      this.autoOpenedFor = roundId;
-      this.show(state);
-    }
+    if (!slots.on) this.hide();
   },
 
   show(state) {

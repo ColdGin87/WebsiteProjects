@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826y/);
-    assert.match(html, /js\/formats\.js\?v=20260826y/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826y/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260826y/);
-    assert.match(src, /ASSET_V:\s*'20260826y'/);
+    assert.match(html, /20260826z/);
+    assert.match(html, /js\/formats\.js\?v=20260826z/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826z/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260826z/);
+    assert.match(src, /ASSET_V:\s*'20260826z'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -187,6 +187,17 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /wolfRoster/);
     assert.match(src, /is-readonly/);
     assert.match(src, /you can still enter gross/i);
+    assert.match(src, /setScoreAdvance/);
+    assert.match(src, /score-advance/);
+    assert.match(src, /Gross must be 1–19/);
+    assert.match(src, /vegasNamedRun/);
+    assert.match(src, /games running/);
+    assert.match(src, /playPodiumReveal/);
+    assert.match(src, /revealNineteenthCard/);
+    assert.match(src, /shareNineteenth/);
+    assert.match(src, /wolfPartnered/);
+    assert.match(css, /\.podium-place/);
+    assert.match(css, /\.reveal-card/);
     const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
     assert.match(holeRow, /canWriteMember/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
@@ -242,6 +253,7 @@ describe('Wyrm Coil overlay', () => {
   it('ships an original dragon overlay and never copies casino names', () => {
     const coil = fs.readFileSync(path.join(ROOT, 'public/js/wyrmCoil.js'), 'utf8');
     assert.match(coil, /Wyrm Coil/);
+    assert.match(coil, /Spin your birdies/);
     assert.match(coil, /Birdie dragon slots/);
     assert.match(coil, /takeSpin/);
     assert.match(coil, /HIGH_KEY/);

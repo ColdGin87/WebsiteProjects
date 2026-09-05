@@ -242,13 +242,30 @@ async function runScenario(base) {
       body: {
         memberId: state.members.find((m) => m.display_name === 'A').id,
         holeNumber: 2,
-        gross: 16,
+        gross: 20,
       },
     });
-    fail('gross 16 should be rejected');
+    fail('gross 20 should be rejected');
   } catch (err) {
-    if (!/1 to 15/.test(err.message)) throw err;
+    if (!/1 to 19/.test(err.message)) throw err;
   }
+  const eleven = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token,
+    body: {
+      memberId: state.members.find((m) => m.display_name === 'A').id,
+      holeNumber: 3,
+      gross: 11,
+    },
+  });
+  if (!eleven || eleven.ok !== true) fail('gross 11 should save');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token,
+    body: {
+      memberId: state.members.find((m) => m.display_name === 'A').id,
+      holeNumber: 3,
+      gross: null,
+    },
+  });
 
   if (!lastPost.updatedAt) fail('slim POST missing updatedAt');
   const postedHole = (lastPost.teams || []).find((t) => t.name === 'Team 1') || (lastPost.teams || [])[0];
@@ -718,11 +735,11 @@ async function runWolfScenario(base) {
   const wolf = live.sideGames && live.sideGames.games && live.sideGames.games.wolf;
   if (!wolf) fail('wolf game missing after lock');
   const w1 = (wolf.points || []).find((p) => Number(p.id) === Number(guests[0].id));
-  assertEqual(w1 && w1.points, 6, 'lone wolf +2 from each of 3');
+  assertEqual(w1 && w1.points, 2, 'lone wolf ±2');
   const hole = (wolf.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(hole && hole.winner, 'wolf', 'better ball wolf wins');
-  assertEqual(hole && hole.points, 2, 'lone multiplier 2');
-  console.log('PASS Wolf card accepts gross before sides lock; lone +2 from each');
+  assertEqual(hole && hole.points, 2, 'lone value 2');
+  console.log('PASS Wolf card accepts gross before sides lock; lone ±2');
 }
 
 async function main() {

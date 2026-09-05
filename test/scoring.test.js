@@ -374,12 +374,13 @@ describe('validateGross', () => {
   it('accepts 1 through 15', () => {
     assert.equal(validateGross(1), 1);
     assert.equal(validateGross(15), 15);
+    assert.equal(validateGross(19), 19);
   });
 
   it('rejects out of range', () => {
-    assert.throws(() => validateGross(0), /1 to 15/);
-    assert.throws(() => validateGross(16), /1 to 15/);
-    assert.throws(() => validateGross(4.5), /1 to 15/);
+    assert.throws(() => validateGross(0), /1 to 19/);
+    assert.throws(() => validateGross(20), /1 to 19/);
+    assert.throws(() => validateGross(4.5), /1 to 19/);
   });
 });
 

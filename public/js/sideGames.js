@@ -17,7 +17,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1 },
-    rule: '2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. This-hole points = the difference. The winner adds those points and the loser subtracts the same (zero-sum). Example: H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3. Birdie or eagle (or better) flips the other side so their high score goes first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point. Presses from the current hole to 18.',
+    rule: '2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104, 4 and 11 = 114). That is not the 1G+2N vs-par team total. This-hole points = the difference × games running (starts at 1; each Press adds a game from that hole on). The winner adds those points and the loser subtracts the same (zero-sum). Two lines: this-hole difference, then RUNNING that names who is up and who is down. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point.',
   },
   {
     key: 'nassau',
@@ -32,8 +32,8 @@ const SIDE_GAMES = [
     label: 'Wolf',
     defaultOn: false,
     pressable: true,
-    defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1 },
-    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before Wolf points settle; gross can be entered now. Better ball (gross or net) wins; tie = 0. Partnered: Wolf + partner +1 each, field −1 each (loss reverses). Lone after drives: Wolf +2 from each / −2 to each. Blind Lone before any drive: +3 from each / −3. Presses optional, current hole to 18.',
+    defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1, partnered: 1, lone: 2, blind: 4 },
+    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before Wolf points settle; gross can be entered now. Better ball (gross or net) wins; tie = 0. Point values are setup toggles (defaults partnered ±1, Lone ±2, Blind Lone ±4). Win +, lose −, same magnitude. Presses optional, current hole to 18.',
   },
   {
     key: 'nines',
@@ -62,6 +62,15 @@ function parseSideGames(raw) {
     const src = obj[game.key] || {};
     out[game.key] = { ...out[game.key], ...src, on: !!src.on };
     if (game.key === 'nines' && src.blitz === undefined) out.nines.blitz = true;
+    if (game.key === 'wolf') {
+      const pos = (v, fallback) => {
+        const n = Number(v);
+        return Number.isFinite(n) && n > 0 ? n : fallback;
+      };
+      out.wolf.partnered = pos(out.wolf.partnered, 1);
+      out.wolf.lone = pos(out.wolf.lone, 2);
+      out.wolf.blind = pos(out.wolf.blind, 4);
+    }
   }
   const slots = obj.birdieSlots || {};
   out.birdieSlots = { on: slots.on !== false };

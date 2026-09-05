@@ -3468,3 +3468,101 @@ input.score-input:disabled {
   min-height: 44px;
   min-width: 88px;
 }
+
+.score-advance {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.score-advance-btn {
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+  font-weight: 700;
+}
+
+.score-advance-btn.is-on {
+  background: var(--accent);
+  border-color: var(--accent-dark);
+}
+
+.vegas-named-run {
+  display: block;
+  font-weight: 800;
+}
+
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+  min-height: 140px;
+  margin: 12px 0 20px;
+}
+
+.podium-place {
+  text-align: center;
+  padding: 10px 14px;
+  background: #1B5E20;
+  color: #fff;
+  border-radius: 8px;
+  min-width: 88px;
+}
+
+.podium-place.place-1 { min-height: 110px; background: #F9A825; color: #1A1A1A; }
+.podium-place.place-2 { min-height: 90px; }
+.podium-place.place-3 { min-height: 72px; }
+
+.confetti.is-on {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(circle, #FFD54F 2px, transparent 3px),
+    radial-gradient(circle, #C62828 2px, transparent 3px),
+    radial-gradient(circle, #2E7D32 2px, transparent 3px);
+  background-size: 40px 40px, 56px 56px, 32px 32px;
+  animation: confetti-pop 1.6s ease-out;
+}
+
+@keyframes confetti-pop {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(24px); }
+}
+
+.reveal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.reveal-card {
+  min-height: 72px;
+  text-align: left;
+  padding: 10px;
+  border: 1px solid #ccc;
+  background: #fff;
+}
+
+.reveal-title { font-weight: 800; display: block; }
+.reveal-body { display: block; margin-top: 6px; }
+.reveal-card.is-open { border-color: var(--accent-dark); }
+
+.share-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0 20px;
+}
+
+.wyrm-spin-door {
+  margin: 16px 0;
+  padding: 16px;
+  border: 2px dashed #1B5E20;
+  text-align: center;
+}
+
+.wyrm-spin-door-btn { min-height: 48px; min-width: 160px; }

@@ -79,6 +79,7 @@ describe('Vegas', () => {
     assert.equal(vegasPairNumber(4, 5, false), 45);
     assert.equal(vegasPairNumber(5, 4, false), 45);
     assert.equal(vegasPairNumber(10, 4, false), 104);
+    assert.equal(vegasPairNumber(4, 11, false), 114);
     assert.equal(vegasPairNumber(4, 5, true), 54);
   });
 
@@ -154,6 +155,28 @@ describe('Vegas', () => {
     assert.equal(vegas.teamB.points, -3);
   });
 
+  it('multiplies this-hole swing by games running', () => {
+    const holes = [
+      { holeNumber: 1, par: 4, strokeIndex: 1 },
+      { holeNumber: 2, par: 4, strokeIndex: 2 },
+    ];
+    const teams = [
+      { id: 10, name: 'Team A', members: [member(1, 'A', 0, [4, 5]), member(2, 'B', 0, [5, 5])] },
+      { id: 20, name: 'Team B', members: [member(3, 'C', 0, [5, 4]), member(4, 'D', 0, [6, 4])] },
+    ];
+    const presses = [{ game_key: 'vegas', start_hole: 2 }];
+    const vegas = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1, presses });
+    assert.equal(vegas.holes[0].games, 1);
+    assert.equal(vegas.holes[0].points, 11);
+    assert.equal(vegas.holes[0].swingA, 11);
+    assert.equal(vegas.holes[1].games, 2);
+    assert.equal(vegas.holes[1].points, 11);
+    assert.equal(vegas.holes[1].swingA, -22);
+    assert.equal(vegas.holes[1].swingB, 22);
+    assert.equal(vegas.teamA.points, -11);
+    assert.equal(vegas.teamB.points, 11);
+  });
+
   it('uses pair numbers, never the 1G+2N vs-par team total', () => {
     const players = [
       { id: 'A', handicap: 4, gross: 5 },
@@ -226,7 +249,7 @@ describe('Wolf', () => {
       pick: { wolfMemberId: 1, partnerMemberId: null, lone: true, blind: true },
       scoring: 'gross',
     });
-    assert.equal(blind.points, 3);
+    assert.equal(blind.points, 4);
     assert.equal(blind.blind, true);
     const partnered = scoreWolfHole({
       players: members,
@@ -237,7 +260,7 @@ describe('Wolf', () => {
     assert.equal(partnered.points, 1);
   });
 
-  it('pays house points: partnered ±1, lone +2 from each, blind +3 from each; tie 0', () => {
+  it('pays house points: partnered ±1, lone ±2, blind ±4; tie 0', () => {
     const hole = { holeNumber: 1, par: 4, strokeIndex: 1 };
     const four = [
       { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 3 }] },
@@ -256,15 +279,15 @@ describe('Wolf', () => {
     assert.equal(partnered[3], -1);
     assert.equal(partnered[4], -1);
     const loneWin = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: null, lone: 1, locked: 1 }]);
-    assert.equal(loneWin[1], 6);
+    assert.equal(loneWin[1], 2);
     assert.equal(loneWin[2], -2);
     assert.equal(loneWin[3], -2);
     assert.equal(loneWin[4], -2);
     const blindWin = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: null, lone: 1, blind: 1, locked: 1 }]);
-    assert.equal(blindWin[1], 9);
-    assert.equal(blindWin[2], -3);
-    assert.equal(blindWin[3], -3);
-    assert.equal(blindWin[4], -3);
+    assert.equal(blindWin[1], 4);
+    assert.equal(blindWin[2], -4);
+    assert.equal(blindWin[3], -4);
+    assert.equal(blindWin[4], -4);
     const tied = [
       { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
       { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
@@ -345,10 +368,34 @@ describe('Nines', () => {
     assert.equal(nines.holes[0].players[0].hole, 5);
     assert.equal(nines.holes[1].players[0].run, 10);
   });
+
+  it('sums 5-2-2 then 5-3-1 into running 10/5/3', () => {
+    const nines = scoreNines({
+      holes: [
+        { holeNumber: 1, par: 4, strokeIndex: 1 },
+        { holeNumber: 2, par: 4, strokeIndex: 2 },
+      ],
+      members: [
+        member(1, 'A', 0, [3, 3]),
+        member(2, 'B', 0, [5, 4]),
+        member(3, 'C', 0, [5, 5]),
+      ],
+      scoring: 'gross',
+      blitz: false,
+    });
+    assert.deepEqual(nines.holes[0].points, { 1: 5, 2: 2, 3: 2 });
+    assert.equal(nines.holes[0].players.find((p) => p.id === 1).run, 5);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 1).hole, 5);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 2).hole, 3);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 3).hole, 1);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 1).run, 10);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 2).run, 5);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 3).run, 3);
+  });
 });
 
 describe('Presses', () => {
-  it('Vegas press from a later hole only scores that range', () => {
+  it('Vegas press increments games running from that hole', () => {
     const holes = [
       { holeNumber: 1, par: 4, strokeIndex: 1 },
       { holeNumber: 2, par: 4, strokeIndex: 2 },
@@ -357,11 +404,16 @@ describe('Presses', () => {
       { id: 10, name: 'Team 1', members: [member(1, 'A', 0, [3, 4]), member(2, 'B', 0, [5, 5])] },
       { id: 20, name: 'Team 2', members: [member(3, 'C', 0, [5, 5]), member(4, 'D', 0, [6, 6])] },
     ];
-    const full = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1 });
-    const press = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1, startHole: 2, endHole: 18 });
-    assert.ok(full.teamA.points > press.teamA.points);
-    assert.equal(press.holes.length, 1);
-    assert.equal(press.holes[0].holeNumber, 2);
+    const pressed = scoreVegas({
+      holes,
+      teams,
+      scoring: 'gross',
+      dollarsPerPoint: 1,
+      presses: [{ game_key: 'vegas', start_hole: 2 }],
+    });
+    assert.equal(pressed.holes[0].games, 1);
+    assert.equal(pressed.holes[1].games, 2);
+    assert.equal(pressed.holes[1].swingA, pressed.holes[1].points * 2);
   });
 
   it('Nassau press reads DB-shaped start_hole and stays on that segment', () => {
@@ -485,6 +537,17 @@ describe('Birdie slots', () => {
     assert.equal(slotSpin(9, 1, 1), slotSpin(9, 1, 1));
     assert.equal(slotSpin(9, 1, 1, 'net'), slotSpin(9, 1, 1, 'net'));
     assert.equal(computeBirdieSlots({ on: false }).on, false);
+  });
+
+  it('counts eagles and albatrosses as better than par, not birdies only', () => {
+    const holes = [{ holeNumber: 1, par: 5 }];
+    const members = [
+      { id: 1, display_name: 'Ann', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 2 }] },
+    ];
+    const slots = computeBirdieSlots({ on: true, holes, members, roundId: 3 });
+    assert.equal(slots.spins, 2);
+    assert.equal(slots.grossBirdies, 1);
+    assert.equal(slots.netBirdies, 1);
   });
 
   it('counts a net-only birdie when gross is not under par', () => {
