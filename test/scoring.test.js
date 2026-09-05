@@ -8,6 +8,10 @@ const {
   playingHandicap,
   validateGross,
   autoBalanceTeams,
+  TEAM_GAMES,
+  gameFromKey,
+  formatRuleText,
+  formatLabel,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
@@ -156,7 +160,7 @@ describe('netScore', () => {
 });
 
 describe('Goldendale required team hole', () => {
-  it('four players H 4,11,18,24 on SI 1 par 5 → team 16', () => {
+  it('four players H 4,11,18,24 on SI 1 par 5 → team +1 vs par', () => {
     const players = [
       { id: 'A', handicap: 4, gross: 5 },
       { id: 'B', handicap: 11, gross: 6 },
@@ -170,15 +174,16 @@ describe('Goldendale required team hole', () => {
     assert.deepEqual(players.map((p) => p.strokes), [1, 1, 1, 2]);
     assert.deepEqual(players.map((p) => p.net), [4, 5, 6, 6]);
 
-    const team = teamHoleScore(players, { grossBalls: 1, netBalls: 2, dualCount: false });
-    assert.equal(team.total, 16);
+    const team = teamHoleScore(players, { grossBalls: 1, netBalls: 2, dualCount: false, par: 5 });
+    assert.equal(team.total, 1);
     assert.equal(team.incomplete, false);
     assert.equal(team.balls.length, 3);
     const ids = team.balls.map((b) => b.playerId);
     assert.equal(new Set(ids).size, 3);
     assert.equal(team.balls.filter((b) => b.type === 'gross').length, 1);
     assert.equal(team.balls.filter((b) => b.type === 'net').length, 2);
-    assert.equal(holeTeamVsPar(team.total, 5), 1, 'team 16 vs par 5 is +1 display only');
+    assert.equal(holeTeamVsPar(team.total), 1, 'team hole total is already vs par');
+    assert.equal(formatVsPar(team.total), '+1');
   });
 });
 
@@ -196,30 +201,44 @@ describe('stroke dots and team vs-par display', () => {
     assert.equal(formatVsPar(0), 'E');
     assert.equal(formatVsPar(-2), '-2');
     assert.equal(formatVsPar(1), '+1');
-    assert.equal(holeTeamVsPar(13, 5), -2);
-    assert.equal(formatVsPar(holeTeamVsPar(13, 5)), '-2');
+    assert.equal(holeTeamVsPar(-2), -2);
+    assert.equal(formatVsPar(holeTeamVsPar(-2)), '-2');
   });
 
   it('running line is the sum of hole vs-par through that hole', () => {
     const holes = [
-      { holeNumber: 1, par: 5, total: 13 },
-      { holeNumber: 2, par: 4, total: 12 },
+      { holeNumber: 1, total: -2 },
+      { holeNumber: 2, total: 2 },
     ];
     assert.equal(runningTeamVsPar(holes, 1), -2);
     assert.equal(formatVsPar(runningTeamVsPar(holes, 1)), '-2');
-    assert.equal(runningTeamVsPar(holes, 2), -2);
-    assert.equal(formatVsPar(runningTeamVsPar(holes, 2)), '-2');
+    assert.equal(runningTeamVsPar(holes, 2), 0);
+    assert.equal(formatVsPar(runningTeamVsPar(holes, 2)), 'E');
   });
 });
 
 describe('teamHoleScore', () => {
+  it('does not treat a missing gross as zero', () => {
+    const team = teamHoleScore(
+      [
+        { id: 1, gross: 5, net: 4 },
+        { id: 2, gross: 6, net: 5 },
+        { id: 3, gross: 7, net: 6 },
+        { id: 4, gross: null, net: null },
+      ],
+      { grossBalls: 1, netBalls: 2, par: 5 }
+    );
+    assert.equal(team.incomplete, false);
+    assert.equal(team.total, 1);
+  });
+
   it('flags incomplete when fewer than three scores', () => {
     const team = teamHoleScore(
       [
         { id: 1, gross: 4, net: 4 },
         { id: 2, gross: 5, net: 4 },
       ],
-      { grossBalls: 1, netBalls: 2 }
+      { grossBalls: 1, netBalls: 2, par: 4 }
     );
     assert.equal(team.incomplete, true);
     assert.ok(team.total != null);
@@ -231,10 +250,10 @@ describe('teamHoleScore', () => {
         { id: 1, gross: 3, net: 2 },
         { id: 2, gross: 8, net: 7 },
       ],
-      { grossBalls: 1, netBalls: 1, dualCount: true }
+      { grossBalls: 1, netBalls: 1, dualCount: true, par: 4 }
     );
     assert.equal(team.incomplete, false);
-    assert.equal(team.total, 5); // 3 gross + 2 net from same player
+    assert.equal(team.total, -3); // same player: gross 3 (−1) + net 2 (−2)
     assert.equal(team.balls[0].playerId, 1);
     assert.equal(team.balls[1].playerId, 1);
   });
@@ -246,12 +265,41 @@ describe('teamHoleScore', () => {
         { id: 'B', gross: 5, net: 4 },
         { id: 'C', gross: 6, net: 6 },
       ],
-      { grossBalls: 1, netBalls: 1, dualCount: false }
+      { grossBalls: 1, netBalls: 1, dualCount: false, par: 5 }
     );
-    // Best: B gross 5 + A net 5 = 10, or A gross 5 + B net 4 = 9
-    assert.equal(team.total, 9);
+    // Best vs par: A gross 0 + B net −1 = −1 (not B gross 0 + A net 0)
+    assert.equal(team.total, -1);
     assert.equal(team.balls.find((b) => b.type === 'gross').playerId, 'A');
     assert.equal(team.balls.find((b) => b.type === 'net').playerId, 'B');
+  });
+
+  it('keeps the best vs-par combo, not lowest-gross-first', () => {
+    const team = teamHoleScore(
+      [
+        { id: 'A', gross: 4, net: 3 },
+        { id: 'B', gross: 5, net: 5 },
+        { id: 'C', gross: 5, net: 5 },
+      ],
+      { grossBalls: 1, netBalls: 2, dualCount: false, par: 5 }
+    );
+    // Lowest-gross-first would lock A as gross (−1) + B/C nets (0+0) = −1.
+    // Best: B or C as gross (0) + A net (−2) + other net (0) = −2.
+    assert.equal(team.total, -2);
+    assert.equal(team.balls.find((b) => b.type === 'net').playerId, 'A');
+    assert.equal(team.balls.find((b) => b.type === 'gross').playerId !== 'A', true);
+  });
+});
+
+describe('team game formats', () => {
+  it('ships the five selectable games with 1G+2N default', () => {
+    assert.deepEqual(TEAM_GAMES.map((g) => g.key), ['3G', '3N', '1G2N', '1G3N', '2G2N']);
+    assert.equal(gameFromKey('1G2N').isDefault, true);
+    assert.equal(gameFromKey('missing').key, '1G2N');
+    assert.match(formatLabel(1, 2), /1 gross \+ 2 net vs par/);
+    assert.match(formatRuleText(1, 2), /1 gross score and 2 net scores/);
+    assert.match(formatRuleText(1, 2), /vs par/);
+    assert.match(formatRuleText(1, 2), /lowest \(best\) combo/);
+    assert.match(formatRuleText(1, 2), /running vs-par total/);
   });
 });
 
@@ -311,8 +359,8 @@ describe('resultsText leading vs winning', () => {
   function sample(status) {
     return {
       round: { name: 'Saturday', format: 'team_net', status, course: { name: 'Goldendale Golf Club' } },
-      winner: { name: 'Team 1', total: 87 },
-      teams: [{ name: 'Team 1', total: 87, incomplete: false, members: [] }],
+      winner: { name: 'Team 1', total: 2 },
+      teams: [{ name: 'Team 1', total: 2, incomplete: false, members: [] }],
       unassigned: [],
       holeResults: [],
     };
@@ -320,13 +368,13 @@ describe('resultsText leading vs winning', () => {
 
   it('says Leading team while the round is live', () => {
     const text = resultsText(sample('live'));
-    assert.match(text, /Leading team: Team 1 \(87\)/);
+    assert.match(text, /Leading team: Team 1 \(\+2\)/);
     assert.equal(text.includes('Winning team'), false);
   });
 
   it('says Winning team only when the round is completed', () => {
     const text = resultsText(sample('completed'));
-    assert.match(text, /Winning team: Team 1 \(87\)/);
+    assert.match(text, /Winning team: Team 1 \(\+2\)/);
     assert.equal(text.includes('Leading team'), false);
   });
 });

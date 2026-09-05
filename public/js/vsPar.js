@@ -1,7 +1,6 @@
 /**
- * Display-only team vs-par.
- * Hole line = teamHole − 3 × par = (gross − par) + (net1 − par) + (net2 − par).
- * Does not change who counts as the 1 gross + 2 nets.
+ * Team hole/race totals are already vs par (sum of counted-ball vs-par).
+ * These helpers only format and sum those values.
  */
 
 function formatVsPar(value) {
@@ -12,13 +11,10 @@ function formatVsPar(value) {
   return n > 0 ? '+' + n : String(n);
 }
 
-function holeTeamVsPar(teamTotal, par) {
+function holeTeamVsPar(teamTotal) {
   if (teamTotal === null || teamTotal === undefined || teamTotal === '') return null;
-  if (par === null || par === undefined || par === '') return null;
   const total = Number(teamTotal);
-  const p = Number(par);
-  if (!Number.isFinite(total) || !Number.isFinite(p)) return null;
-  return total - 3 * p;
+  return Number.isFinite(total) ? total : null;
 }
 
 function runningTeamVsPar(holes, throughHole) {
@@ -29,7 +25,7 @@ function runningTeamVsPar(holes, throughHole) {
   for (const hole of holes || []) {
     const n = Number(hole.holeNumber ?? hole.hole_number);
     if (!Number.isFinite(n) || n > through) continue;
-    const v = holeTeamVsPar(hole.total, hole.par);
+    const v = holeTeamVsPar(hole.total);
     if (v == null) continue;
     sum += v;
     any = true;

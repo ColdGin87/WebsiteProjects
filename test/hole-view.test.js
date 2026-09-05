@@ -65,8 +65,9 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826h/);
-    assert.match(src, /ASSET_V:\s*'20260826h'/);
+    assert.match(html, /20260826i/);
+    assert.match(html, /js\/formats\.js\?v=20260826i/);
+    assert.match(src, /ASSET_V:\s*'20260826i'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -88,5 +89,25 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.team-balls[\s\S]{0,160}font-size:\s*0\.875rem/);
     assert.match(css, /\.vs-par-lines[\s\S]{0,160}font-size:\s*0\.875rem/);
     assert.match(css, /flex-wrap:\s*nowrap/);
+  });
+
+  it('race strip and Team N totals format vs-par, not stroke sums', () => {
+    const race = sliceFn('raceStripText(state)', 'holePlayerRowHtml(state, member, holeNumber)');
+    assert.match(race, /fmtTeam/);
+    assert.match(src, /fmtTeam\(winner\.total\)/);
+    assert.match(src, /fmtTeam\(team\.total\)/);
+  });
+});
+
+describe('Game select vs-par formats', () => {
+  it('create form lists the five games and outlines the calculation', () => {
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dash, /create-game-rule/);
+    assert.match(dash, /1G2N/);
+    assert.match(dash, /3G/);
+    assert.match(dash, /3N/);
+    assert.match(dash, /1G3N/);
+    assert.match(dash, /2G2N/);
+    assert.match(dash, /gameRule/);
   });
 });

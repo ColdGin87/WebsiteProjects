@@ -407,6 +407,11 @@ img {
   margin-top: 2px;
 }
 
+.game-rule {
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
 .card-body {
   font-size: 0.9rem;
 }

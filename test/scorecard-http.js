@@ -4,7 +4,7 @@
  *
  * Signs up, creates an 18-hole Goldendale team round, adds guests A–D
  * with playing handicaps 4/11/18/24, puts them on Team 1, enters hole 1
- * gross 5/6/7/8, and fails if dots, nets, or the team hole are wrong.
+ * gross 5/6/7/8, and fails if dots, nets, or the vs-par team hole are wrong.
  *
  *   npm run test:scorecard
  *
@@ -237,7 +237,7 @@ async function runScenario(base) {
   if (!lastPost.updatedAt) fail('slim POST missing updatedAt');
   const postedHole = (lastPost.teams || []).find((t) => t.name === 'Team 1') || (lastPost.teams || [])[0];
   if (!postedHole || !postedHole.hole) fail('slim POST missing that hole team total');
-  assertEqual(postedHole.hole.total, 16, 'slim POST team hole 1');
+  assertEqual(postedHole.hole.total, 1, 'slim POST team hole 1 vs par');
 
   const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
   const dots = [];
@@ -261,7 +261,7 @@ async function runScenario(base) {
   if (!holeResult) fail('holeResults missing hole 1');
   const teamHole = (holeResult.teams || []).find((t) => t.teamName === 'Team 1') || holeResult.teams[0];
   if (!teamHole) fail('no team score on hole 1');
-  assertEqual(teamHole.total, 16, 'team hole 1');
+  assertEqual(teamHole.total, 1, 'team hole 1 vs par under best 1G+2N');
   assertEqual(teamHole.incomplete, false, 'team hole 1 complete');
   assertEqual(teamHole.balls.length, 3, 'three balls counted');
   assertEqual(new Set(teamHole.balls.map((b) => b.playerId)).size, 3, 'three different players');
@@ -275,7 +275,7 @@ async function runScenario(base) {
   }
   const liveTeam = (livePatch.teams || []).find((t) => t.name === 'Team 1') || livePatch.teams[0];
   const liveHole = (liveTeam.holes || []).find((h) => h.holeNumber === 1);
-  assertEqual(liveHole && liveHole.total, 16, 'live patch team hole 1');
+  assertEqual(liveHole && liveHole.total, 1, 'live patch team hole 1 vs par');
 
   const liveUrl = base + `/api/rounds/${roundId}/live`;
   const firstLive = await fetch(liveUrl, {
@@ -297,7 +297,7 @@ async function runScenario(base) {
   const playerA = live.members.find((m) => m.display_name === 'A');
   assertEqual(playerA.totalGross, 5, 'player A TOT after hole 1');
   const team1 = live.teams.find((t) => t.name === 'Team 1') || live.teams[0];
-  assertEqual(team1.total, 16, 'team 1 running total after hole 1');
+  assertEqual(team1.total, 1, 'team 1 running vs-par after hole 1');
 
   const extras = [
     { name: 'Cole Jan', handicap: 12, playingHandicap: 12, teamName: 'Team 3' },
@@ -318,9 +318,9 @@ async function runScenario(base) {
   const team3 = state.teams.find((t) => t.name === 'Team 3');
   if (!team3) fail('Team 3 was not created from the picker');
   assertEqual(cole.team_id, team3.id, 'Cole Jan on team 3');
-  const still16 = (state.teams.find((t) => t.name === 'Team 1') || {}).holes || [];
-  const hole1again = still16.find((h) => h.holeNumber === 1);
-  assertEqual(hole1again && hole1again.total, 16, 'team 1 hole 1 stays 16 after roster grow');
+  const stillHole1 = (state.teams.find((t) => t.name === 'Team 1') || {}).holes || [];
+  const hole1again = stillHole1.find((h) => h.holeNumber === 1);
+  assertEqual(hole1again && hole1again.total, 1, 'team 1 hole 1 stays +1 vs par after roster grow');
 
   const friend = await api(base, 'POST', '/api/auth/register', {
     body: {
@@ -346,7 +346,7 @@ async function runScenario(base) {
   const friendSees = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: friend.token });
   const teamFromFriend = (friendSees.teams || []).find((t) => t.name === 'Team 1');
   const friendHole1 = (teamFromFriend && teamFromFriend.holes || []).find((h) => h.holeNumber === 1);
-  assertEqual(friendHole1 && friendHole1.total, 16, 'friend sees live team 1 hole 1');
+  assertEqual(friendHole1 && friendHole1.total, 1, 'friend sees live team 1 hole 1 vs par');
 
   console.log('PASS Goldendale four-player hole 1');
   console.log('  course   Goldendale Golf Club 18 holes');

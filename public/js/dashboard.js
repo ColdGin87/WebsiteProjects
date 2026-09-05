@@ -38,7 +38,7 @@ const dashboard = {
         <div class="welcome-hero">
           <div class="welcome-title">Goldendale Scorecard</div>
           <div class="welcome-subtitle">Goldendale Golf Club · 1901 N Columbus Ave · 9 holes played twice</div>
-          <p class="hero-copy">Handicapped team competitions. Default format is lowest 1 gross + lowest 2 nets.</p>
+          <p class="hero-copy">Handicapped team competitions. Default is 1 gross + 2 net, totaled vs par. The best combo of distinct players is kept.</p>
           <div class="welcome-actions">
             <button class="btn btn-accent" onclick="auth.showModal('login')">Sign In</button>
             <button class="btn btn-outline-light" onclick="auth.showModal('register')">Create account</button>
@@ -91,11 +91,50 @@ const dashboard = {
         <div class="round-accent ${['round-accent-1','round-accent-2','round-accent-3','round-accent-4','round-accent-5'][idx % 5]}"></div>
         <div style="padding-left:12px">
           <div class="round-number">${_esc(r.name)}</div>
-          <div class="round-course">${_esc(r.course_name || 'Goldendale')} · ${r.format === 'match_play' ? 'Match play' : '1G + 2N'} · ${r.holes}</div>
+          <div class="round-course">${_esc(r.course_name || 'Goldendale')} · ${r.format === 'match_play' ? 'Match play' : dashboard.gameChip(r)} · ${r.holes}</div>
           <span class="badge badge-${_esc(r.status)}">${_esc(r.status)}</span>
           <span class="code-chip">${_esc(r.join_code)}</span>
         </div>
       </div>`).join('')}</div>`;
+  },
+
+  formatsApi() {
+    return (typeof window !== 'undefined' && window.teamFormats) || {};
+  },
+
+  gameFromKey(key) {
+    const api = this.formatsApi();
+    if (typeof api.gameFromKey === 'function') return api.gameFromKey(key);
+    return { key: '1G2N', grossBalls: 1, netBalls: 2 };
+  },
+
+  gameRule(key) {
+    const game = this.gameFromKey(key);
+    const api = this.formatsApi();
+    if (typeof api.formatRuleText === 'function') return api.formatRuleText(game.grossBalls, game.netBalls);
+    return '';
+  },
+
+  gameChip(round) {
+    const api = this.formatsApi();
+    if (typeof api.formatLabel === 'function') {
+      return api.formatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
+    }
+    return '1G + 2N vs par';
+  },
+
+  gameOptionsHtml(selectedKey) {
+    const api = this.formatsApi();
+    const games = api.TEAM_GAMES || [
+      { key: '3G', label: '3 gross' },
+      { key: '3N', label: '3 net' },
+      { key: '1G2N', label: '1 gross + 2 net (Goldendale default)' },
+      { key: '1G3N', label: '1 gross + 3 net' },
+      { key: '2G2N', label: '2 gross + 2 net' },
+    ];
+    return games.map((game) =>
+      `<option value="${game.key}" ${game.key === selectedKey ? 'selected' : ''}>${_esc(game.label)}</option>`
+    ).join('');
   },
 
   async openDemoFoursome() {
@@ -175,10 +214,17 @@ const dashboard = {
           </div>
           <div class="form-group">
             <label>Format</label>
-            <select class="form-input" name="format">
-              <option value="team_net" selected>Team — 1 gross + 2 net (default)</option>
+            <select class="form-input" name="format" id="create-format">
+              <option value="team_net" selected>Team vs par</option>
               <option value="match_play">Match play</option>
             </select>
+          </div>
+          <div class="form-group" id="create-game-wrap">
+            <label>Team game</label>
+            <select class="form-input" name="gameKey" id="create-game">
+              ${dashboard.gameOptionsHtml('1G2N')}
+            </select>
+            <p class="card-subtitle game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
           </div>
           <div class="form-group">
             <label>Holes</label>
@@ -197,15 +243,26 @@ const dashboard = {
               <option value="75">75%</option>
             </select>
           </div>
-          <div class="grid grid-2">
-            <div class="form-group"><label>Gross balls</label><input class="form-input" type="number" name="grossBalls" value="1" min="0" max="6"></div>
-            <div class="form-group"><label>Net balls</label><input class="form-input" type="number" name="netBalls" value="2" min="0" max="6"></div>
-          </div>
-          <label class="check-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
+          <label class="check-row" id="create-dual-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
           <div class="card-footer">
             <button class="btn btn-primary" type="submit">Create round</button>
           </div>
         </form>`;
+
+      const formatSel = document.getElementById('create-format');
+      const gameSel = document.getElementById('create-game');
+      const gameRule = document.getElementById('create-game-rule');
+      const gameWrap = document.getElementById('create-game-wrap');
+      const dualRow = document.getElementById('create-dual-row');
+      const syncGameUi = () => {
+        const teamMode = formatSel.value === 'team_net';
+        if (gameWrap) gameWrap.hidden = !teamMode;
+        if (dualRow) dualRow.hidden = !teamMode;
+        if (gameRule && gameSel) gameRule.textContent = dashboard.gameRule(gameSel.value);
+      };
+      if (gameSel) gameSel.addEventListener('change', syncGameUi);
+      if (formatSel) formatSel.addEventListener('change', syncGameUi);
+      syncGameUi();
 
       document.getElementById('create-course').addEventListener('change', async (e) => {
         const detail = await svcApi('get', '/api/courses/' + e.target.value);
@@ -218,6 +275,7 @@ const dashboard = {
       document.getElementById('create-round-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
+        const game = dashboard.gameFromKey(fd.get('gameKey'));
         try {
           const state = await svcApi('post', '/api/rounds', {
             name: fd.get('name'),
@@ -226,8 +284,8 @@ const dashboard = {
             format: fd.get('format'),
             holes: fd.get('holes'),
             allowance: Number(fd.get('allowance')),
-            grossBalls: Number(fd.get('grossBalls')),
-            netBalls: Number(fd.get('netBalls')),
+            grossBalls: game.grossBalls,
+            netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
           });
           app.navigate('#round/' + state.round.id);

@@ -103,7 +103,7 @@ const leaderboardView = {
     return `<td class="player-cell">
       ${_esc(team.name)}${team.incomplete ? ' *' : ''}
       ${latest ? `<div class="lb-latest-hole">
-        <div class="lb-hole-number">Hole ${latest} · ${hole && hole.total != null ? hole.total : '—'}</div>
+        <div class="lb-hole-number">Hole ${latest} · ${scorecard.fmtTeam(hole && hole.total)}</div>
         <div class="team-balls" data-team-balls="${team.id}">${_esc(balls)}</div>
       </div>` : ''}
     </td>`;
@@ -126,9 +126,9 @@ const leaderboardView = {
               <tr class="${i === 0 ? 'rank-1' : ''}" data-team-row="${t.id}">
                 <td class="rank-cell">${i + 1}</td>
                 ${this.teamCellHtml(state, t)}
-                <td class="numeric-cell" data-out>${t.out ?? '—'}</td>
-                <td class="numeric-cell" data-in>${t.inn ?? '—'}</td>
-                <td class="points-cell" data-tot>${t.total ?? '—'}</td>
+                <td class="numeric-cell" data-out>${scorecard.fmtTeam(t.out)}</td>
+                <td class="numeric-cell" data-in>${scorecard.fmtTeam(t.inn)}</td>
+                <td class="points-cell" data-tot>${scorecard.fmtTeam(t.total)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -165,13 +165,13 @@ const leaderboardView = {
       const out = row.querySelector('[data-out]');
       const inn = row.querySelector('[data-in]');
       const tot = row.querySelector('[data-tot]');
-      if (out) out.textContent = team.out ?? '—';
-      if (inn) inn.textContent = team.inn ?? '—';
-      if (tot) tot.textContent = team.total ?? '—';
+      if (out) out.textContent = scorecard.fmtTeam(team.out);
+      if (inn) inn.textContent = scorecard.fmtTeam(team.inn);
+      if (tot) tot.textContent = scorecard.fmtTeam(team.total);
       const latest = this.latestHole(this.state);
       const hole = latest && (team.holes || []).find((h) => h.holeNumber === latest);
       const label = row.querySelector('.lb-hole-number');
-      if (label && latest) label.textContent = 'Hole ' + latest + ' · ' + (hole && hole.total != null ? hole.total : '—');
+      if (label && latest) label.textContent = 'Hole ' + latest + ' · ' + scorecard.fmtTeam(hole && hole.total);
       const balls = row.querySelector('[data-team-balls]');
       if (balls && latest) balls.textContent = scorecard.teamBallsText(team, latest);
     }
