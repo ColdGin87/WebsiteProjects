@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826q',
+  ASSET_V: '20260826r',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -301,6 +301,11 @@ const scorecard = {
   isVegasOn(state) {
     const cfg = this.sideConfig(state);
     return !!(cfg.vegas && cfg.vegas.on);
+  },
+
+  isWolfOn(state) {
+    const cfg = this.sideConfig(state);
+    return !!(cfg.wolf && cfg.wolf.on);
   },
 
   vegasGame(state) {
@@ -1036,6 +1041,37 @@ const scorecard = {
     return `${round.gross_balls ?? 1} gross + ${round.net_balls ?? 2} net vs par`;
   },
 
+  shortRaceTitle(round) {
+    const tf = window.teamFormats;
+    if (tf && typeof tf.shortFormatLabel === 'function') {
+      return tf.shortFormatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
+    }
+    return '1G+2N';
+  },
+
+  liveGameTitle(state) {
+    const bits = [];
+    if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
+      bits.push(this.shortRaceTitle(state.round));
+    }
+    const cfg = this.sideConfig(state);
+    const labels = [
+      ['vegas', 'Vegas'],
+      ['wolf', 'Wolf'],
+      ['nassau', 'Nassau'],
+      ['nines', 'Nines'],
+      ['skins', 'Skins'],
+    ];
+    for (const [key, label] of labels) {
+      if (cfg[key] && cfg[key].on) bits.push(label);
+    }
+    return bits.join(' + ') || 'Scorecard';
+  },
+
+  liveGameTitleHtml(state) {
+    return `<div class="live-game-title" id="live-game-title">${_esc(this.liveGameTitle(state))}</div>`;
+  },
+
   teamFormatRule(round) {
     const tf = window.teamFormats;
     if (tf && typeof tf.formatRuleText === 'function') {
@@ -1129,15 +1165,21 @@ const scorecard = {
     }
   },
 
-  async setWolfPick(holeNumber, partnerId, lone) {
+  async setWolfPick(holeNumber, payload) {
     if (!this.state) return;
     const wolf = this.wolfForHole(this.state, holeNumber);
     if (!wolf) return;
+    const body = (payload && typeof payload === 'object')
+      ? payload
+      : { partnerId: payload, lone: arguments[2] };
     try {
       const state = await svcApi('put', `/api/rounds/${this.state.round.id}/wolf/${holeNumber}`, {
         wolfMemberId: wolf.id,
-        partnerMemberId: lone ? null : partnerId,
-        lone: !!lone,
+        partnerMemberId: body.lone || body.blind ? null : body.partnerId,
+        lone: !!(body.lone || body.blind),
+        blind: !!body.blind,
+        passedIds: body.passedIds || [],
+        locked: body.locked !== false && !!(body.lone || body.blind || body.partnerId),
       });
       this.state = state;
       this.writeCache(state.round.id, state);
@@ -1153,22 +1195,91 @@ const scorecard = {
     return members[(Math.max(1, Number(holeNumber)) - 1) % members.length];
   },
 
+  wolfPickFor(state, holeNumber) {
+    return (state.wolfPicks || []).find((p) => Number(p.hole_number || p.holeNumber) === Number(holeNumber)) || null;
+  },
+
+  wolfPassedIds(pick) {
+    const raw = pick && (pick.passed_ids || pick.passedIds);
+    if (Array.isArray(raw)) return raw.map(Number);
+    if (typeof raw === 'string' && raw.trim()) {
+      try { return JSON.parse(raw).map(Number); } catch { return []; }
+    }
+    return [];
+  },
+
+  wolfLocked(pick) {
+    if (!pick) return false;
+    if (pick.locked === 1 || pick.locked === true) return true;
+    if (pick.blind || pick.lone || pick.lone_wolf) return true;
+    if (pick.partner_member_id || pick.partnerMemberId) return true;
+    return false;
+  },
+
+  wolfOthers(state, holeNumber) {
+    const wolf = this.wolfForHole(state, holeNumber);
+    return [...(state.members || [])]
+      .filter((m) => wolf && m.id !== wolf.id)
+      .sort((a, b) => a.id - b.id);
+  },
+
+  wolfSides(state, holeNumber) {
+    const wolf = this.wolfForHole(state, holeNumber);
+    const pick = this.wolfPickFor(state, holeNumber);
+    if (!wolf || !this.wolfLocked(pick)) return null;
+    const partnerId = pick && (pick.partner_member_id || pick.partnerMemberId);
+    const wolfSide = [wolf].concat((state.members || []).filter((m) => Number(m.id) === Number(partnerId)));
+    const field = (state.members || []).filter((m) => m.id !== wolf.id && Number(m.id) !== Number(partnerId));
+    const blind = !!(pick && pick.blind);
+    const lone = !partnerId;
+    return { wolf, partnerId, wolfSide, field, blind, lone };
+  },
+
+  wolfPass(holeNumber, memberId) {
+    const pick = this.wolfPickFor(this.state, holeNumber);
+    const passed = this.wolfPassedIds(pick);
+    if (!passed.includes(Number(memberId))) passed.push(Number(memberId));
+    this.setWolfPick(holeNumber, { passedIds: passed, locked: false });
+  },
+
   wolfBarHtml(state, holeNumber) {
     const cfg = this.sideConfig(state);
     if (!cfg.wolf || !cfg.wolf.on) return '';
     const wolf = this.wolfForHole(state, holeNumber);
     if (!wolf) return '';
-    const pick = (state.wolfPicks || []).find((p) => Number(p.hole_number || p.holeNumber) === Number(holeNumber));
-    const lone = pick ? !!(pick.lone || pick.lone_wolf) : false;
-    const partnerId = pick && (pick.partner_member_id || pick.partnerMemberId);
-    const others = (state.members || []).filter((m) => m.id !== wolf.id);
+    const pick = this.wolfPickFor(state, holeNumber);
+    const sides = this.wolfSides(state, holeNumber);
+    if (sides) {
+      const wolfNames = sides.wolfSide.map((m) => m.display_name).join(' + ');
+      const fieldNames = sides.field.map((m) => m.display_name).join(' / ') || 'field';
+      const kind = sides.blind ? 'Blind Lone Wolf 3×' : (sides.lone ? 'Lone Wolf 2×' : 'Wolf + partner');
+      return `<div class="wolf-bar" id="wolf-bar">
+        <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
+        <div class="wolf-sides">${_esc(kind)} · ${_esc(wolfNames)} vs ${_esc(fieldNames)}</div>
+      </div>`;
+    }
+    const passed = this.wolfPassedIds(pick);
+    const others = this.wolfOthers(state, holeNumber);
+    const current = others.find((m) => !passed.includes(Number(m.id)));
+    const canBlind = passed.length === 0;
+    const rows = others.map((m) => {
+      if (passed.includes(Number(m.id))) {
+        return `<div class="wolf-tee is-passed">Passed ${_esc(m.display_name)}</div>`;
+      }
+      if (current && current.id === m.id) {
+        return `<div class="wolf-tee is-up">${_esc(m.display_name)} teed
+          <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { partnerId: ${m.id}, locked: true })">Pick partner</button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.wolfPass(${holeNumber}, ${m.id})">Pass</button>
+        </div>`;
+      }
+      return `<div class="wolf-tee">Waiting to tee: ${_esc(m.display_name)}</div>`;
+    }).join('');
     return `<div class="wolf-bar" id="wolf-bar">
-      <span>Wolf: ${_esc(wolf.display_name)} — pick a partner after they tee, or go lone for 2×</span>
-      <label class="tiny-label"><input type="checkbox" ${lone ? 'checked' : ''} onchange="scorecard.setWolfPick(${holeNumber}, null, this.checked)"> Lone wolf 2×</label>
-      ${!lone ? `<select class="form-input" onchange="scorecard.setWolfPick(${holeNumber}, Number(this.value), false)">
-        <option value="">Partner</option>
-        ${others.map((m) => `<option value="${m.id}" ${Number(partnerId) === m.id ? 'selected' : ''}>${_esc(m.display_name)}</option>`).join('')}
-      </select>` : ''}
+      <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
+      <p class="card-subtitle">After each tee, pick that player or pass. Sides lock before this hole is scored. Next hole is a new Wolf.</p>
+      ${canBlind ? `<button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, blind: true, locked: true })">Blind Lone Wolf 3×</button>` : ''}
+      ${rows}
+      <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, locked: true })">Lone Wolf 2×</button>
     </div>`;
   },
 
@@ -1338,8 +1449,9 @@ const scorecard = {
     const hole = this.holeMeta(state, holeNumber);
     const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
     const cls = this.cellClassList(hs, hole.par);
+    const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
     return `<div class="hole-player-row" data-member-row="${member.id}">
-      <span class="hole-player-name">${_esc(member.display_name)}</span>
+      <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
       <div class="hole-player-score ${cls}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
           <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
@@ -1362,7 +1474,31 @@ const scorecard = {
     return bits.length ? `<div class="nine-line">${bits.join(' · ')}</div>` : '';
   },
 
+  wolfRoleLabel(state, member, holeNumber) {
+    if (!this.isWolfOn(state)) return '';
+    const wolf = this.wolfForHole(state, holeNumber);
+    if (wolf && member.id === wolf.id) return 'Wolf';
+    const sides = this.wolfSides(state, holeNumber);
+    if (!sides) return '';
+    if (sides.partnerId && Number(member.id) === Number(sides.partnerId)) return 'Partner';
+    return 'Field';
+  },
+
   holePlayersHtml(state, holeNumber) {
+    const wolfOnly = this.isWolfOn(state) && !this.isTeamRaceOn(state) && !this.isVegasOn(state);
+    if (wolfOnly) {
+      const sides = this.wolfSides(state, holeNumber);
+      const sections = sides
+        ? [
+          { name: sides.blind ? 'Blind Lone Wolf' : (sides.lone ? 'Lone Wolf' : 'Wolf side'), members: sides.wolfSide },
+          { name: 'Field', members: sides.field },
+        ]
+        : [{ name: 'Wolf hole', members: this.visibleHoleMembers(state) }];
+      return `<div class="hole-players" id="hole-players">${sections.map((group) => {
+        const rows = (group.members || []).map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
+        return `<section class="hole-team-group">${rows}<div class="hole-team-total"><div class="hole-team-scoreline"><span>${_esc(group.name)}</span></div></div></section>`;
+      }).join('')}</div>`;
+    }
     const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length);
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
       const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
@@ -1426,6 +1562,7 @@ const scorecard = {
       ${this.eighteenBanner(state)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
+          ${this.liveGameTitleHtml(state)}
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
           ${this.vegasBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
@@ -1656,6 +1793,7 @@ const scorecard = {
       ${this.eighteenBanner(state)}
       ${this.addPlayerPanel(state)}
       <div class="card">
+        ${this.liveGameTitleHtml(state)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>
@@ -2169,6 +2307,8 @@ const scorecard = {
   },
 
   paintRaceStrip() {
+    const title = document.getElementById('live-game-title');
+    if (title && this.state) title.textContent = this.liveGameTitle(this.state);
     const el = document.getElementById('race-strip');
     if (el && this.state) el.textContent = this.raceStripText(this.state);
     const badge = document.querySelector('[data-status-badge]');
@@ -2534,7 +2674,7 @@ const scorecard = {
         <h3>Nassau</h3>
         <p>Front 9, back 9, and overall 18 as three bets. Each hole is match play. A press is a child wager on that segment.</p>
         <h3>Wolf</h3>
-        <p>Wolf rotates. Pick a partner after they tee, or go lone for 2×. Gross or net. Presses optional.</p>
+        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before the hole is scored — Wolf + partner vs the field, or Lone Wolf vs the field. Those sides are not Team 1 / Team 2. Blind Lone Wolf (before others tee) is 3×. Lone after seeing drives is 2×. Partnered hole is 1×. Next hole is a new Wolf. Gross or net. Presses optional.</p>
         <h3>Nines</h3>
         <p>Exactly 3 players. 5-3-1, ties split, Blitz 9-0-0 default ON. Net off the low man. Presses apply.</p>
         <h3>Presses</h3>

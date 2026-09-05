@@ -220,6 +220,21 @@ describe('Wolf', () => {
     });
     assert.equal(lone.winner, 'wolf');
     assert.equal(lone.points, 2);
+    const blind = scoreWolfHole({
+      players: members,
+      hole,
+      pick: { wolfMemberId: 1, partnerMemberId: null, lone: true, blind: true },
+      scoring: 'gross',
+    });
+    assert.equal(blind.points, 3);
+    assert.equal(blind.blind, true);
+    const partnered = scoreWolfHole({
+      players: members,
+      hole,
+      pick: { wolfMemberId: 1, partnerMemberId: 2, lone: false },
+      scoring: 'gross',
+    });
+    assert.equal(partnered.points, 1);
   });
 });
 

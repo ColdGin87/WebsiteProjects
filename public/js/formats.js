@@ -41,12 +41,19 @@ function formatLabel(grossBalls, netBalls) {
   return `${g} gross + ${n} net vs par`;
 }
 
+function shortFormatLabel(grossBalls, netBalls) {
+  const game = gameFromBalls(grossBalls, netBalls);
+  const key = (game && game.key) || '1G2N';
+  return key.replace(/G(\d)/, 'G+$1');
+}
+
 const api = {
   TEAM_GAMES,
   gameFromBalls,
   gameFromKey,
   formatRuleText,
   formatLabel,
+  shortFormatLabel,
 };
 
 if (typeof module === 'object' && module.exports) {

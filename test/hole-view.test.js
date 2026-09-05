@@ -34,6 +34,7 @@ describe('Combined PR3 hole view', () => {
   it('keeps Hole + race and drops title, par-si, and end-totals from hole view', () => {
     const fn = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(fn, /hole-number/);
+    assert.match(fn, /liveGameTitleHtml|live-game-title/);
     assert.match(fn, /race-strip/);
     assert.match(fn, /holePlayersHtml/);
     assert.doesNotMatch(fn, /end-totals/);
@@ -65,10 +66,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826q/);
-    assert.match(html, /js\/formats\.js\?v=20260826q/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826q/);
-    assert.match(src, /ASSET_V:\s*'20260826q'/);
+    assert.match(html, /20260826r/);
+    assert.match(html, /js\/formats\.js\?v=20260826r/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826r/);
+    assert.match(src, /ASSET_V:\s*'20260826r'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -166,6 +167,9 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /info-tip/);
     assert.match(src, /birdieSlots/);
     assert.match(src, /isTeamRaceOn/);
+    assert.match(src, /liveGameTitle/);
+    assert.match(src, /wolf-badge/);
+    assert.match(src, /Blind Lone Wolf/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);

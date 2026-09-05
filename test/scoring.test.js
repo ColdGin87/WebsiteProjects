@@ -12,6 +12,7 @@ const {
   gameFromKey,
   formatRuleText,
   formatLabel,
+  shortFormatLabel,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
@@ -353,6 +354,8 @@ describe('team game formats', () => {
     assert.equal(gameFromKey('1G2N').isDefault, true);
     assert.equal(gameFromKey('missing').key, '1G2N');
     assert.match(formatLabel(1, 2), /1 gross \+ 2 net vs par/);
+    assert.equal(shortFormatLabel(1, 2), '1G+2N');
+    assert.equal(shortFormatLabel(3, 0), '3G');
     assert.match(formatRuleText(1, 2), /1 gross score and 2 net scores/);
     assert.match(formatRuleText(1, 2), /vs par/);
     assert.match(formatRuleText(1, 2), /lowest \(best\) combo/);
