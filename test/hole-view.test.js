@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905d/);
-    assert.match(html, /js\/formats\.js\?v=20260905d/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905d/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905d/);
-    assert.match(src, /ASSET_V:\s*'20260905d'/);
+    assert.match(html, /20260905e/);
+    assert.match(html, /js\/formats\.js\?v=20260905e/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905e/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905e/);
+    assert.match(src, /ASSET_V:\s*'20260905e'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -111,6 +111,15 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /vegas-press-btn/);
     assert.match(src, /pressVegasFromHole/);
     assert.match(src, /vegasPresses/);
+    assert.match(src, /vegasGamesRunning/);
+    const vegasPress = sliceFn('vegasPressButtonHtml(state, holeNumber)', 'flagOn(value)');
+    assert.match(vegasPress, /vegas-press-badge/);
+    assert.match(vegasPress, /games running/);
+    assert.doesNotMatch(vegasPress, />P</);
+    assert.doesNotMatch(src, /vegas-press-row/);
+    const holeDrawVegas = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    assert.match(holeDrawVegas, /vegasPressButtonHtml/);
+    assert.doesNotMatch(holeDrawVegas, /child wager/);
     assert.match(src, /nassauPressButtonsHtml/);
     assert.match(src, /nassauLiveDockHtml/);
     assert.match(src, /ensureNassauLiveDock/);

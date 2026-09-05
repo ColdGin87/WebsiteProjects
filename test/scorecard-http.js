@@ -641,6 +641,15 @@ async function runSideGamesScenario(base) {
   if (!(pressed.presses || []).some((p) => (p.game_key || p.gameKey) === 'vegas')) {
     fail('friend press should land on the card');
   }
+  const pressedVegas = pressed.sideGames && pressed.sideGames.games && pressed.sideGames.games.vegas;
+  if (!pressedVegas || !pressedVegas.holes || !pressedVegas.holes[0]) fail('vegas after press');
+  assertEqual(pressedVegas.holes[0].points, 11, 'vegas raw hole points stay |56-67|');
+  assertEqual(pressedVegas.holes[0].games, 2, 'vegas Press increments games running to 2');
+  assertEqual(pressedVegas.holes[0].swingA, 22, '11-point hole × 2 games = +22');
+  assertEqual(pressedVegas.holes[0].swingB, -22, '11-point hole × 2 games = −22');
+  assertEqual(pressedVegas.teamA.points, 22, 'zero-sum TOTAL uses games-running multiplier');
+  assertEqual(pressedVegas.teamB.points, -22, 'zero-sum TOTAL mirror');
+  if (pressed.sideGames.games.vegasPresses) fail('vegas must not keep independent child ledgers');
   const still = (pressed.holeResults || []).find((h) => h.holeNumber === 1);
   const stillTeam = (still.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillTeam && stillTeam.total, 1, 'press must not change hole-1 vs-par');

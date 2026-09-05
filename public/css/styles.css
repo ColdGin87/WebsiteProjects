@@ -2641,39 +2641,49 @@ img {
 }
 
 .vegas-press-wrap {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 6px 0 8px;
+  display: block;
+  margin: 8px 0 10px;
 }
 
 .vegas-press-btn {
-  min-width: 48px;
-  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 10px;
   background: #1a237e;
   color: #fff;
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 800;
   cursor: pointer;
 }
 
 .vegas-press-label {
   font-weight: 800;
-  font-size: 0.9rem;
+  font-size: 1.05rem;
 }
 
 .vegas-press-badge {
   display: inline-block;
-  min-width: 1.5rem;
-  padding: 2px 7px;
+  min-width: 1.75rem;
+  padding: 3px 8px;
   border-radius: 999px;
   background: #C62828;
   color: #fff;
-  font-size: 0.75rem;
+  font-size: 0.95rem;
   font-weight: 800;
   text-align: center;
+}
+
+.vegas-press-hint {
+  margin-left: auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  opacity: 0.95;
 }
 
 .vegas-press-block {

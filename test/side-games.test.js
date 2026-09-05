@@ -166,6 +166,54 @@ describe('Vegas', () => {
     assert.equal(vegas.teamB.points, -3);
   });
 
+  it('posts 5-point hole × 3 games as +15/−15, not child ledgers', () => {
+    const holes = [{ holeNumber: 1, par: 4, strokeIndex: 1 }];
+    const teams = [
+      {
+        id: 10,
+        name: 'Team A',
+        members: [
+          { id: 1, display_name: 'A', holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+          { id: 2, display_name: 'B', holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+        ],
+      },
+      {
+        id: 20,
+        name: 'Team B',
+        members: [
+          { id: 3, display_name: 'C', holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+          { id: 4, display_name: 'D', holes: [{ holeNumber: 1, gross: 9, net: 9 }] },
+        ],
+      },
+    ];
+    const presses = [
+      { game_key: 'vegas', start_hole: 1 },
+      { game_key: 'vegas', start_hole: 1 },
+    ];
+    const vegas = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1, presses });
+    assert.equal(vegas.holes[0].numA, 44);
+    assert.equal(vegas.holes[0].numB, 49);
+    assert.equal(vegas.holes[0].points, 5);
+    assert.equal(vegas.holes[0].games, 3);
+    assert.equal(vegas.holes[0].swingA, 15);
+    assert.equal(vegas.holes[0].swingB, -15);
+    assert.equal(vegas.teamA.points, 15);
+    assert.equal(vegas.teamB.points, -15);
+    assert.equal(vegas.gamesRunning, 3);
+    assert.equal(vegas.presses, undefined);
+    const side = computeSideGames({
+      config: { vegas: { on: true, scoring: 'gross', dollarsPerPoint: 1 } },
+      holes,
+      members: teams.flatMap((t) => t.members),
+      teams,
+      presses,
+    });
+    assert.ok(side.games.vegas);
+    assert.equal(side.games.vegasPresses, undefined);
+    assert.equal(side.games.vegas.holes[0].swingA, 15);
+    assert.equal(side.games.vegas.teamA.points, 15);
+  });
+
   it('multiplies this-hole swing by games running', () => {
     const holes = [
       { holeNumber: 1, par: 4, strokeIndex: 1 },

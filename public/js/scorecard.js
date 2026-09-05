@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905d',
+  ASSET_V: '20260905e',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -403,19 +403,19 @@ const scorecard = {
       return this.isVegasOn(state) ? '<div class="vegas-board-this">Vegas —</div>' : '';
     }
     const hn = this.currentHole || 1;
-    const games = this.vegasGamesRunning(state, hn);
-    return `<div class="vegas-press-badge" data-vegas-games="${games}">${games} game${games === 1 ? '' : 's'} running</div>
-      <div class="vegas-board-this">${_esc(this.vegasThisHoleLine(v, hn))}</div>
+    return `<div class="vegas-board-this">${_esc(this.vegasThisHoleLine(v, hn))}</div>
       <div class="vegas-board-total vegas-named-run">${_esc(this.vegasNamedRun(v))}</div>`;
   },
 
   vegasPressButtonHtml(state, holeNumber) {
     if (!this.isVegasOn(state)) return '';
     const n = this.vegasGamesRunning(state, holeNumber);
-    return `<div class="vegas-press-wrap">
-      <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Add a Vegas game from hole ${holeNumber}">P</button>
-      <span class="vegas-press-label">Press</span>
-      <span class="vegas-press-badge">${n}</span>
+    return `<div class="vegas-press-wrap" id="vegas-press-wrap">
+      <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game.">
+        <span class="vegas-press-label">Press</span>
+        <span class="vegas-press-badge">${n}</span>
+        <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
+      </button>
     </div>`;
   },
 
@@ -1566,9 +1566,9 @@ const scorecard = {
 
   async confirmPress() {
     if (!this.state) return;
-    const games = this.pressableGames(this.state);
+    const games = this.pressableGames(this.state).filter((g) => g.key !== 'vegas');
     if (!games.length) {
-      _toast('Turn on Vegas, Nassau, Wolf, or Nines to press.', 'error');
+      _toast('Use the Vegas Press control to add a running game. Turn on Nassau, Wolf, or Nines to press those.', 'error');
       return;
     }
     const hole = this.currentHole || 1;
@@ -2016,7 +2016,7 @@ const scorecard = {
         <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
-          ${this.pressableGames(state).length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
+          ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
@@ -2068,7 +2068,7 @@ const scorecard = {
           ${this.vegasPressButtonHtml(state, holeNumber)}
           ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
-          ${this.pressableGames(state).filter((g) => g.key !== 'nassau').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to 18 (Vegas games-running, Wolf, Nines). Nassau uses the Front / Back / Overall Press buttons on the live card.')}` : ''}
+          ${this.pressableGames(state).filter((g) => g.key !== 'nassau' && g.key !== 'vegas').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'Vegas Press increments games running (not a new ledger). Wolf / Nines press from this hole to 18. Nassau uses Front / Back / Overall on the live card.')}` : ''}
         </div>
         ${this.wolfBarHtml(state, holeNumber)}
         ${this.kpPickerHtml(state, holeNumber)}
@@ -2299,6 +2299,8 @@ const scorecard = {
       ${this.addPlayerPanel(state)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
+        ${this.vegasBoardHtml(state)}
+        ${this.vegasPressButtonHtml(state, this.currentHole || 1)}
         ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
@@ -2327,13 +2329,6 @@ const scorecard = {
             ${showIn ? '<th>IN</th>' : ''}
             ${showIn ? '<th>TOT</th>' : ''}
           </tr>
-          ${this.isVegasOn(state) ? `<tr class="vegas-press-row">
-            <th>Press</th>
-            ${holes.map((h) => `<th>${this.vegasPressButtonHtml(state, h.hole_number)}</th>`).join('')}
-            ${showOut ? '<th></th>' : ''}
-            ${showIn ? '<th></th>' : ''}
-            ${showIn ? '<th></th>' : ''}
-          </tr>` : ''}
           <tr class="par-row">
             <th class="row-label">Par / SI</th>
             ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
@@ -2849,7 +2844,7 @@ const scorecard = {
     const vegasBoard = document.getElementById('vegas-board');
     if (vegasBoard) vegasBoard.innerHTML = this.vegasBoardInner(this.state);
     this.replaceNode(
-      document.querySelector('.hole-chrome .vegas-press-wrap'),
+      document.getElementById('vegas-press-wrap') || document.querySelector('.vegas-press-wrap'),
       this.vegasPressButtonHtml(this.state, hn)
     );
     this.ensureNassauLiveDock(hn);

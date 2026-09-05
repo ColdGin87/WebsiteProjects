@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Vegas games-running Press (ASSET_V `20260905e`)
+
+CHANGE: Vegas Press is **not** independent child ledgers. One Press control on the live card shows how many games are running (starts at **1**). Tap increments the count. Badge = count. This-hole swing × games running posts to the zero-sum TOTAL (5-point hole × 3 games = +15/−15). Per-hole P row removed. Same PR #2. Hold merge.
+
 ### Gross 11+ entry (ASSET_V `20260905d`)
 
 P0: David could save 10 but not 11/12/13+. Phone numeric pads often **replace** a lone `1` instead of appending, so 11–19 never formed (10 worked because `0` is a different key). `readGrossTyping` now recovers 10–19 from the pending first digit + the inserted key. Inputs are `type="tel"` (no native max=10). Server `validateGross` stays 1–19. Vegas 4+11 = 114 unchanged. Same PR #2. Hold merge.
