@@ -28,6 +28,8 @@ const {
   coldGinIsStrokesReceived,
 } = require('../lib/seed/demoTeam1VsPar');
 const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
+const { computePlayingHandicap, isTeamRaceOn } = require('../lib/compute/roundState');
+const { computeFunFacts, segmentLeaders } = require('../lib/compute/funFacts');
 
 describe('playingHandicap', () => {
   it('keeps whole numbers', () => {
@@ -38,11 +40,56 @@ describe('playingHandicap', () => {
     assert.equal(playingHandicap(10.4), 10);
     assert.equal(playingHandicap(10.5), 11);
     assert.equal(playingHandicap(11.5), 12);
+    assert.equal(playingHandicap(2.4), 2);
+    assert.equal(playingHandicap(2.5), 3);
+    assert.equal(playingHandicap(18.7), 19);
+    assert.equal(playingHandicap(1.3), 1);
   });
 
   it('parses plus as negative', () => {
     assert.equal(playingHandicap('+2'), -2);
     assert.equal(playingHandicap(-2), -2);
+  });
+});
+
+describe('index-only playing handicap', () => {
+  it('ignores slope, rating, and allowance', () => {
+    assert.equal(computePlayingHandicap(2.4), 2);
+    assert.equal(computePlayingHandicap(2.5), 3);
+    assert.equal(computePlayingHandicap(18.7), 19);
+    assert.equal(computePlayingHandicap('1.3'), 1);
+    assert.equal(computePlayingHandicap('+2'), -2);
+  });
+});
+
+describe('team race toggle', () => {
+  it('defaults on and turns off only when stored as 0 or false', () => {
+    assert.equal(isTeamRaceOn({}), true);
+    assert.equal(isTeamRaceOn({ team_race: 1 }), true);
+    assert.equal(isTeamRaceOn({ team_race: 0 }), false);
+    assert.equal(isTeamRaceOn({ teamRace: false }), false);
+  });
+});
+
+describe('fun facts', () => {
+  it('counts birdies and names hardest and easiest holes', () => {
+    const facts = computeFunFacts({
+      holes: [
+        { hole_number: 1, par: 4 },
+        { hole_number: 2, par: 5 },
+      ],
+      members: [
+        { display_name: 'Ann', holes: [{ holeNumber: 1, gross: 3 }, { holeNumber: 2, gross: 6 }] },
+        { display_name: 'Bob', holes: [{ holeNumber: 1, gross: 5 }, { holeNumber: 2, gross: 5 }] },
+      ],
+      teams: [{ name: 'Team 1', holes: [{ total: -1 }, { total: 2 }] }],
+    });
+    assert.equal(facts.totalBirdies, 1);
+    assert.equal(facts.mostBirdies.name, 'Ann');
+    assert.equal(facts.hardest.hole, 2);
+    assert.equal(facts.easiest.hole, 1);
+    assert.equal(facts.biggestSwing.name, 'Team 1');
+    assert.deepEqual(segmentLeaders([{ name: 'Team 1', out: -2 }, { name: 'Team 2', out: 1 }], 'out').map((t) => t.name), ['Team 1']);
   });
 });
 

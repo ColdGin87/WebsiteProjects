@@ -65,10 +65,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826n/);
-    assert.match(html, /js\/formats\.js\?v=20260826n/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826n/);
-    assert.match(src, /ASSET_V:\s*'20260826n'/);
+    assert.match(html, /20260826o/);
+    assert.match(html, /js\/formats\.js\?v=20260826o/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826o/);
+    assert.match(src, /ASSET_V:\s*'20260826o'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -140,6 +140,26 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /shouldHoldAddPlayer\(\)/);
   });
 
+  it('puts each team total under that team and skips Individual groups on the hole list', () => {
+    const players = sliceFn('holePlayersHtml(state, holeNumber)', 'holeToolbar(state)');
+    assert.match(players, /group\.team/);
+    assert.match(players, /oneHoleTeamTotal/);
+    assert.match(players, /visibleHoleMembers|group\.team &&/);
+    assert.match(src, /Go to the 19th hole/);
+    assert.match(src, /drawGameRules/);
+    assert.match(src, /drawNineteenth/);
+    assert.match(src, /info-tip/);
+    assert.match(src, /birdieSlots/);
+    assert.match(src, /isTeamRaceOn/);
+    assert.match(src, /playerNineLineHtml/);
+    assert.match(src, /showOut/);
+    assert.match(src, /showIn/);
+    const settings = sliceFn('settingsBar(state)', 'groupedMembers(state)');
+    assert.doesNotMatch(settings, />Individual</);
+    assert.match(settings, /Team vs-par race/);
+    assert.match(css, /\.info-pop:not\(\[hidden\]\)/);
+  });
+
   it('hole Back is a button so a leftover tap cannot change the hash', () => {
     const bar = sliceFn('holeToolbar(state) {', 'bindHoleOverflowDismiss');
     assert.match(bar, /type="button"/);
@@ -163,5 +183,9 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /gameRule/);
     assert.match(dash, /create-side-games/);
     assert.match(dash, /sideGames/);
+    assert.match(dash, /create-team-race-row/);
+    assert.match(dash, /name="teamRace"/);
+    assert.match(dash, /sideGamesFieldsInner/);
+    assert.match(src, /birdieSlotsOn/);
   });
 });

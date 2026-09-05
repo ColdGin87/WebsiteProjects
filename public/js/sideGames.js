@@ -17,7 +17,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1 },
-    rule: '2v2. Each side’s two scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104). Points are the difference. Birdie or better flips the other side so their high score goes first. If both sides birdie, the flips cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point. Presses from the current hole to 18.',
+    rule: '2v2. Each side’s two scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104). Points are the difference. Birdie or eagle (or better) flips the other side so their high score goes first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point. Presses from the current hole to 18.',
   },
   {
     key: 'nassau',
@@ -63,6 +63,15 @@ function parseSideGames(raw) {
     out[game.key] = { ...out[game.key], ...src, on: !!src.on };
     if (game.key === 'nines' && src.blitz === undefined) out.nines.blitz = true;
   }
+  const slots = obj.birdieSlots || {};
+  out.birdieSlots = { on: slots.on !== false };
+  const kps = obj.kps || {};
+  const holes = Array.isArray(kps.holes) ? kps.holes.map(Number).filter((n) => n >= 1 && n <= 18) : [];
+  out.kps = {
+    on: !!kps.on,
+    holes,
+    winners: kps.winners && typeof kps.winners === 'object' && !Array.isArray(kps.winners) ? kps.winners : {},
+  };
   return out;
 }
 

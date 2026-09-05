@@ -2931,6 +2931,57 @@ img {
   font-size: 1.1rem;
 }
 
+.info-tip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  margin-left: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.info-pop {
+  display: none;
+  width: 100%;
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: #FFF8E1;
+  border: 1px solid #F9A825;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.35;
+  color: #333;
+}
+
+.info-pop:not([hidden]) {
+  display: block;
+}
+
+.nine-line {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #333;
+  margin-top: 4px;
+}
+
+.game-rules h3,
+.nineteenth h3 {
+  margin: 16px 0 6px;
+  font-size: 1.05rem;
+}
+
+.kp-picker {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
 .eighteen-done {
   background: #E8F5E9;
   border: 2px solid var(--primary);

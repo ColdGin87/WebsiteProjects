@@ -81,6 +81,10 @@ const app = {
       case 'profile':
         dashboard.renderProfile();
         break;
+      case 'rules':
+        scorecard.drawGameRules(scorecard.state);
+        if (scorecard.bindInfoTips) scorecard.bindInfoTips();
+        break;
       case 'courses':
         dashboard.renderCourses();
         break;

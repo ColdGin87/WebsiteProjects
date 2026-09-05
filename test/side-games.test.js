@@ -16,6 +16,8 @@ const {
   teamHoleScore,
   strokesOnHole,
   netScore,
+  computeBirdieSlots,
+  slotSpin,
 } = require('../lib/scoring');
 
 function member(id, name, handicap, holes) {
@@ -80,7 +82,7 @@ describe('Vegas', () => {
     assert.equal(vegasPairNumber(4, 5, true), 54);
   });
 
-  it('flips the opposing team on a gross birdie and cancels when both birdie', () => {
+  it('flips the opposing team on a gross birdie or eagle and flips both when both birdie', () => {
     const par = 5;
     const a = [{ gross: 4, net: 3 }, { gross: 5, net: 5 }];
     const b = [{ gross: 5, net: 5 }, { gross: 6, net: 6 }];
@@ -91,9 +93,14 @@ describe('Vegas', () => {
     assert.equal(flipped.points, 20);
     assert.equal(flipped.winner, 'A');
 
+    const eagle = scoreVegasHole([{ gross: 3, net: 3 }, { gross: 5, net: 5 }], b, { scoring: 'gross', par });
+    assert.equal(eagle.flipB, true);
+
     const both = scoreVegasHole(a, [{ gross: 4, net: 4 }, { gross: 6, net: 6 }], { scoring: 'gross', par });
-    assert.equal(both.flipA, false);
-    assert.equal(both.flipB, false);
+    assert.equal(both.flipA, true);
+    assert.equal(both.flipB, true);
+    assert.equal(both.numA, 54);
+    assert.equal(both.numB, 64);
   });
 
   it('uses net numbers but only flips on a gross birdie', () => {
@@ -269,12 +276,33 @@ describe('Nines net off low man', () => {
   });
 });
 
+describe('Birdie slots', () => {
+  it('awards one deterministic spin per gross birdie or better', () => {
+    const holes = [
+      { holeNumber: 1, par: 5 },
+      { holeNumber: 2, par: 4 },
+    ];
+    const members = [
+      member(1, 'Ann', 0, [4, 4]),
+      member(2, 'Bob', 0, [5, 3]),
+    ];
+    const slots = computeBirdieSlots({ on: true, holes, members, roundId: 9 });
+    assert.equal(slots.spins, 2);
+    assert.equal(slots.players.find((p) => p.id === 1).birdies, 1);
+    assert.equal(slots.players.find((p) => p.id === 2).birdies, 1);
+    assert.equal(slotSpin(9, 1, 1), slotSpin(9, 1, 1));
+    assert.equal(computeBirdieSlots({ on: false }).on, false);
+  });
+});
+
 describe('Side-game config and vs-par lock', () => {
   it('defaults skins off and keeps the five games', () => {
     const cfg = parseSideGames(null);
     assert.equal(cfg.skins.on, false);
     assert.equal(cfg.nines.blitz, true);
-    assert.deepEqual(Object.keys(cfg), ['skins', 'vegas', 'nassau', 'wolf', 'nines']);
+    assert.equal(cfg.birdieSlots.on, true);
+    assert.equal(cfg.kps.on, false);
+    ['skins', 'vegas', 'nassau', 'wolf', 'nines'].forEach((key) => assert.ok(cfg[key]));
   });
 
   it('does not change team hole vs-par when side games run', () => {

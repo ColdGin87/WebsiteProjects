@@ -68,6 +68,7 @@ const dashboard = {
             <a class="btn btn-accent btn-sm" href="#create" onclick="event.preventDefault();app.navigate('#create')">New round</a>
             <button class="btn btn-outline-light btn-sm" onclick="dashboard.promptJoin()">Join with code</button>
             <button class="btn btn-accent btn-sm" onclick="dashboard.openTeam1VsParDemo()">Open Team 1 vs-par demo</button>
+            <a class="btn btn-outline-light btn-sm" href="#rules" onclick="event.preventDefault();app.navigate('#rules')">Game Rules</a>
             <button class="btn btn-outline-light btn-sm" onclick="dashboard.openDemoFoursome()">Open Kurt / Chase / Brian demo</button>
           </div>
           <p class="welcome-subtitle demo-hint">Team 1 vs-par demo: ColdGin (H 3 received, par every hole) + Kurt / Chase / Brian · 1G+2N best-combo</p>
@@ -241,8 +242,13 @@ const dashboard = {
               <option value="match_play">Match play</option>
             </select>
           </div>
+          <label class="check-row" id="create-team-race-row">
+            <input type="checkbox" name="teamRace" checked>
+            Team vs-par race
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Default ON. 1G+2N or another format. OFF = no team vs-par race; side games can still run.') : ''}
+          </label>
           <div class="form-group" id="create-game-wrap">
-            <label>Team game</label>
+            <label>Team game ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1 gross + 2 net.') : ''}</label>
             <p class="game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
             <select class="form-input" name="gameKey" id="create-game">
               ${dashboard.gameOptionsHtml('1G2N')}
@@ -257,7 +263,7 @@ const dashboard = {
             </select>
           </div>
           <div class="form-group">
-            <label>Handicap allowance</label>
+            <label>Handicap allowance ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-hcp', 'Strokes use your handicap index rounded at 0.5, then the scorecard stroke index. No course handicap.') : ''}</label>
             <select class="form-input" name="allowance">
               <option value="100" selected>100%</option>
               <option value="90">90%</option>
@@ -282,15 +288,18 @@ const dashboard = {
       const gameRule = document.getElementById('create-game-rule');
       const gameWrap = document.getElementById('create-game-wrap');
       const dualRow = document.getElementById('create-dual-row');
+      const raceRow = document.getElementById('create-team-race-row');
       const syncGameUi = () => {
         const teamMode = formatSel.value === 'team_net';
         if (gameWrap) gameWrap.hidden = !teamMode;
         if (dualRow) dualRow.hidden = !teamMode;
+        if (raceRow) raceRow.hidden = !teamMode;
         if (gameRule && gameSel) gameRule.textContent = dashboard.gameRule(gameSel.value);
       };
       if (gameSel) gameSel.addEventListener('change', syncGameUi);
       if (formatSel) formatSel.addEventListener('change', syncGameUi);
       syncGameUi();
+      if (typeof scorecard !== 'undefined' && scorecard.bindInfoTips) scorecard.bindInfoTips();
 
       document.getElementById('create-course').addEventListener('change', async (e) => {
         const detail = await svcApi('get', '/api/courses/' + e.target.value);
@@ -315,6 +324,7 @@ const dashboard = {
             grossBalls: game.grossBalls,
             netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
+            teamRace: fd.get('teamRace') === 'on',
             sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
               ? scorecard.readSideGamesForm(fd)
               : undefined,
@@ -337,14 +347,15 @@ const dashboard = {
       return;
     }
     container.innerHTML = `
-      <h2 class="section-title">Profile</h2>
+      <h2 class="section-title">Profile ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('profile', 'Your display name and handicap index. Index only — 2.4 rounds to 2, 2.5 to 3. No course handicap.') : ''}</h2>
       <form class="card" id="profile-form">
         <div class="form-group"><label>Display name</label><input class="form-input" name="name" value="${_esc(user.name || '')}" required></div>
         <div class="form-group"><label>Email</label><input class="form-input" value="${_esc(user.email || '')}" disabled></div>
-        <div class="form-group"><label>Handicap index (optional)</label><input class="form-input" name="handicap" value="${_esc(user.handicap ?? '')}" placeholder="12.4 or +2"></div>
+        <div class="form-group"><label>Handicap index (optional) ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('profile-hcp', 'Index only. 2.4 rounds to 2, 2.5 to 3. That integer is applied by stroke index for every net game. No course handicap.') : ''}</label><input class="form-input" name="handicap" value="${_esc(user.handicap ?? '')}" placeholder="12.4 or +2"></div>
         <div class="form-group"><label>Home tee (optional)</label><input class="form-input" name="homeTee" value="${_esc(user.home_tee || '')}" placeholder="White/Blue"></div>
         <button class="btn btn-primary" type="submit">Save profile</button>
       </form>`;
+    if (typeof scorecard !== 'undefined' && scorecard.bindInfoTips) scorecard.bindInfoTips();
     document.getElementById('profile-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
