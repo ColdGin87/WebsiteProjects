@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Gross 11+ entry (ASSET_V `20260905d`)
+
+P0: David could save 10 but not 11/12/13+. Phone numeric pads often **replace** a lone `1` instead of appending, so 11–19 never formed (10 worked because `0` is a different key). `readGrossTyping` now recovers 10–19 from the pending first digit + the inserted key. Inputs are `type="tel"` (no native max=10). Server `validateGross` stays 1–19. Vegas 4+11 = 114 unchanged. Same PR #2. Hold merge.
+
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
 ### Nassau live-card Press (ASSET_V `20260905c`)

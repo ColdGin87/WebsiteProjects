@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905c/);
-    assert.match(html, /js\/formats\.js\?v=20260905c/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905c/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905c/);
-    assert.match(src, /ASSET_V:\s*'20260905c'/);
+    assert.match(html, /20260905d/);
+    assert.match(html, /js\/formats\.js\?v=20260905d/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905d/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905d/);
+    assert.match(src, /ASSET_V:\s*'20260905d'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -215,6 +215,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /setScoreAdvance/);
     assert.match(src, /score-advance/);
     assert.match(src, /Gross must be 1–19/);
+    assert.match(src, /readGrossTyping/);
+    assert.match(src, /dataset\.pending/);
+    assert.match(src, /type="tel"/);
+    assert.match(src, /ONE_DIGIT_MS/);
     assert.match(src, /vegasNamedRun/);
     assert.match(src, /games running/);
     assert.match(src, /playPodiumReveal/);

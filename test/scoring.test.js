@@ -7,6 +7,7 @@ const {
   teamHoleScore,
   playingHandicap,
   validateGross,
+  readGrossTyping,
   autoBalanceTeams,
   TEAM_GAMES,
   gameFromKey,
@@ -376,6 +377,9 @@ describe('team game formats', () => {
 describe('validateGross', () => {
   it('accepts 1 through 15', () => {
     assert.equal(validateGross(1), 1);
+    assert.equal(validateGross(11), 11);
+    assert.equal(validateGross(12), 12);
+    assert.equal(validateGross(13), 13);
     assert.equal(validateGross(15), 15);
     assert.equal(validateGross(19), 19);
   });
@@ -384,6 +388,26 @@ describe('validateGross', () => {
     assert.throws(() => validateGross(0), /1 to 19/);
     assert.throws(() => validateGross(20), /1 to 19/);
     assert.throws(() => validateGross(4.5), /1 to 19/);
+  });
+});
+
+describe('readGrossTyping', () => {
+  it('recovers 11–19 when a phone pad replaces the leading 1', () => {
+    assert.deepEqual(readGrossTyping('', '1', '1'), { raw: '1', value: 1, complete: false });
+    assert.equal(readGrossTyping('1', '1', '1').value, 11);
+    assert.equal(readGrossTyping('1', '1', '1').complete, true);
+    assert.equal(readGrossTyping('1', '0', '0').value, 10);
+    assert.equal(readGrossTyping('1', '2', '2').value, 12);
+    assert.equal(readGrossTyping('1', '3', '3').value, 13);
+    assert.equal(readGrossTyping('1', '5', '5').value, 15);
+    assert.equal(readGrossTyping('1', '9', '9').value, 19);
+  });
+
+  it('keeps appended two-digit 10–19 and instant 2–9', () => {
+    assert.equal(readGrossTyping('1', '11', '1').value, 11);
+    assert.equal(readGrossTyping('1', '10', '0').value, 10);
+    assert.equal(readGrossTyping('', '5', '5').value, 5);
+    assert.equal(readGrossTyping('', '5', '5').complete, true);
   });
 });
 

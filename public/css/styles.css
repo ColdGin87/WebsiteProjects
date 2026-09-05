@@ -1989,8 +1989,8 @@ img {
    ========================================================================== */
 .score-input {
   width: 100%;
-  max-width: 56px;
-  min-width: 44px;
+  max-width: 64px;
+  min-width: 48px;
   min-height: 44px;
   height: 44px;
   font-size: 1.1rem;
@@ -2884,7 +2884,7 @@ img {
 }
 
 .hole-player-score .score-input {
-  max-width: 56px;
+  max-width: 64px;
 }
 
 .hole-player-row.is-readonly,

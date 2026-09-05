@@ -44,9 +44,10 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905c',
+  ASSET_V: '20260905d',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
+  ONE_DIGIT_MS: 1400,
 
   stopPoll() {
     if (this.pollTimer) {
@@ -1025,28 +1026,57 @@ const scorecard = {
       });
   },
 
+  readGrossTyping(previousPending, fieldValue, insertedDigit) {
+    let raw = String(fieldValue == null ? '' : fieldValue).replace(/\D/g, '');
+    const prev = String(previousPending == null ? '' : previousPending).replace(/\D/g, '');
+    const ins = String(insertedDigit == null ? '' : insertedDigit).replace(/\D/g, '');
+    if (raw.length <= 1 && prev.length === 1 && ins.length === 1) {
+      const pair = (prev + ins).slice(0, 2);
+      const n = Number(pair);
+      if (n >= 10 && n <= 19) raw = pair;
+    }
+    raw = raw.slice(0, 2);
+    if (!raw) return { raw: '', value: null, complete: false };
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return { raw: '', value: null, complete: false };
+    if (n > 19) return { raw: '', value: null, complete: false, overflow: true };
+    if (n >= 10 && n <= 19) return { raw, value: n, complete: true };
+    if (n >= 2 && n <= 9) return { raw, value: n, complete: true };
+    if (n === 1) return { raw: '1', value: 1, complete: false };
+    return { raw: '', value: null, complete: false };
+  },
+
   onScoreInput(e) {
     if (this.shouldHoldAddPlayer()) return;
     const input = e.target;
-    const raw = String(input.value || '').replace(/\D/g, '').slice(0, 2);
-    input.value = raw;
-    if (raw === '') return;
-    const n = Number(raw);
+    const inserted = (e.inputType === 'insertText' || e.inputType === 'insertCompositionText')
+      ? (e.data != null ? String(e.data) : '')
+      : '';
+    const parsed = this.readGrossTyping(input.dataset.pending, input.value, inserted);
+    input.dataset.pending = parsed.raw;
+    input.value = parsed.raw;
+    try { input.setSelectionRange(parsed.raw.length, parsed.raw.length); } catch { /* ignore */ }
     if (this._oneTimer) {
       clearTimeout(this._oneTimer);
       this._oneTimer = null;
     }
-    if (n >= 2 && n <= 9) {
-      this.commitTyped(input, n, true);
-    } else if (n >= 10 && n <= 19) {
-      this.commitTyped(input, n, true);
-    } else if (n > 19) {
+    if (parsed.overflow) {
       this.showWriteError('Gross must be 1–19.');
       input.value = '';
-    } else if (n === 1) {
+      input.dataset.pending = '';
+      return;
+    }
+    if (parsed.raw === '') return;
+    if (parsed.complete && parsed.value != null) {
+      this.commitTyped(input, parsed.value, true);
+      return;
+    }
+    if (parsed.value === 1) {
       this._oneTimer = setTimeout(() => {
-        if (input.value === '1') this.commitTyped(input, 1, true);
-      }, 900);
+        if (input.value === '1' && (input.dataset.pending || '1') === '1') {
+          this.commitTyped(input, 1, true);
+        }
+      }, this.ONE_DIGIT_MS);
     }
   },
 
@@ -1057,14 +1087,20 @@ const scorecard = {
       clearTimeout(this._oneTimer);
       this._oneTimer = null;
     }
-    const raw = String(input.value || '').trim();
+    const parsed = this.readGrossTyping(input.dataset.pending, input.value, '');
+    input.dataset.pending = parsed.raw;
+    const raw = parsed.raw;
     if (raw === '') {
       const member = this.state && this.state.members.find((m) => m.id === Number(input.dataset.member));
       const hs = member && (member.holes || []).find((h) => h.holeNumber === Number(input.dataset.hole));
       if (hs && hs.gross != null) this.commitTyped(input, null, false);
       return;
     }
-    const n = Number(raw);
+    if (parsed.overflow) {
+      this.showWriteError('Gross must be 1–19.');
+      return;
+    }
+    const n = parsed.value;
     if (Number.isInteger(n) && n >= 1 && n <= 19) {
       if (!input.dataset.committed || Number(input.dataset.committed) !== n) {
         this.commitTyped(input, n, false);
@@ -1086,6 +1122,8 @@ const scorecard = {
     const memberId = Number(input.dataset.member);
     const holeNumber = Number(input.dataset.hole);
     input.dataset.committed = gross == null ? '' : String(gross);
+    input.dataset.pending = gross == null ? '' : String(gross);
+    if (gross != null) input.value = String(gross);
     this.focusCell = { memberId, holeNumber };
     this.currentHole = holeNumber;
     this.commitScore(memberId, holeNumber, gross);
@@ -1908,9 +1946,9 @@ const scorecard = {
       <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
       <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
-          <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="19" maxlength="2"
+          <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
             data-member="${member.id}" data-hole="${holeNumber}"
-            data-committed="${hs?.gross ?? ''}"
+            data-committed="${hs?.gross ?? ''}" data-pending="${hs?.gross ?? ''}"
             ${writable ? '' : 'disabled'}
             value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
           ${this.strokeDotsHtml(hs?.strokes)}
@@ -2058,7 +2096,7 @@ const scorecard = {
     const value = o.current == null ? (o.par ?? '') : o.current;
     return `<div class="score-stepper" id="hole-stepper-bar">
       <button type="button" class="btn btn-secondary stepper-btn" id="score-minus">−</button>
-      <input type="number" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" min="1" max="19" value="${value}" aria-label="${_esc(o.name || 'Score')}">
+      <input type="tel" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" autocomplete="off" maxlength="2" value="${value}" aria-label="${_esc(o.name || 'Score')}">
       <button type="button" class="btn btn-secondary stepper-btn" id="score-plus">+</button>
       <button type="button" class="btn btn-secondary" id="score-done">Done</button>
     </div>`;
@@ -2557,9 +2595,9 @@ const scorecard = {
     const writable = this.canWriteMember(state, member);
     return `<td class="${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${hole.hole_number}">
       <div class="gross-box">
-        <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="19" maxlength="2"
+        <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
           data-member="${member.id}" data-hole="${hole.hole_number}"
-          data-committed="${hs?.gross ?? ''}"
+          data-committed="${hs?.gross ?? ''}" data-pending="${hs?.gross ?? ''}"
           ${writable ? '' : 'disabled'}
           value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
         ${this.strokeDotsHtml(hs?.strokes)}
@@ -2710,6 +2748,7 @@ const scorecard = {
         if (document.activeElement !== input) {
           input.value = hs?.gross ?? '';
           input.dataset.committed = hs?.gross ?? '';
+          input.dataset.pending = hs?.gross ?? '';
         }
         const box = cell.querySelector('.gross-box') || cell;
         const nextDots = this.strokeDotsHtml(hs?.strokes);
@@ -2969,12 +3008,14 @@ const scorecard = {
     if (plus) plus.onclick = () => this.nudgeStepper(1);
     if (clear) clear.onclick = () => this.commitStepper(null);
     if (done) done.onclick = () => this.closeEditor();
-    input.addEventListener('change', () => {
-      const raw = String(input.value || '').replace(/\D/g, '').slice(0, 2);
-      if (!raw) return;
-      const n = Number(raw);
-      if (n >= 1 && n <= 19) this.commitStepper(n);
-    });
+    const applyStepperDigits = () => {
+      const parsed = this.readGrossTyping(input.dataset.pending, input.value, '');
+      input.dataset.pending = parsed.raw;
+      input.value = parsed.raw;
+      if (parsed.complete && parsed.value != null) this.commitStepper(parsed.value);
+    };
+    input.addEventListener('input', applyStepperDigits);
+    input.addEventListener('change', applyStepperDigits);
   },
 
   nudgeStepper(delta) {

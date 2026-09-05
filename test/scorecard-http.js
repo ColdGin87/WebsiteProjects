@@ -249,23 +249,18 @@ async function runScenario(base) {
   } catch (err) {
     if (!/1 to 19/.test(err.message)) throw err;
   }
-  const eleven = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
-    body: {
-      memberId: state.members.find((m) => m.display_name === 'A').id,
-      holeNumber: 3,
-      gross: 11,
-    },
-  });
-  if (!eleven || eleven.ok !== true) fail('gross 11 should save');
-  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
-    body: {
-      memberId: state.members.find((m) => m.display_name === 'A').id,
-      holeNumber: 3,
-      gross: null,
-    },
-  });
+  const memberA = state.members.find((m) => m.display_name === 'A').id;
+  for (const [holeNumber, gross] of [[3, 11], [4, 12], [5, 13], [6, 15], [7, 19]]) {
+    const saved = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: memberA, holeNumber, gross },
+    });
+    if (!saved || saved.ok !== true) fail('gross ' + gross + ' should save');
+    await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: memberA, holeNumber, gross: null },
+    });
+  }
 
   if (!lastPost.updatedAt) fail('slim POST missing updatedAt');
   const postedHole = (lastPost.teams || []).find((t) => t.name === 'Team 1') || (lastPost.teams || [])[0];
