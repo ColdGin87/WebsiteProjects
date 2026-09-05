@@ -186,7 +186,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /canWriteMember/);
     assert.match(src, /wolfRoster/);
     assert.match(src, /is-readonly/);
-    assert.match(src, /You can still enter gross/);
+    assert.match(src, /you can still enter gross/i);
     const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
     assert.match(holeRow, /canWriteMember/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
