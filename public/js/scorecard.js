@@ -2202,7 +2202,7 @@ const scorecard = {
         <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance (helper)</button>
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
-        <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap. Allowance is not used.')}</span>
+        <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
         ${r.format === 'team_net' ? `<label class="tiny-label">Team game ${this.infoTip('format', 'Best-combo vs-par when Team race is ON. 1G+2N is the Goldendale default.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
