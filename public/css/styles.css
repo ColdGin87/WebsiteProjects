@@ -2910,6 +2910,10 @@ img {
   max-width: 64px;
 }
 
+.hole-player-row:not(.is-readonly) {
+  cursor: pointer;
+}
+
 .hole-player-row.is-readonly,
 td.sc-cell-editable.is-readonly {
   opacity: 0.78;

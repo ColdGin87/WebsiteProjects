@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905i',
+  ASSET_V: '20260905j',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -305,8 +305,11 @@ const scorecard = {
   },
 
   isWolfOn(state) {
+    if (!state) return false;
     const cfg = this.sideConfig(state);
-    return !!(cfg.wolf && cfg.wolf.on);
+    if (cfg && cfg.wolf && this.flagOn(cfg.wolf.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    return !!(games && games.wolf);
   },
 
   vegasGame(state) {
@@ -1325,10 +1328,11 @@ const scorecard = {
   },
 
   isOrganizer(state) {
-    const user = auth.currentUser;
-    if (!user) return false;
-    if (state.round.organizer_id === user.id) return true;
-    return (state.members || []).some((m) => m.player_id === user.id && m.role === 'organizer');
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (!user || !state || !state.round) return false;
+    const uid = Number(user.id);
+    if (Number(state.round.organizer_id ?? state.round.organizerId) === uid) return true;
+    return (state.members || []).some((m) => Number(m.player_id) === uid && m.role === 'organizer');
   },
 
   myMember(state) {
@@ -1344,12 +1348,37 @@ const scorecard = {
 
   canWriteMember(state, member) {
     if (!state || !member) return false;
+    // Wolf sides are not Team 1/2 — anyone on the live card can type gross now.
+    if (this.isWolfOn(state)) return true;
     const user = typeof auth !== 'undefined' && auth.currentUser;
     if (user && user.is_admin) return true;
     if (this.isOrganizer(state)) return true;
     const me = this.myMember(state);
     if (this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId)) return true;
-    return !!(this.isWolfOn(state) && me);
+    return false;
+  },
+
+  onAuthReady() {
+    if (!this.state || this.screen !== 'play') return;
+    document.querySelectorAll('input.score-input[data-member]').forEach((input) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+      const writable = this.canWriteMember(this.state, member);
+      input.disabled = !writable;
+      const cell = input.closest('[data-score-cell]');
+      if (cell) cell.classList.toggle('is-readonly', !writable);
+      const row = input.closest('.hole-player-row, tr.row-player');
+      if (row) row.classList.toggle('is-readonly', !writable);
+    });
+  },
+
+  focusHoleScore(memberId, holeNumber, ev) {
+    if (ev && ev.target && ev.target.classList && ev.target.classList.contains('score-input')) return;
+    const input = document.querySelector(`input.score-input[data-member="${memberId}"][data-hole="${holeNumber}"]`);
+    if (input && !input.disabled) {
+      input.focus();
+      return;
+    }
+    if (input) this.openEditorFromInput(input);
   },
 
   scoreInputDisabled(state, member) {
@@ -1723,7 +1752,7 @@ const scorecard = {
     return {
       partnered: n(cfg.partnered, 1),
       lone: n(cfg.lone, 2),
-      blind: n(cfg.blind, 4),
+      blind: n(cfg.blind, 3),
     };
   },
 
@@ -1804,7 +1833,7 @@ const scorecard = {
         <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
         <div class="form-group"><label>Partnered ±</label><input class="form-input" name="wolfPartnered" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.partnered != null ? cfg.wolf.partnered : 1}"></div>
         <div class="form-group"><label>Lone ±</label><input class="form-input" name="wolfLone" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.lone != null ? cfg.wolf.lone : 2}"></div>
-        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 4}"></div>
+        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 3}"></div>
       </div>
       <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
       <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
@@ -1853,7 +1882,7 @@ const scorecard = {
         dollarsPerPoint: Number(fd.get('wolfDollars') || 1),
         partnered: Number(fd.get('wolfPartnered') || 1),
         lone: Number(fd.get('wolfLone') || 2),
-        blind: Number(fd.get('wolfBlind') || 4),
+        blind: Number(fd.get('wolfBlind') || 3),
       },
       nines: {
         on: fd.get('ninesOn') === 'on',
@@ -1954,7 +1983,7 @@ const scorecard = {
     const cls = this.cellClassList(hs, hole.par);
     const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
     const writable = this.canWriteMember(state, member);
-    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}" data-member-row="${member.id}">
+    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
       <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
       <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
@@ -3280,7 +3309,7 @@ const scorecard = {
         <h3>Nassau (NASA)</h3>
         <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
         <h3>Wolf</h3>
-        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
+        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles. Defaults: partnered ±1, Lone 2× (±2), Blind Lone 3× (±3). Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>
         <p>Host is Team 1 (optional nickname). A joiner with the code picks Team 2 / 3 / 4… or Add team — they are not auto Team 1. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>

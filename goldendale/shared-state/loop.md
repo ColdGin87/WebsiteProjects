@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Wolf score entry + 3× table (ASSET_V `20260905j`)
+
+David can type gross on the Wolf live card now. Team write lock does not disable Wolf inputs (Wolf sides are not Team 1/2). Tap a player row to focus the score box. Points: partnered ±1, Lone 2× (±2), Blind Lone 3× (±3); better ball; tie 0. Same PR #2. Hold merge.
+
 ### 19th hole fun UI (ASSET_V `20260905i`)
 
 19th hole: podium reveals 3rd → 2nd → 1st with short confetti on 1st; tap-to-reveal Front / Back / Overall / Skins; big Spin your birdies door into Wyrm Coil when spins > 0; share strip is one-tap summary plus a screenshot card. Sound stays off. Same PR #2. Hold merge.

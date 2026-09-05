@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905i/);
-    assert.match(html, /js\/formats\.js\?v=20260905i/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905i/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905i/);
-    assert.match(src, /ASSET_V:\s*'20260905i'/);
+    assert.match(html, /20260905j/);
+    assert.match(html, /js\/formats\.js\?v=20260905j/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905j/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905j/);
+    assert.match(src, /ASSET_V:\s*'20260905j'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -271,7 +271,11 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.reveal-card/);
     const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
     assert.match(holeRow, /canWriteMember/);
+    assert.match(holeRow, /focusHoleScore/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
+    const writeLock = sliceFn('canWriteMember(state, member)', 'onAuthReady()');
+    assert.match(writeLock, /isWolfOn\(state\)\) return true/);
+    assert.doesNotMatch(writeLock, /isWolfOn\(state\) && me/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);

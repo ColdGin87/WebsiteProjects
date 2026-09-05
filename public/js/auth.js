@@ -203,6 +203,9 @@ const auth = {
   setUser(user) {
     this.currentUser = user;
     this.updateUI();
+    if (typeof scorecard !== 'undefined' && scorecard && typeof scorecard.onAuthReady === 'function') {
+      scorecard.onAuthReady();
+    }
   },
 
   updateUI() {

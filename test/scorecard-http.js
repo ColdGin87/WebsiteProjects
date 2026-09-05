@@ -784,8 +784,26 @@ async function runWolfScenario(base) {
   }
   const guests = names.map((name) => state.members.find((m) => m.display_name === name));
   if (guests.some((g) => !g)) fail('wolf guests missing');
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Wolf Joiner',
+      email: `scorecard.wolfjoin.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: created.round.join_code || created.round.joinCode, addTeam: true, displayName: 'David' },
+  });
+  const team2 = (joined.teams || []).find((t) => t.name === 'Team 2');
+  if (!team2) fail('wolf joiner should land on Team 2');
+  const cross = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: joiner.token,
+    body: { memberId: guests[0].id, holeNumber: 1, gross: 3 },
+  });
+  if (!cross || cross.ok !== true) fail('Team 2 player must enter Team 1 gross on the Wolf card');
   const grosses = [3, 5, 6, 6];
-  for (let i = 0; i < guests.length; i++) {
+  for (let i = 1; i < guests.length; i++) {
     const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
       token,
       body: { memberId: guests[i].id, holeNumber: 1, gross: grosses[i] },
@@ -804,7 +822,65 @@ async function runWolfScenario(base) {
   const hole = (wolf.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(hole && hole.winner, 'wolf', 'better ball wolf wins');
   assertEqual(hole && hole.points, 2, 'lone value 2');
-  console.log('PASS Wolf card accepts gross before sides lock; lone ±2');
+
+  const hole2Gross = [4, 6, 7, 8];
+  for (let i = 0; i < guests.length; i++) {
+    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token: joiner.token,
+      body: { memberId: guests[i].id, holeNumber: 2, gross: hole2Gross[i] },
+    });
+    if (!posted || posted.ok !== true) fail('Wolf card must accept hole-2 scores from the other team');
+  }
+  await api(base, 'PUT', `/api/rounds/${roundId}/wolf/2`, {
+    token,
+    body: { wolfMemberId: guests[0].id, lone: true, blind: true, locked: true },
+  });
+  const afterBlind = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const wolf2 = afterBlind.sideGames && afterBlind.sideGames.games && afterBlind.sideGames.games.wolf;
+  const blindHole = (wolf2.holes || []).find((h) => h.holeNumber === 2);
+  assertEqual(blindHole && blindHole.points, 3, 'blind lone 3×');
+  const blindW1 = (wolf2.points || []).find((p) => Number(p.id) === Number(guests[0].id));
+  assertEqual(blindW1 && blindW1.points, 5, 'lone +2 plus blind +3');
+
+  const hole3Gross = [3, 4, 5, 6];
+  for (let i = 0; i < guests.length; i++) {
+    await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: guests[i].id, holeNumber: 3, gross: hole3Gross[i] },
+    });
+  }
+  await api(base, 'PUT', `/api/rounds/${roundId}/wolf/3`, {
+    token,
+    body: { wolfMemberId: guests[0].id, partnerMemberId: guests[1].id, locked: true },
+  });
+  const afterPair = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const wolf3 = afterPair.sideGames && afterPair.sideGames.games && afterPair.sideGames.games.wolf;
+  const pairHole = (wolf3.holes || []).find((h) => h.holeNumber === 3);
+  assertEqual(pairHole && pairHole.points, 1, 'partnered ±1');
+  const pairW1 = (wolf3.points || []).find((p) => Number(p.id) === Number(guests[0].id));
+  const pairW2 = (wolf3.points || []).find((p) => Number(p.id) === Number(guests[1].id));
+  assertEqual(pairW1 && pairW1.points, 6, 'running +2 +3 +1');
+  assertEqual(pairW2 && pairW2.points, -4, 'field −2 −3 then partner +1');
+
+  const hole4Gross = [4, 5, 4, 6];
+  for (let i = 0; i < guests.length; i++) {
+    await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: guests[i].id, holeNumber: 4, gross: hole4Gross[i] },
+    });
+  }
+  await api(base, 'PUT', `/api/rounds/${roundId}/wolf/4`, {
+    token,
+    body: { wolfMemberId: guests[0].id, partnerMemberId: guests[1].id, locked: true },
+  });
+  const afterTie = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const wolf4 = afterTie.sideGames && afterTie.sideGames.games && afterTie.sideGames.games.wolf;
+  const tieHole = (wolf4.holes || []).find((h) => h.holeNumber === 4);
+  assertEqual(tieHole && tieHole.winner, null, 'better-ball tie has no winner');
+  assertEqual(tieHole && tieHole.points, 0, 'tie 0');
+  const tieW1 = (wolf4.points || []).find((p) => Number(p.id) === Number(guests[0].id));
+  assertEqual(tieW1 && tieW1.points, 6, 'tie adds nothing');
+  console.log('PASS Wolf card accepts cross-team gross; lone ±2, blind 3×, partnered ±1, tie 0');
 }
 
 async function main() {
