@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905f',
+  ASSET_V: '20260905g',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -390,9 +390,13 @@ const scorecard = {
     return `RUNNING: ${game.teamB.name} up ${Math.abs(b)} · ${game.teamA.name} down ${Math.abs(a)}`;
   },
 
-  vegasRunDiffLine(game) {
+  vegasRunDiffLine(game, holeNumber) {
     if (!game || !game.teamA || !game.teamB) return 'RUNNING —';
-    return `RUNNING: ${game.teamA.name} ${this.fmtVegasPts(game.teamA.points)} · ${game.teamB.name} ${this.fmtVegasPts(game.teamB.points)}`;
+    const hn = Number(holeNumber || this.currentHole || 1);
+    const row = (game.holes || []).find((h) => h.holeNumber === hn);
+    const a = row && row.runA != null ? row.runA : game.teamA.points;
+    const b = row && row.runB != null ? row.runB : game.teamB.points;
+    return `RUNNING: ${game.teamA.name} ${this.fmtVegasPts(a)} · ${game.teamB.name} ${this.fmtVegasPts(b)}`;
   },
 
   vegasThisHoleLine(game, holeNumber) {
@@ -409,7 +413,7 @@ const scorecard = {
     }
     const hn = this.currentHole || 1;
     return `<div class="vegas-board-this">${_esc(this.vegasThisHoleLine(v, hn))}</div>
-      <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v))}</div>`;
+      <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v, hn))}</div>`;
   },
 
   vegasPressButtonHtml(state, holeNumber) {
