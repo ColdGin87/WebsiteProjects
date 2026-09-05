@@ -6,6 +6,12 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### Nassau live-card Press (ASSET_V `20260905c`)
+
+MUST-FIX: David did not see a Press button on the Nassau live card. Cause: dedicated Front/Back/Overall controls lived only inside `.hole-view` (overflow-x hidden; easy to miss / not sticky), and the generic Press control is hidden when Nassau is the only pressable game — so a missed `nassau.on` check showed **zero** Press buttons. Not organizer-only.
+
+Now a **sticky Nassau live dock** sits on the hole scoring screen (above the hole card, not settings, not ⋯ menu, not results-only): **Press Front / Press Back / Press Overall** in one 390px row, plus RUNNING for original F/B/O and each live press. Detection uses config.on **or** `games.nassau`. Front dies at 9; Back at 18; Overall tap→18. Originals stay live. Same PR #2. Hold merge.
+
 ### Nassau live-card Press (ASSET_V `20260905b`)
 
 MUST-FIX: hole view now shows **Press Front / Press Back / Press Overall** above the Nassau RUNNING lines (not overflow-only, not settings-only). Front enabled 1–9 (dies at 9); Back enabled 10–18; Overall always tap→18. Originals stay live; each press has its own RUNNING row. Same PR #2. Hold merge.

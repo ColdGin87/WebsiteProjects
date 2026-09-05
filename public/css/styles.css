@@ -2680,24 +2680,33 @@ img {
   margin-top: 6px;
 }
 
-.nassau-board {
-  margin: 6px 0 8px;
-  padding: 8px 10px;
+.nassau-live-dock {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  margin: 0 0 10px;
+  padding: 8px;
   background: #E8F5E9;
-  border: 1px solid #2E7D32;
+  border: 2px solid #1B5E20;
   border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  line-height: 1.4;
+}
+
+.nassau-board {
+  margin: 8px 0 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-size: 0.8125rem;
+  line-height: 1.35;
   color: #1b5e20;
 }
 
 .nassau-press-wrap {
   display: block;
-  margin: 8px 0 10px;
-  padding: 8px;
-  background: #E8F5E9;
-  border: 2px solid #1B5E20;
-  border-radius: var(--radius-sm);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
 }
 
 .nassau-press-heading {
@@ -2708,27 +2717,27 @@ img {
 }
 
 .nassau-press-btns {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
 }
 
 .nassau-press-btn {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   width: 100%;
   min-height: 48px;
-  padding: 10px 14px;
+  padding: 8px 4px;
   border: 0;
   border-radius: 10px;
   background: #1b5e20;
   color: #fff;
-  font-size: 1.05rem;
+  font-size: 0.82rem;
   font-weight: 800;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
 }
 
 .nassau-press-btn:disabled {

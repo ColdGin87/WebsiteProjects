@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905b',
+  ASSET_V: '20260905c',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
 
@@ -418,9 +418,18 @@ const scorecard = {
     </div>`;
   },
 
+  flagOn(value) {
+    return value === true || value === 1 || value === '1' || value === 'on' || value === 'true' || value === 'yes';
+  },
+
   isNassauOn(state) {
+    if (!state) return false;
     const cfg = this.sideConfig(state);
-    return !!(cfg.nassau && cfg.nassau.on);
+    if (cfg && cfg.nassau && this.flagOn(cfg.nassau.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    if (games && (games.nassau || (games.nassauPresses && games.nassauPresses.length))) return true;
+    const presses = state.presses || [];
+    return presses.some((p) => (p.game_key || p.gameKey) === 'nassau');
   },
 
   nassauPresses(state) {
@@ -485,6 +494,15 @@ const scorecard = {
   nassauBoardHtml(state) {
     if (!this.isNassauOn(state)) return '';
     return `<div class="nassau-board" id="nassau-board">${this.nassauBoardInner(state)}</div>`;
+  },
+
+  nassauLiveDockHtml(state, holeNumber) {
+    if (!this.isNassauOn(state)) return '';
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    return `<div class="nassau-live-dock" id="nassau-live-dock">
+      ${this.nassauPressButtonsHtml(state, hn)}
+      ${this.nassauBoardHtml(state)}
+    </div>`;
   },
 
   nassauBoardInner(state) {
@@ -1447,7 +1465,7 @@ const scorecard = {
       ['skins', 'Skins'],
     ];
     for (const [key, label] of labels) {
-      if (cfg[key] && cfg[key].on) bits.push(label);
+      if (cfg[key] && this.flagOn(cfg[key].on)) bits.push(label);
     }
     return bits.join(' + ') || 'Scorecard';
   },
@@ -1487,15 +1505,25 @@ const scorecard = {
   },
 
   sideConfig(state) {
-    return (state && state.sideGames && state.sideGames.config)
-      || (state && state.round && state.round.sideGames)
-      || {};
+    const fromSide = state && state.sideGames && state.sideGames.config;
+    if (fromSide && typeof fromSide === 'object' && !Array.isArray(fromSide) && (fromSide.nassau || fromSide.vegas || fromSide.wolf || fromSide.nines || fromSide.skins)) {
+      return fromSide;
+    }
+    const raw = state && state.round && (state.round.sideGames || state.round.side_games);
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch { /* ignore */ }
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    return fromSide || {};
   },
 
   pressableGames(state) {
     const cfg = this.sideConfig(state);
     const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
-    return defs.filter((g) => g.pressable && cfg[g.key] && cfg[g.key].on);
+    return defs.filter((g) => g.pressable && cfg[g.key] && this.flagOn(cfg[g.key].on));
   },
 
   async confirmPress() {
@@ -1993,17 +2021,16 @@ const scorecard = {
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
+      ${this.nassauLiveDockHtml(state, holeNumber)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
-          ${this.nassauPressButtonsHtml(state, holeNumber)}
-          ${this.nassauBoardHtml(state)}
           ${this.vegasBoardHtml(state)}
           ${this.vegasPressButtonHtml(state, holeNumber)}
           ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
-          ${this.pressableGames(state).filter((g) => g.key !== 'nassau').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to 18 (Vegas games-running, Wolf, Nines). Nassau uses the Front / Back / Overall Press buttons above.')}` : ''}
+          ${this.pressableGames(state).filter((g) => g.key !== 'nassau').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to 18 (Vegas games-running, Wolf, Nines). Nassau uses the Front / Back / Overall Press buttons on the live card.')}` : ''}
         </div>
         ${this.wolfBarHtml(state, holeNumber)}
         ${this.kpPickerHtml(state, holeNumber)}
@@ -2234,8 +2261,7 @@ const scorecard = {
       ${this.addPlayerPanel(state)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
-        ${this.nassauPressButtonsHtml(state, this.currentHole || 1)}
-        ${this.nassauBoardHtml(state)}
+        ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>
@@ -2787,14 +2813,34 @@ const scorecard = {
       document.querySelector('.hole-chrome .vegas-press-wrap'),
       this.vegasPressButtonHtml(this.state, hn)
     );
-    const nassauBoard = document.getElementById('nassau-board');
-    if (nassauBoard) nassauBoard.innerHTML = this.nassauBoardInner(this.state);
-    this.replaceNode(
-      document.getElementById('nassau-press-wrap') || document.querySelector('.hole-chrome .nassau-press-wrap'),
-      this.nassauPressButtonsHtml(this.state, hn)
-    );
+    this.ensureNassauLiveDock(hn);
     const ninesBoard = document.getElementById('nines-board');
     if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);
+  },
+
+  ensureNassauLiveDock(holeNumber) {
+    const html = this.nassauLiveDockHtml(this.state, holeNumber);
+    const existing = document.getElementById('nassau-live-dock')
+      || document.getElementById('nassau-press-wrap')
+      || document.querySelector('.nassau-press-wrap');
+    if (existing) {
+      this.replaceNode(existing, html);
+      return;
+    }
+    if (!html) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const node = tmp.firstElementChild;
+    if (!node) return;
+    const holeView = document.getElementById('hole-view');
+    const toolbar = document.getElementById('hole-toolbar');
+    if (toolbar && toolbar.parentNode) {
+      toolbar.insertAdjacentElement('afterend', node);
+    } else if (holeView && holeView.parentNode) {
+      holeView.insertAdjacentElement('beforebegin', node);
+    } else if (holeView) {
+      holeView.insertBefore(node, holeView.firstChild);
+    }
   },
 
   paintTeamVsPar(team) {
