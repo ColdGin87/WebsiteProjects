@@ -6,6 +6,10 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### Sunday game + 1G+1N (ASSET_V `20260826w`)
+
+The team vs-par race is branded **Sunday game** in setup, live title, Game Rules, and the 19th hole. Live title is `Sunday game · 1G+2N` (or `Sunday game · 1G+1N`), stacked as `Sunday game · 1G+2N + Vegas`. Format picker now includes **1G+1N** (one gross + one net) and keeps **1G+2N** as the default, plus 3G, 3N, 1G+3N, 2G+2N. Same vs-par best-combo math; 1G+1N is one gross slot + one net slot.
+
 ### Remaining queue audit (ASSET_V `20260826v`)
 
 Items 1–14 were already on this PR (Vegas P0 through 19th). This revision closes leftovers: Wolf score inputs stay disabled until sides lock; exports no longer say Individual; create/settings hide unused handicap allowance; 19th hole waits until every rostered team player has all 18.

@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826v',
+  ASSET_V: '20260826w',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -1296,7 +1296,7 @@ const scorecard = {
   liveGameTitle(state) {
     const bits = [];
     if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
-      bits.push(this.shortRaceTitle(state.round));
+      bits.push('Sunday game · ' + this.shortRaceTitle(state.round));
     }
     const cfg = this.sideConfig(state);
     const labels = [
@@ -1541,7 +1541,7 @@ const scorecard = {
     const wolfOn = !!(cfg.wolf && cfg.wolf.on);
     const ninesOn = !!(cfg.nines && cfg.nines.on);
     return `
-      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off. ${this.infoTip('side-games', 'Turn on any mix. Team vs-par race is a separate setup toggle. Side games can run alone.')}</p>
+      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off. ${this.infoTip('side-games', 'Turn on any mix. Sunday game is a separate setup toggle. Side games can run alone.')}</p>
       <label class="check-row"><input type="checkbox" name="skinsOn" ${skinsOn ? 'checked' : ''}> Skins</label>
       <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('skins')) || '')}</p>
       <div class="form-group"><label>Skins pot</label><input class="form-input" name="skinsPot" type="number" min="0" step="1" value="${cfg.skins && cfg.skins.pot != null ? cfg.skins.pot : 20}"></div>
@@ -1629,7 +1629,7 @@ const scorecard = {
     const g = side.games;
     const raceTeams = (state.teams || []).map((t) => `${t.name} ${this.fmtTeam(t.total)}`).join(' · ');
     if (this.isTeamRaceOn(state) && raceTeams) {
-      blocks.push(`<div class="card"><h3 class="card-title">Team race</h3><p>${_esc(raceTeams)}</p></div>`);
+      blocks.push(`<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`);
     }
     if (g.skins) {
       const s = g.skins;
@@ -1687,7 +1687,7 @@ const scorecard = {
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) {
-      const win = `Race ${leader.name} wins · ${this.fmtTeam(leader.total)}`;
+      const win = `Sunday game ${leader.name} wins · ${this.fmtTeam(leader.total)}`;
       return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
     }
     const teamBits = teams.map((t) => {
@@ -1697,7 +1697,7 @@ const scorecard = {
       }
       return bit;
     }).join(' · ');
-    return [vegasBit, `Race ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
+    return [vegasBit, `Sunday game ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
   },
 
   holePlayerRowHtml(state, member, holeNumber) {
@@ -1924,7 +1924,7 @@ const scorecard = {
     if (this.showOut(state) && team.out != null) bits.push(`OUT ${this.fmtTeam(team.out)}`);
     if (this.showIn(state) && team.inn != null) bits.push(`IN ${this.fmtTeam(team.inn)}`);
     if (this.showIn(state) && team.total != null) bits.push(`TOT ${this.fmtTeam(team.total)}`);
-    const raceLabel = this.isVegasOn(state) ? 'Race vs-par' : `${_esc(team.name)} hole`;
+    const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(team.name)} hole`;
     return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
       <div class="hole-team-scoreline">
         <span>${raceLabel}</span>
@@ -2110,7 +2110,7 @@ const scorecard = {
     container.innerHTML = `
         ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card">
-        <h2 class="card-title">Settings ${this.infoTip('settings', 'Team race, format, and side games. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
+        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game, format, and side games. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
         <p class="card-subtitle">${_esc(r.name)} · join <strong>${_esc(r.joinCode || r.join_code)}</strong></p>
         <p class="join-row">
           <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.joinUrl || '')}')">Copy join link</button>
@@ -2203,10 +2203,10 @@ const scorecard = {
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
         <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
-        ${r.format === 'team_net' ? `<label class="tiny-label">Team game ${this.infoTip('format', 'Best-combo vs-par when Team race is ON. 1G+2N is the Goldendale default.')}
+        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par when Sunday game is ON. Pick 1G+2N (default) or 1G+1N, plus 3G, 3N, 1G+3N, 2G+2N.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
-        <label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Team vs-par race ${this.infoTip('team-race', 'Default ON. OFF hides the team vs-par race. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>
+        <label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>
         <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
@@ -2958,14 +2958,14 @@ const scorecard = {
       <div class="card game-rules" id="game-rules">
         <h2 class="card-title">Game Rules</h2>
         <p class="card-subtitle">House rules. Short and plain. Tap ℹ on the live card for one-line help.</p>
-        <h3>Team vs-par race</h3>
-        <p>Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is best 1 gross + 2 net. OFF hides the race. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
+        <h3>Sunday game</h3>
+        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
         <h3>Handicap index</h3>
         <p>No course handicap. Round the index at 0.5 (2.4→2, 2.5→3, 18.7→19, 1.3→1). That integer is applied by scorecard stroke index for every net game.</p>
         <h3>Skins</h3>
         <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
         <h3>Vegas</h3>
-        <p>2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. This-hole points = the difference. The winner adds those points; the loser subtracts the same (zero-sum). Example: H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; flip only on a gross birdie or better. Presses apply.</p>
+        <p>2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104). That is not the Sunday game 1G+2N vs-par team total. This-hole points = the difference. The winner adds those points; the loser subtracts the same (zero-sum). Example: H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; flip only on a gross birdie or better. Presses apply.</p>
         <h3>Nassau (NASA)</h3>
         <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Front, Back, and Overall can be pressed independently. No auto 2-down.</p>
         <h3>Wolf</h3>
@@ -2979,9 +2979,9 @@ const scorecard = {
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
-        <p>When all scores are in, tap Go to the 19th hole. Front, back, and overall winners for every team. Active side games settle. Fun facts: total gross birdies, hardest and easiest holes, most birdies by a player, biggest team swing.</p>
+        <p>When all scores are in, tap Go to the 19th hole. Sunday game Front, Back, and Overall for every team. Active side games settle. Fun facts: total gross birdies, hardest and easiest holes, most birdies by a player, biggest team swing.</p>
         <h3>OUT / IN / TOT</h3>
-        <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Team race stays vs-par.</p>
+        <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
     svcApi('updateBadge');
   },
@@ -3005,7 +3005,7 @@ const scorecard = {
       <div class="card nineteenth" id="nineteenth">
         <h2 class="card-title">19th hole</h2>
         <p class="card-subtitle">${_esc(state.round.name)} · confirmed card</p>
-        <h3>Team winners</h3>
+        <h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(t.name)}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
         <p>Front: ${_esc(fmt(state.frontLeaders))} · Back: ${_esc(fmt(state.backLeaders))} · Overall: ${_esc(fmt(state.overallLeaders))}</p>
         ${skins ? `<h3>Skins</h3><p>Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}</p>` : ''}

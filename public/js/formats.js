@@ -4,6 +4,7 @@
 const TEAM_GAMES = [
   { key: '3G', grossBalls: 3, netBalls: 0, label: '3 gross' },
   { key: '3N', grossBalls: 0, netBalls: 3, label: '3 net' },
+  { key: '1G1N', grossBalls: 1, netBalls: 1, label: '1 gross + 1 net' },
   { key: '1G2N', grossBalls: 1, netBalls: 2, label: '1 gross + 2 net (Goldendale default)', isDefault: true },
   { key: '1G3N', grossBalls: 1, netBalls: 3, label: '1 gross + 3 net' },
   { key: '2G2N', grossBalls: 2, netBalls: 2, label: '2 gross + 2 net' },

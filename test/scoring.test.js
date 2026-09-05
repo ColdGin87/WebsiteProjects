@@ -329,6 +329,8 @@ describe('teamHoleScore', () => {
     assert.equal(team.total, -1);
     assert.equal(team.balls.find((b) => b.type === 'gross').playerId, 'A');
     assert.equal(team.balls.find((b) => b.type === 'net').playerId, 'B');
+    assert.equal(team.balls.filter((b) => b.type === 'gross').length, 1);
+    assert.equal(team.balls.filter((b) => b.type === 'net').length, 1);
   });
 
   it('keeps the best vs-par combo, not lowest-gross-first', () => {
@@ -349,14 +351,19 @@ describe('teamHoleScore', () => {
 });
 
 describe('team game formats', () => {
-  it('ships the five selectable games with 1G+2N default', () => {
-    assert.deepEqual(TEAM_GAMES.map((g) => g.key), ['3G', '3N', '1G2N', '1G3N', '2G2N']);
+  it('ships the selectable games with 1G+2N default and 1G+1N', () => {
+    assert.deepEqual(TEAM_GAMES.map((g) => g.key), ['3G', '3N', '1G1N', '1G2N', '1G3N', '2G2N']);
     assert.equal(gameFromKey('1G2N').isDefault, true);
     assert.equal(gameFromKey('missing').key, '1G2N');
+    assert.equal(gameFromKey('1G1N').grossBalls, 1);
+    assert.equal(gameFromKey('1G1N').netBalls, 1);
     assert.match(formatLabel(1, 2), /1 gross \+ 2 net vs par/);
+    assert.match(formatLabel(1, 1), /1 gross \+ 1 net vs par/);
     assert.equal(shortFormatLabel(1, 2), '1G+2N');
+    assert.equal(shortFormatLabel(1, 1), '1G+1N');
     assert.equal(shortFormatLabel(3, 0), '3G');
     assert.match(formatRuleText(1, 2), /1 gross score and 2 net scores/);
+    assert.match(formatRuleText(1, 1), /1 gross score and 1 net score/);
     assert.match(formatRuleText(1, 2), /vs par/);
     assert.match(formatRuleText(1, 2), /lowest \(best\) combo/);
     assert.match(formatRuleText(1, 2), /running vs-par total/);

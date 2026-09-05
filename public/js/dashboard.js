@@ -133,6 +133,7 @@ const dashboard = {
     const games = api.TEAM_GAMES || [
       { key: '3G', label: '3 gross' },
       { key: '3N', label: '3 net' },
+      { key: '1G1N', label: '1 gross + 1 net' },
       { key: '1G2N', label: '1 gross + 2 net (Goldendale default)' },
       { key: '1G3N', label: '1 gross + 3 net' },
       { key: '2G2N', label: '2 gross + 2 net' },
@@ -244,11 +245,11 @@ const dashboard = {
           </div>
           <label class="check-row" id="create-team-race-row">
             <input type="checkbox" name="teamRace" checked>
-            Team vs-par race
-            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Default ON. 1G+2N or another format. OFF = no team vs-par race; side games can still run.') : ''}
+            Sunday game
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Sunday game is the default team vs-par race. 1G+2N or 1G+1N (or another format). OFF hides the Sunday game; side games can still run.') : ''}
           </label>
           <div class="form-group" id="create-game-wrap">
-            <label>Team game ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1 gross + 2 net.') : ''}</label>
+            <label>Sunday game format ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1G+2N. Also 1G+1N, 3G, 3N, 1G+3N, 2G+2N.') : ''}</label>
             <p class="game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
             <select class="form-input" name="gameKey" id="create-game">
               ${dashboard.gameOptionsHtml('1G2N')}

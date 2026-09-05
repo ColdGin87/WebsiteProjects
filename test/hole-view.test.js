@@ -66,10 +66,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826v/);
-    assert.match(html, /js\/formats\.js\?v=20260826v/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826v/);
-    assert.match(src, /ASSET_V:\s*'20260826v'/);
+    assert.match(html, /20260826w/);
+    assert.match(html, /js\/formats\.js\?v=20260826w/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826w/);
+    assert.match(src, /ASSET_V:\s*'20260826w'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -100,13 +100,13 @@ describe('Combined PR3 hole view', () => {
     const race = sliceFn('raceStripText(state)', 'holePlayerRowHtml(state, member, holeNumber)');
     assert.match(race, /fmtTeam/);
     assert.match(race, /vegasStripText|isVegasOn/);
-    assert.match(race, /Race /);
+    assert.match(race, /Sunday game /);
     assert.match(src, /fmtTeam\(winner\.total\)/);
     assert.match(src, /fmtTeam\(team\.total\)/);
     assert.match(src, /oneHoleVegasTotal/);
     assert.match(src, /vegasBoardHtml/);
     assert.match(src, /fmtVegasPts/);
-    assert.match(src, /Race vs-par/);
+    assert.match(src, /Sunday game/);
     assert.match(src, /vegas-press-btn/);
     assert.match(src, /pressVegasFromHole/);
     assert.match(src, /vegasPresses/);
@@ -189,7 +189,10 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(settings, />Individual</);
     assert.doesNotMatch(settings, /Allowance/);
     assert.match(settings, /HCP = Index only/);
-    assert.match(settings, /Team vs-par race/);
+    assert.match(settings, /Sunday game/);
+    assert.match(settings, /1G1N|1G\+1N/);
+    assert.match(src, /Sunday game · /);
+    assert.match(src, /<h3>Sunday game<\/h3>/);
     assert.match(css, /\.info-pop:not\(\[hidden\]\)/);
   });
 
@@ -209,10 +212,12 @@ describe('Game select vs-par formats', () => {
     const gameSelAt = dash.indexOf('id="create-game"');
     assert.ok(ruleAt >= 0 && gameSelAt > ruleAt, 'rule text sits above the game select');
     assert.match(dash, /1G2N/);
+    assert.match(dash, /1G1N/);
     assert.match(dash, /3G/);
     assert.match(dash, /3N/);
     assert.match(dash, /1G3N/);
     assert.match(dash, /2G2N/);
+    assert.match(dash, /Sunday game/);
     assert.match(dash, /gameRule/);
     assert.match(dash, /create-side-games/);
     assert.match(dash, /sideGames/);
