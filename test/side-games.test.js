@@ -419,7 +419,7 @@ describe('Nines net off low man', () => {
 });
 
 describe('Birdie slots', () => {
-  it('awards one deterministic spin per gross birdie or better', () => {
+  it('awards one deterministic spin per gross birdie and per net birdie', () => {
     const holes = [
       { holeNumber: 1, par: 5 },
       { holeNumber: 2, par: 4 },
@@ -429,11 +429,29 @@ describe('Birdie slots', () => {
       member(2, 'Bob', 0, [5, 3]),
     ];
     const slots = computeBirdieSlots({ on: true, holes, members, roundId: 9 });
-    assert.equal(slots.spins, 2);
+    // Ann H1 4/4 on par 5 = gross + net. Bob H2 3/3 on par 4 = gross + net.
+    assert.equal(slots.spins, 4);
+    assert.equal(slots.grossBirdies, 2);
+    assert.equal(slots.netBirdies, 2);
+    assert.equal(slots.spinLog.length, 4);
     assert.equal(slots.players.find((p) => p.id === 1).birdies, 1);
+    assert.equal(slots.players.find((p) => p.id === 1).spins, 2);
     assert.equal(slots.players.find((p) => p.id === 2).birdies, 1);
     assert.equal(slotSpin(9, 1, 1), slotSpin(9, 1, 1));
+    assert.equal(slotSpin(9, 1, 1, 'net'), slotSpin(9, 1, 1, 'net'));
     assert.equal(computeBirdieSlots({ on: false }).on, false);
+  });
+
+  it('counts a net-only birdie when gross is not under par', () => {
+    const holes = [{ holeNumber: 1, par: 4, strokeIndex: 1 }];
+    const members = [member(3, 'Pat', 18, [4])];
+    const slots = computeBirdieSlots({ on: true, holes, members, roundId: 3 });
+    assert.equal(members[0].holes[0].gross, 4);
+    assert.ok(members[0].holes[0].net <= 3);
+    assert.equal(slots.grossBirdies, 0);
+    assert.equal(slots.netBirdies, 1);
+    assert.equal(slots.spins, 1);
+    assert.equal(slots.spinLog[0].kind, 'net');
   });
 });
 

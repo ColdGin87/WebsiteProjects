@@ -66,10 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826w/);
-    assert.match(html, /js\/formats\.js\?v=20260826w/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826w/);
-    assert.match(src, /ASSET_V:\s*'20260826w'/);
+    assert.match(html, /20260826x/);
+    assert.match(html, /js\/formats\.js\?v=20260826x/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826x/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260826x/);
+    assert.match(src, /ASSET_V:\s*'20260826x'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -225,5 +226,26 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /name="teamRace"/);
     assert.match(dash, /sideGamesFieldsInner/);
     assert.match(src, /birdieSlotsOn/);
+    assert.match(src, /wyrmCoil/);
+    assert.match(src, /Birdie dragon slots/);
+  });
+});
+
+describe('Wyrm Coil overlay', () => {
+  it('ships an original dragon overlay and never copies casino names', () => {
+    const coil = fs.readFileSync(path.join(ROOT, 'public/js/wyrmCoil.js'), 'utf8');
+    assert.match(coil, /Wyrm Coil/);
+    assert.match(coil, /Birdie dragon slots/);
+    assert.match(coil, /takeSpin/);
+    assert.match(coil, /HIGH_KEY/);
+    assert.match(coil, /wyrm-screens/);
+    assert.match(src, /onNineteenthDrawn/);
+    assert.match(css, /\.wyrm-coil-overlay/);
+    assert.match(css, /\.wyrm-screens/);
+    assert.doesNotMatch(coil, /Dragon Link/);
+    assert.doesNotMatch(coil, /Dragon Spin/);
+    assert.doesNotMatch(coil, /Aristocrat/);
+    assert.doesNotMatch(coil, /Light & Wonder|Light and Wonder/);
+    assert.doesNotMatch(src, /Dragon Link|Dragon Spin/);
   });
 });

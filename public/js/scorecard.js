@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826w',
+  ASSET_V: '20260826x',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -1176,6 +1176,9 @@ const scorecard = {
     if (this.screen === 'nineteenth') {
       this.drawNineteenth(state);
       this.bindInfoTips();
+      if (window.wyrmCoil && typeof window.wyrmCoil.onNineteenthDrawn === 'function') {
+        window.wyrmCoil.onNineteenthDrawn(state);
+      }
       return;
     }
     if (this.isHoleView()) this.drawHoleView(state);
@@ -1572,7 +1575,7 @@ const scorecard = {
         <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
         <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
       </div>
-      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie slots ${this.infoTip('slots', 'Fun layer, not money. Each gross birdie or better is one spin. More birdies = more spins. Running high score.')}</label>
+      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not money. Spin count is gross birdies plus net birdies. At the 19th hole, Wyrm Coil opens — take those spins, bank points, keep a high score.')}</label>
       <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
       <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
         <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
@@ -1664,7 +1667,7 @@ const scorecard = {
     }
     if (g.birdieSlots && g.birdieSlots.on) {
       const lead = g.birdieSlots.leader;
-      blocks.push(`<div class="card"><h3 class="card-title">Birdie slots</h3><p>${_esc(lead ? lead.name + ' ' + lead.points + ' pts · ' + g.birdieSlots.spins + ' spins' : 'No birdies yet')}</p></div>`);
+      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil</h3><p>${_esc(lead ? lead.name + ' ' + lead.points + ' pts · ' + g.birdieSlots.spins + ' spins (' + (g.birdieSlots.grossBirdies || 0) + 'G+' + (g.birdieSlots.netBirdies || 0) + 'N birdies)' : 'No birdies yet')}</p></div>`);
     }
     if (side.stripText) {
       blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
@@ -2974,8 +2977,8 @@ const scorecard = {
         <p>Exactly 3 individual players. Each hole shows that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0) and a second row with each player’s running total through that hole. Net off the low man. Presses apply.</p>
         <h3>Presses</h3>
         <p>Vegas / Wolf / Nines: from this hole to 18. Nassau: from this hole to the end of that segment only (Front dies at 9). Same $ as the parent unless you change it at confirm. Anyone can press. Original bets stay live.</p>
-        <h3>Birdie slots</h3>
-        <p>Fun layer, not money. Default ON. Each gross birdie or better is one spin. More birdies = more spins. Running high score.</p>
+        <h3>Birdie dragon slots (Wyrm Coil)</h3>
+        <p>Fun layer, not money. Default ON. When the card is confirmed on the 19th hole, Wyrm Coil opens. Spin count is <strong>gross birdies + net birdies</strong> that round (same hole can count both). Take those spins on the original multi-reel overlay; each spin awards points. Running total and a saved high score. Toggle off to skip the coil. Not a casino copy — original theme and pay.</p>
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
@@ -3011,6 +3014,7 @@ const scorecard = {
         ${skins ? `<h3>Skins</h3><p>Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}</p>` : ''}
         ${this.sideGamesResultsHtml(state)}
         ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
+        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
         <h3>Fun facts</h3>
         <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
         <p>Hardest hole: ${facts.hardest ? ('#' + facts.hardest.hole + ' (' + (facts.hardest.avg > 0 ? '+' : '') + facts.hardest.avg.toFixed(1) + ' vs par)') : '—'}</p>
