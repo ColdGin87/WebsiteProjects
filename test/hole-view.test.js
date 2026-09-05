@@ -65,10 +65,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826l/);
-    assert.match(html, /js\/formats\.js\?v=20260826l/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826l/);
-    assert.match(src, /ASSET_V:\s*'20260826l'/);
+    assert.match(html, /20260826m/);
+    assert.match(html, /js\/formats\.js\?v=20260826m/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826m/);
+    assert.match(src, /ASSET_V:\s*'20260826m'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -81,7 +81,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(bar, /hole-overflow/);
     assert.match(bar, /Full card/);
     assert.match(bar, /Settings/);
+    assert.match(bar, /confirmPress/);
     assert.doesNotMatch(bar, /See dashboard/);
+    const hole = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    assert.match(hole, /Press/);
     assert.match(src, /id="hole-players"/);
     assert.match(src, /patchUI\(\)/);
   });

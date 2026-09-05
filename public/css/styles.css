@@ -2562,6 +2562,10 @@ img {
   margin: 0 0 6px;
 }
 
+.press-live {
+  margin-top: 8px;
+}
+
 .hole-number {
   font-size: 1.35rem;
   font-weight: 800;

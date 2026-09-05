@@ -486,6 +486,106 @@ async function runCacheHeaders(base) {
   console.log('PASS cache headers: js revalidates, html not 86400, script ?v=');
 }
 
+async function runSideGamesScenario(base) {
+  const stamp = Date.now();
+  const registered = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Side Host',
+      email: `scorecard.side.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const token = registered.token;
+  const created = await api(base, 'POST', '/api/rounds', {
+    token,
+    body: {
+      name: 'Side games coexist with vs-par',
+      format: 'team_net',
+      holes: '18',
+      allowance: 100,
+      grossBalls: 1,
+      netBalls: 2,
+      dualCount: false,
+      sideGames: {
+        skins: { on: true, pot: 18 },
+        vegas: { on: true, scoring: 'gross', dollarsPerPoint: 1 },
+        nassau: { on: true, scoring: 'gross', front: 2, back: 2, overall: 2 },
+      },
+    },
+  });
+  const roundId = created.round.id;
+  let state = created;
+  for (const player of PLAYERS) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token,
+      body: { name: player.name, handicap: player.handicap, playingHandicap: player.handicap, teamName: 'Team 1' },
+    });
+  }
+  state = await api(base, 'POST', `/api/rounds/${roundId}/guests/bulk`, {
+    token,
+    body: {
+      guests: [
+        { name: 'Eve', handicap: 8, teamName: 'Team 2' },
+        { name: 'Fay', handicap: 10, teamName: 'Team 2' },
+      ],
+    },
+  });
+  for (const player of PLAYERS) {
+    const member = state.members.find((m) => m.display_name === player.name);
+    if (Number(member.playing_handicap) !== player.handicap) {
+      state = await api(base, 'PUT', `/api/rounds/${roundId}/members/${member.id}`, {
+        token,
+        body: { playingHandicap: player.handicap, teamName: 'Team 1' },
+      });
+    }
+  }
+  const host = state.members.find((m) => m.display_name === 'Side Host');
+  if (host && host.team_id) {
+    state = await api(base, 'PUT', `/api/rounds/${roundId}/members/${host.id}`, {
+      token,
+      body: { teamId: null },
+    });
+  }
+  for (const player of PLAYERS) {
+    const member = state.members.find((m) => m.display_name === player.name);
+    if (!member) fail('side games missing ' + player.name);
+    await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: member.id, holeNumber: 1, gross: player.gross },
+    });
+  }
+  const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const holeResult = (live.holeResults || []).find((h) => h.holeNumber === 1);
+  const teamHole = (holeResult.teams || []).find((t) => t.teamName === 'Team 1');
+  assertEqual(teamHole && teamHole.total, 1, 'side games must not change hole-1 best 1G+2N');
+  if (!live.sideGames || !live.sideGames.games || !live.sideGames.games.skins) {
+    fail('skins should run from the same hole scores');
+  }
+  assertEqual(live.round.sideGames.skins.on, true, 'skins toggle persisted');
+  const friend = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Press Friend',
+      email: `scorecard.press.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  await api(base, 'POST', '/api/rounds/join', {
+    token: friend.token,
+    body: { code: live.round.join_code || live.round.joinCode },
+  });
+  const pressed = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token: friend.token,
+    body: { gameKey: 'vegas', startHole: 1, endHole: 18 },
+  });
+  if (!(pressed.presses || []).some((p) => (p.game_key || p.gameKey) === 'vegas')) {
+    fail('friend press should land on the card');
+  }
+  const still = (pressed.holeResults || []).find((h) => h.holeNumber === 1);
+  const stillTeam = (still.teams || []).find((t) => t.teamName === 'Team 1');
+  assertEqual(stillTeam && stillTeam.total, 1, 'press must not change hole-1 vs-par');
+  console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press');
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -522,6 +622,7 @@ async function main() {
     await runScenario(base);
     await runDemoScenario(base);
     await runTeam1VsParDemo(base);
+    await runSideGamesScenario(base);
   } finally {
     if (child) {
       child.kill('SIGTERM');

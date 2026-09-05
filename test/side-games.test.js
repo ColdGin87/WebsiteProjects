@@ -7,6 +7,7 @@ const {
   scoreVegas,
   ninesHolePoints,
   scoreNines,
+  scoreWolf,
   scoreWolfHole,
   rotationWolf,
   scoreNassau,
@@ -191,6 +192,80 @@ describe('Nines', () => {
     });
     assert.equal(three.incomplete, false);
     assert.equal(three.points.find((p) => p.id === 1).points, 5);
+  });
+});
+
+describe('Presses', () => {
+  it('Vegas press from a later hole only scores that range', () => {
+    const holes = [
+      { holeNumber: 1, par: 4, strokeIndex: 1 },
+      { holeNumber: 2, par: 4, strokeIndex: 2 },
+    ];
+    const teams = [
+      { id: 10, name: 'Team 1', members: [member(1, 'A', 0, [3, 4]), member(2, 'B', 0, [5, 5])] },
+      { id: 20, name: 'Team 2', members: [member(3, 'C', 0, [5, 5]), member(4, 'D', 0, [6, 6])] },
+    ];
+    const full = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1 });
+    const press = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1, startHole: 2, endHole: 18 });
+    assert.ok(full.teamA.points > press.teamA.points);
+    assert.equal(press.holes.length, 1);
+    assert.equal(press.holes[0].holeNumber, 2);
+  });
+
+  it('Nassau press reads DB-shaped start_hole and stays on that segment', () => {
+    const holes = Array.from({ length: 9 }, (_, i) => ({ holeNumber: i + 1, par: 4, strokeIndex: i + 1 }));
+    const low = Array(9).fill(3);
+    const high = Array(9).fill(5);
+    const teams = [
+      { id: 1, name: 'Team 1', members: [member(1, 'A', 0, low), member(2, 'B', 0, low)] },
+      { id: 2, name: 'Team 2', members: [member(3, 'C', 0, high), member(4, 'D', 0, high)] },
+    ];
+    const side = computeSideGames({
+      config: { nassau: { on: true, scoring: 'gross', front: 2, back: 2, overall: 2 } },
+      holes,
+      members: teams.flatMap((t) => t.members),
+      teams,
+      presses: [{ game_key: 'nassau', segment: 'front', start_hole: 5, end_hole: 9, dollars: 4 }],
+    });
+    assert.ok(side.games.nassau);
+    const t1 = side.money.find((m) => m.id === 1);
+    assert.ok(t1.dollars >= 2);
+    assert.match(side.stripText, /Nassau/);
+    assert.match(side.stripText, /All games/);
+  });
+});
+
+describe('Wolf pending', () => {
+  it('does not award lone-wolf points until a pick is saved', () => {
+    const members = [
+      { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 3 }] },
+      { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
+      { id: 3, display_name: 'C', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 6, net: 6 }] },
+    ];
+    const pending = scoreWolf({
+      holes: [{ holeNumber: 1, par: 4, strokeIndex: 1 }],
+      members,
+      picks: [],
+      scoring: 'gross',
+      dollarsPerPoint: 1,
+    });
+    assert.equal(pending.holes[0].pending, true);
+    assert.equal((pending.points || []).reduce((s, p) => s + p.points, 0), 0);
+  });
+});
+
+describe('Nines net off low man', () => {
+  it('gives the high-handicap player a stroke before 5-3-1', () => {
+    const holes = [{ holeNumber: 1, par: 4, strokeIndex: 1 }];
+    const members = [
+      member(1, 'Low', 0, [4]),
+      member(2, 'Mid', 0, [5]),
+      member(3, 'High', 18, [5]),
+    ];
+    const nines = scoreNines({ holes, members, scoring: 'net', blitz: false, dollarsPerPoint: 1 });
+    const high = nines.points.find((p) => p.id === 3);
+    const mid = nines.points.find((p) => p.id === 2);
+    assert.ok(high.points > mid.points);
   });
 });
 

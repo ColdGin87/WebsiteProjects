@@ -41,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826l',
+  ASSET_V: '20260826m',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -796,11 +796,11 @@ const scorecard = {
     const wolf = this.wolfForHole(state, holeNumber);
     if (!wolf) return '';
     const pick = (state.wolfPicks || []).find((p) => Number(p.hole_number || p.holeNumber) === Number(holeNumber));
-    const lone = pick ? !!(pick.lone) : true;
+    const lone = pick ? !!(pick.lone || pick.lone_wolf) : false;
     const partnerId = pick && (pick.partner_member_id || pick.partnerMemberId);
     const others = (state.members || []).filter((m) => m.id !== wolf.id);
     return `<div class="wolf-bar" id="wolf-bar">
-      <span>Wolf: ${_esc(wolf.display_name)}</span>
+      <span>Wolf: ${_esc(wolf.display_name)} — pick a partner after they tee, or go lone for 2×</span>
       <label class="tiny-label"><input type="checkbox" ${lone ? 'checked' : ''} onchange="scorecard.setWolfPick(${holeNumber}, null, this.checked)"> Lone wolf 2×</label>
       ${!lone ? `<select class="form-input" onchange="scorecard.setWolfPick(${holeNumber}, Number(this.value), false)">
         <option value="">Partner</option>
@@ -892,14 +892,18 @@ const scorecard = {
     if (!side || !side.games) return '';
     const blocks = [];
     const g = side.games;
+    const raceTeams = (state.teams || []).map((t) => `${t.name} ${this.fmtTeam(t.total)}`).join(' · ');
+    if (raceTeams) {
+      blocks.push(`<div class="card"><h3 class="card-title">Team race</h3><p>${_esc(raceTeams)}</p></div>`);
+    }
     if (g.skins) {
       const s = g.skins;
       const gross = (s.grossWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
       const net = (s.netWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
       blocks.push(`<div class="card"><h3 class="card-title">Skins</h3>
         <p>Pot ${s.pot} · ${s.skinCount} skins · ${s.valuePerSkin ? s.valuePerSkin.toFixed(2) : '0'} each</p>
-        <p>Gross: ${_esc(gross)}</p>
-        <p>Net: ${_esc(net)}</p></div>`);
+        <p>Gross skins: ${_esc(gross)}</p>
+        <p>Net skins: ${_esc(net)}</p></div>`);
     }
     if (g.vegas && g.vegas.teamA) {
       blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
@@ -917,6 +921,9 @@ const scorecard = {
     if (g.nines) {
       const pts = (g.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
       blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
+    }
+    if (side.stripText) {
+      blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
     }
     if (!blocks.length) return '';
     return `<h3 class="section-title">Side games</h3>${blocks.join('')}`;
@@ -1022,6 +1029,7 @@ const scorecard = {
         <div class="hole-chrome">
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
+          ${this.pressableGames(state).length ? '<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>' : ''}
         </div>
         ${this.wolfBarHtml(state, holeNumber)}
         ${this.holePlayersHtml(state, holeNumber)}
