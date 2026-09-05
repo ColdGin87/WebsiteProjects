@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826u',
+  ASSET_V: '20260826v',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -273,13 +273,9 @@ const scorecard = {
 
   groupHasEighteen(state) {
     const holes = state.holes || [];
-    const members = state.members || [];
+    const members = this.visibleHoleMembers(state);
     if (!holes.length || !members.length) return false;
-    const holeHasScore = (h) => members.some((m) => {
-      const hs = (m.holes || []).find((x) => x.holeNumber === h.hole_number);
-      return hs && hs.gross != null;
-    });
-    return holes.every(holeHasScore) || members.some((m) => this.playerComplete(m, holes));
+    return members.every((m) => this.playerComplete(m, holes));
   },
 
   eighteenBanner(state) {
@@ -933,6 +929,10 @@ const scorecard = {
 
   commitScore(memberId, holeNumber, gross) {
     if (!this.state) return;
+    if (this.wolfHoldsScoring(this.state, holeNumber)) {
+      this.showWriteError('Lock Wolf sides before scoring this hole.');
+      return;
+    }
     this.showWriteError('');
     this.applyLocalScore(memberId, holeNumber, gross);
     const roundId = this.state.round.id;
@@ -1461,6 +1461,11 @@ const scorecard = {
     return false;
   },
 
+  wolfHoldsScoring(state, holeNumber) {
+    if (!this.isWolfOn(state)) return false;
+    return !this.wolfLocked(this.wolfPickFor(state, holeNumber));
+  },
+
   wolfOthers(state, holeNumber) {
     const wolf = this.wolfForHole(state, holeNumber);
     return [...(state.members || [])]
@@ -1707,6 +1712,7 @@ const scorecard = {
           <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
             data-member="${member.id}" data-hole="${holeNumber}"
             data-committed="${hs?.gross ?? ''}"
+            ${this.wolfHoldsScoring(state, holeNumber) ? 'disabled' : ''}
             value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
           ${this.strokeDotsHtml(hs?.strokes)}
         </div>
@@ -2196,11 +2202,7 @@ const scorecard = {
         <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance (helper)</button>
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
-        <label class="tiny-label">Allowance
-          <select onchange="scorecard.updateSettings({allowance: Number(this.value), recomputeHandicaps:true})">
-            ${[75,80,90,100].map((a) => `<option value="${a}" ${r.allowance === a ? 'selected' : ''}>${a}%</option>`).join('')}
-          </select>
-        </label>
+        <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap. Allowance is not used.')}</span>
         ${r.format === 'team_net' ? `<label class="tiny-label">Team game ${this.infoTip('format', 'Best-combo vs-par when Team race is ON. 1G+2N is the Goldendale default.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
@@ -2328,6 +2330,7 @@ const scorecard = {
         <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
           data-member="${member.id}" data-hole="${hole.hole_number}"
           data-committed="${hs?.gross ?? ''}"
+          ${this.wolfHoldsScoring(state, hole.hole_number) ? 'disabled' : ''}
           value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
         ${this.strokeDotsHtml(hs?.strokes)}
       </div>

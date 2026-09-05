@@ -490,6 +490,15 @@ describe('resultsText leading vs winning', () => {
     assert.match(text, /Winning team: Team 1 \(\+2\)/);
     assert.equal(text.includes('Leading team'), false);
   });
+
+  it('does not label leftover players as Individual', () => {
+    const text = resultsText({
+      ...sample('live'),
+      unassigned: [{ display_name: 'Guest', totalGross: 72, totalNet: 70 }],
+    });
+    assert.equal(text.includes('Individual'), false);
+    assert.match(text, /Unassigned/);
+  });
 });
 
 describe('appBaseUrl', () => {

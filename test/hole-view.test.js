@@ -66,10 +66,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826u/);
-    assert.match(html, /js\/formats\.js\?v=20260826u/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826u/);
-    assert.match(src, /ASSET_V:\s*'20260826u'/);
+    assert.match(html, /20260826v/);
+    assert.match(html, /js\/formats\.js\?v=20260826v/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826v/);
+    assert.match(src, /ASSET_V:\s*'20260826v'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -180,11 +180,15 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /liveGameTitle/);
     assert.match(src, /wolf-badge/);
     assert.match(src, /Blind Lone Wolf/);
+    assert.match(src, /wolfHoldsScoring/);
+    assert.match(src, /Lock Wolf sides before scoring/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);
     const settings = sliceFn('settingsBar(state)', 'groupedMembers(state)');
     assert.doesNotMatch(settings, />Individual</);
+    assert.doesNotMatch(settings, /Allowance/);
+    assert.match(settings, /HCP = Index only/);
     assert.match(settings, /Team vs-par race/);
     assert.match(css, /\.info-pop:not\(\[hidden\]\)/);
   });

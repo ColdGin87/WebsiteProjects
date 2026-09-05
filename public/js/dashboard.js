@@ -262,15 +262,7 @@ const dashboard = {
               <option value="back9">Back 9</option>
             </select>
           </div>
-          <div class="form-group">
-            <label>Handicap allowance ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-hcp', 'Strokes use your handicap index rounded at 0.5, then the scorecard stroke index. No course handicap.') : ''}</label>
-            <select class="form-input" name="allowance">
-              <option value="100" selected>100%</option>
-              <option value="90">90%</option>
-              <option value="80">80%</option>
-              <option value="75">75%</option>
-            </select>
-          </div>
+          <p class="card-subtitle">Handicap = Index only. Round at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.</p>
           <label class="check-row" id="create-dual-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
           <div class="form-group" id="create-side-games">
             <label>Side games</label>
@@ -320,7 +312,7 @@ const dashboard = {
             teeId: fd.get('teeId') ? Number(fd.get('teeId')) : null,
             format: fd.get('format'),
             holes: fd.get('holes'),
-            allowance: Number(fd.get('allowance')),
+            allowance: 100,
             grossBalls: game.grossBalls,
             netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
