@@ -1,8 +1,7 @@
 /**
  * Wyrm Coil — original birdie dragon slots overlay.
- * Inspired by casino dragon machines in mood only. Not Dragon Link, not
- * Dragon Spin, and not anyone else's paytable, art, or name.
- * Fun layer. Toggle still applies. N spins = gross birdies + net birdies.
+ * Casino-dragon mood only. Original name, art, and pay. Not a copy of any
+ * cabinet. Fun layer. Toggle still applies. N spins = gross + net birdies.
  */
 const WYRM_ICONS = [
   { key: 'coil', mark: '◎', label: 'Coil' },

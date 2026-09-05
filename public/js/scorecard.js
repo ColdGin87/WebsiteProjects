@@ -2978,7 +2978,7 @@ const scorecard = {
         <h3>Presses</h3>
         <p>Vegas / Wolf / Nines: from this hole to 18. Nassau: from this hole to the end of that segment only (Front dies at 9). Same $ as the parent unless you change it at confirm. Anyone can press. Original bets stay live.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>
-        <p>Fun layer, not money. Default ON. When the card is confirmed on the 19th hole, Wyrm Coil opens. Spin count is <strong>gross birdies + net birdies</strong> that round (same hole can count both). Take those spins on the original multi-reel overlay; each spin awards points. Running total and a saved high score. Toggle off to skip the coil. Not a casino copy — original theme and pay.</p>
+        <p>Fun layer, not money. Default ON. When the card is confirmed on the 19th hole, Wyrm Coil opens. Spin count is <strong>gross birdies + net birdies</strong> that round (same hole can count both). Take those spins on the original multi-reel overlay; each spin awards points. Running total and a saved high score. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
