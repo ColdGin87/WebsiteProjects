@@ -2650,6 +2650,7 @@ img {
 
 .vegas-line-run {
   margin-top: 2px;
+  overflow-wrap: anywhere;
 }
 
 .vegas-press-wrap {

@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905g/);
-    assert.match(html, /js\/formats\.js\?v=20260905g/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905g/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905g/);
-    assert.match(src, /ASSET_V:\s*'20260905g'/);
+    assert.match(html, /20260905h/);
+    assert.match(html, /js\/formats\.js\?v=20260905h/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905h/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905h/);
+    assert.match(src, /ASSET_V:\s*'20260905h'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -230,14 +230,23 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /ONE_DIGIT_MS/);
     assert.match(src, /vegasNamedRun/);
     assert.match(src, /vegasRunDiffLine/);
+    const runPts = sliceFn('vegasRunPoints(game, holeNumber)', 'vegasNamedRun(game, holeNumber)');
+    assert.match(runPts, /runA/);
+    assert.match(runPts, /holeNumber/);
+    const namedRun = sliceFn('vegasNamedRun(game, holeNumber)', 'vegasRunDiffLine(game, holeNumber)');
+    assert.match(namedRun, /vegasRunPoints/);
+    assert.match(namedRun, /holeNumber/);
+    assert.match(namedRun, / up /);
+    assert.match(namedRun, / down /);
+    assert.doesNotMatch(namedRun, /fmtVegasPts/);
     const runDiff = sliceFn('vegasRunDiffLine(game, holeNumber)', 'vegasThisHoleLine(game, holeNumber)');
-    assert.match(runDiff, /runA/);
-    assert.match(runDiff, /holeNumber/);
+    assert.match(runDiff, /vegasNamedRun/);
     assert.match(src, /vegas-line-this/);
     assert.match(src, /vegas-line-run/);
     const vegasUnder = sliceFn('oneHoleVegasTotal(state, team, holeNumber)', 'oneHoleTeamTotal(state, team, holeNumber)');
     assert.match(vegasUnder, /This hole/);
-    assert.match(vegasUnder, /RUNNING/);
+    assert.match(vegasUnder, /vegasNamedRun/);
+    assert.match(vegasUnder, /data-vegas-named-run/);
     assert.ok(vegasUnder.indexOf('vegas-line-this') < vegasUnder.indexOf('vegas-line-run'), 'this-hole sits above running');
     assert.match(src, /games running/);
     assert.match(src, /playPodiumReveal/);

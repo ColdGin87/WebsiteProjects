@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Vegas RUNNING names who is up and down (ASSET_V `20260905h`)
+
+RUNNING is not a bare −20. After +5 then −25 it reads **Team B up 20 · Team A down 20** (through the hole you are on). This-hole line stays the signed difference after × games. Same PR #2. Hold merge.
+
 ### Vegas two-line this-hole + RUNNING (ASSET_V `20260905g`)
 
 Vegas shows two stacked lines: this-hole difference after the games-running multiplier, then RUNNING cumulative **through the hole you are on**. Example +5 then −25 → running −20. Other team is the sign-flipped mirror. Same PR #2. Hold merge.

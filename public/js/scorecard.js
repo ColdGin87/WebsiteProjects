@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905g',
+  ASSET_V: '20260905h',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -353,9 +353,9 @@ const scorecard = {
     if (!v || !v.teamA || !v.teamB) return this.isVegasOn(state) ? 'Vegas —' : '';
     const hn = this.currentHole || 1;
     const row = (v.holes || []).find((h) => h.holeNumber === hn);
-    const total = `TOTAL ${this.fmtVegasPts(v.teamA.points)}/${this.fmtVegasPts(v.teamB.points)}`;
-    if (!row || row.incomplete) return `Vegas ${total}`;
-    return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${total}`;
+    const run = this.vegasNamedRun(v, hn);
+    if (!row || row.incomplete) return `Vegas ${run}`;
+    return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${run}`;
   },
 
   vegasBoardHtml(state) {
@@ -379,10 +379,18 @@ const scorecard = {
     return this.vegasGamesRunning(state, this.currentHole);
   },
 
-  vegasNamedRun(game) {
+  vegasRunPoints(game, holeNumber) {
+    if (!game || !game.teamA || !game.teamB) return { a: 0, b: 0 };
+    const hn = Number(holeNumber || this.currentHole || 0);
+    const row = hn ? (game.holes || []).find((h) => h.holeNumber === hn) : null;
+    const a = row && row.runA != null ? Number(row.runA) : Number(game.teamA.points) || 0;
+    const b = row && row.runB != null ? Number(row.runB) : Number(game.teamB.points) || 0;
+    return { a, b };
+  },
+
+  vegasNamedRun(game, holeNumber) {
     if (!game || !game.teamA || !game.teamB) return 'RUNNING even';
-    const a = Number(game.teamA.points) || 0;
-    const b = Number(game.teamB.points) || 0;
+    const { a, b } = this.vegasRunPoints(game, holeNumber);
     if (a === b) return 'RUNNING even';
     if (a > b) {
       return `RUNNING: ${game.teamA.name} up ${Math.abs(a)} · ${game.teamB.name} down ${Math.abs(b)}`;
@@ -391,12 +399,7 @@ const scorecard = {
   },
 
   vegasRunDiffLine(game, holeNumber) {
-    if (!game || !game.teamA || !game.teamB) return 'RUNNING —';
-    const hn = Number(holeNumber || this.currentHole || 1);
-    const row = (game.holes || []).find((h) => h.holeNumber === hn);
-    const a = row && row.runA != null ? row.runA : game.teamA.points;
-    const b = row && row.runB != null ? row.runB : game.teamB.points;
-    return `RUNNING: ${game.teamA.name} ${this.fmtVegasPts(a)} · ${game.teamB.name} ${this.fmtVegasPts(b)}`;
+    return this.vegasNamedRun(game, holeNumber);
   },
 
   vegasThisHoleLine(game, holeNumber) {
@@ -2150,10 +2153,10 @@ const scorecard = {
     if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
     const row = this.vegasHoleFor(state, team, holeNumber);
     const thisPts = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
-    const runPts = row && row.run != null ? this.fmtVegasPts(row.run) : '0';
+    const runLine = this.vegasNamedRun(this.vegasGame(state), holeNumber);
     return `<div class="hole-team-total hole-vegas-total ${row && row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
       <div class="vegas-line-this">This hole <span data-vegas-swing="${team.id}">${thisPts}</span></div>
-      <div class="vegas-line-run">RUNNING <span data-vegas-run="${team.id}">${runPts}</span></div>
+      <div class="vegas-line-run" data-vegas-named-run="${team.id}">${_esc(runLine)}</div>
     </div>`;
   },
 
@@ -2816,6 +2819,9 @@ const scorecard = {
       });
       document.querySelectorAll('[data-vegas-run="' + team.id + '"]').forEach((el) => {
         el.textContent = row && row.run != null ? this.fmtVegasPts(row.run) : '0';
+      });
+      document.querySelectorAll('[data-vegas-named-run="' + team.id + '"]').forEach((el) => {
+        el.textContent = this.vegasNamedRun(this.vegasGame(this.state), hn);
       });
       const wrap = document.querySelector('[data-vegas-total="' + team.id + '"]');
       if (wrap) wrap.classList.toggle('incomplete', !!(row && row.incomplete));
