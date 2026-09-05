@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905h/);
-    assert.match(html, /js\/formats\.js\?v=20260905h/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905h/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905h/);
-    assert.match(src, /ASSET_V:\s*'20260905h'/);
+    assert.match(html, /20260905i/);
+    assert.match(html, /js\/formats\.js\?v=20260905i/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905i/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905i/);
+    assert.match(src, /ASSET_V:\s*'20260905i'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -250,8 +250,22 @@ describe('Combined PR3 hole view', () => {
     assert.ok(vegasUnder.indexOf('vegas-line-this') < vegasUnder.indexOf('vegas-line-run'), 'this-hole sits above running');
     assert.match(src, /games running/);
     assert.match(src, /playPodiumReveal/);
+    const podium = sliceFn('playPodiumReveal()', 'drawNineteenth(state)');
+    assert.match(podium, /\['3rd', '2nd', '1st'\]/);
+    assert.match(podium, /nineteenth-confetti/);
     assert.match(src, /revealNineteenthCard/);
+    const nineteenth = sliceFn('drawNineteenth(state) {', 'window.scorecard');
+    assert.match(nineteenth, /revealCardHtml\('front'/);
+    assert.match(nineteenth, /revealCardHtml\('back'/);
+    assert.match(nineteenth, /revealCardHtml\('overall'/);
+    assert.match(nineteenth, /revealCardHtml\('skins'/);
+    assert.match(src, /data-reveal=/);
+    assert.match(nineteenth, /sound off/);
+    assert.match(nineteenth, /share-strip/);
+    assert.match(nineteenth, /wyrmCoil\.bannerHtml/);
+    assert.ok(nineteenth.indexOf('share-strip') < nineteenth.indexOf('wyrmCoil.bannerHtml'), 'spin door sits with the share strip');
     assert.match(src, /shareNineteenth/);
+    assert.match(src, /nineteenthSharePng/);
     assert.match(src, /wolfPartnered/);
     assert.match(css, /\.podium-place/);
     assert.match(css, /\.reveal-card/);
@@ -325,6 +339,8 @@ describe('Wyrm Coil overlay', () => {
     assert.match(src, /onNineteenthDrawn/);
     assert.match(css, /\.wyrm-coil-overlay/);
     assert.match(css, /\.wyrm-screens/);
+    assert.match(css, /\.wyrm-spin-door-btn/);
+    assert.match(css, /min-height:\s*64px/);
     assert.doesNotMatch(coil, /Dragon Link/);
     assert.doesNotMatch(coil, /Dragon Spin/);
     assert.doesNotMatch(coil, /Aristocrat/);

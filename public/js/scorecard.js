@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905h',
+  ASSET_V: '20260905i',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -3296,7 +3296,7 @@ const scorecard = {
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
-        <p>When all scores are in, tap Go to the 19th hole. Podium reveals 3rd → 2nd → 1st with confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. Spin your birdies opens Wyrm Coil when you have spins. Share strip copies a one-tap summary. Sound stays off.</p>
+        <p>When all scores are in, tap Go to the 19th hole. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The big Spin your birdies door opens Wyrm Coil when you have spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
         <h3>OUT / IN / TOT</h3>
         <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
@@ -3322,7 +3322,8 @@ const scorecard = {
         <span class="podium-label">${p.label}</span>
         <strong>${p.team ? _esc(this.teamDisplay(p.team)) : '—'}</strong>
         <span>${p.team ? this.fmtTeam(p.team.total) : ''}</span>
-      </div>`).join('')}<div class="confetti" id="nineteenth-confetti" hidden></div></div>`;
+        ${p.label === '1st' ? '<div class="confetti" id="nineteenth-confetti" hidden></div>' : ''}
+      </div>`).join('')}</div>`;
   },
 
   revealCardHtml(key, title, body) {
@@ -3352,11 +3353,51 @@ const scorecard = {
     return bits.join(' · ');
   },
 
+  nineteenthSharePng(state) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 720;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return Promise.resolve(null);
+    ctx.fillStyle = '#1B5E20';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#F9A825';
+    ctx.fillRect(0, 0, canvas.width, 10);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 28px sans-serif';
+    ctx.fillText('Sunday game · 19th hole', 28, 64);
+    const text = this.nineteenthShareText(state || this.state);
+    ctx.font = '600 20px sans-serif';
+    const words = String(text || '').split(' ');
+    let line = '';
+    let y = 120;
+    words.forEach((word) => {
+      const next = line ? line + ' ' + word : word;
+      if (ctx.measureText(next).width > 660) {
+        ctx.fillText(line, 28, y);
+        line = word;
+        y += 32;
+      } else {
+        line = next;
+      }
+    });
+    if (line) ctx.fillText(line, 28, y);
+    ctx.font = '500 16px sans-serif';
+    ctx.fillText('Goldendale Scorecard · sound off', 28, 330);
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/png');
+    });
+  },
+
   async shareNineteenth() {
     const text = this.state ? this.nineteenthShareText(this.state) : '';
+    const blob = await this.nineteenthSharePng(this.state);
+    const file = blob ? new File([blob], 'sunday-19th.png', { type: 'image/png' }) : null;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Sunday game', text });
+        const data = { title: 'Sunday game', text };
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) data.files = [file];
+        await navigator.share(data);
         return;
       }
     } catch { /* fall through to copy */ }
@@ -3419,11 +3460,11 @@ const scorecard = {
           <span>${_esc(this.nineteenthShareText(state))}</span>
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
+        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
         <h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
         ${this.sideGamesResultsHtml(state)}
         ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
-        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
         <h3>Fun facts</h3>
         <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
         <p>Hardest hole: ${facts.hardest ? ('#' + facts.hardest.hole + ' (' + (facts.hardest.avg > 0 ? '+' : '') + facts.hardest.avg.toFixed(1) + ' vs par)') : '—'}</p>

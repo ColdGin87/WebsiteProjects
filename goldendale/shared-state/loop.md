@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### 19th hole fun UI (ASSET_V `20260905i`)
+
+19th hole: podium reveals 3rd → 2nd → 1st with short confetti on 1st; tap-to-reveal Front / Back / Overall / Skins; big Spin your birdies door into Wyrm Coil when spins > 0; share strip is one-tap summary plus a screenshot card. Sound stays off. Same PR #2. Hold merge.
+
 ### Vegas RUNNING names who is up and down (ASSET_V `20260905h`)
 
 RUNNING is not a bare −20. After +5 then −25 it reads **Team B up 20 · Team A down 20** (through the hole you are on). This-hole line stays the signed difference after × games. Same PR #2. Hold merge.

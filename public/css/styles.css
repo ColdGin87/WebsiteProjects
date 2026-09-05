@@ -3577,6 +3577,7 @@ input.score-input:disabled {
 }
 
 .podium {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -3586,6 +3587,8 @@ input.score-input:disabled {
 }
 
 .podium-place {
+  position: relative;
+  overflow: hidden;
   text-align: center;
   padding: 10px 14px;
   background: #1B5E20;
@@ -3643,9 +3646,21 @@ input.score-input:disabled {
 
 .wyrm-spin-door {
   margin: 16px 0;
-  padding: 16px;
-  border: 2px dashed #1B5E20;
+  padding: 22px 16px;
+  border: 3px solid #1B5E20;
+  background: #E8F5E9;
   text-align: center;
 }
 
-.wyrm-spin-door-btn { min-height: 48px; min-width: 160px; }
+.wyrm-spin-door h3 {
+  font-size: 1.35rem;
+  margin: 0 0 8px;
+}
+
+.wyrm-spin-door-btn {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
