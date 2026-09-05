@@ -574,6 +574,10 @@ async function runSideGamesScenario(base) {
   assertEqual(vegas.holes[0].numA, 56, 'Vegas Team 1 pair is 5+6=56, not vs-par +1');
   assertEqual(vegas.holes[0].numB, 67, 'Vegas Team 2 pair is 6+7=67');
   assertEqual(vegas.holes[0].points, 11, 'Vegas hole points are |56-67|');
+  assertEqual(vegas.holes[0].swingA, 11, 'Vegas this-hole swing is +11 for Team 1');
+  assertEqual(vegas.holes[0].swingB, -11, 'Vegas this-hole swing is −11 for Team 2');
+  assertEqual(vegas.teamA.points, 11, 'Vegas TOTAL is zero-sum +11');
+  assertEqual(vegas.teamB.points, -11, 'Vegas TOTAL is zero-sum −11');
   if (vegas.holes[0].numA === 1 || vegas.holes[0].points === 1) {
     fail('Vegas must not use the 1G+2N vs-par total');
   }

@@ -120,8 +120,38 @@ describe('Vegas', () => {
     ];
     const vegas = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 2 });
     assert.equal(vegas.teamA.points, 11);
-    assert.equal(vegas.teamB.points, 0);
+    assert.equal(vegas.teamB.points, -11);
+    assert.equal(vegas.holes[0].swingA, 11);
+    assert.equal(vegas.holes[0].swingB, -11);
     assert.equal(vegas.money.find((m) => m.id === 10).dollars, 22);
+  });
+
+  it('zero-sum running: H1 A +11 / B −11, H2 B +8 → A +3 / B −3', () => {
+    const holes = [
+      { holeNumber: 1, par: 4, strokeIndex: 1 },
+      { holeNumber: 2, par: 4, strokeIndex: 2 },
+    ];
+    const teams = [
+      { id: 10, name: 'Team 1', members: [member(1, 'A', 0, [4, 5]), member(2, 'B', 0, [5, 6])] },
+      { id: 20, name: 'Team 2', members: [member(3, 'C', 0, [5, 4]), member(4, 'D', 0, [6, 8])] },
+    ];
+    const vegas = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1 });
+    assert.equal(vegas.holes[0].numA, 45);
+    assert.equal(vegas.holes[0].numB, 56);
+    assert.equal(vegas.holes[0].points, 11);
+    assert.equal(vegas.holes[0].swingA, 11);
+    assert.equal(vegas.holes[0].swingB, -11);
+    assert.equal(vegas.holes[0].runA, 11);
+    assert.equal(vegas.holes[0].runB, -11);
+    assert.equal(vegas.holes[1].numA, 56);
+    assert.equal(vegas.holes[1].numB, 48);
+    assert.equal(vegas.holes[1].points, 8);
+    assert.equal(vegas.holes[1].swingA, -8);
+    assert.equal(vegas.holes[1].swingB, 8);
+    assert.equal(vegas.holes[1].runA, 3);
+    assert.equal(vegas.holes[1].runB, -3);
+    assert.equal(vegas.teamA.points, 3);
+    assert.equal(vegas.teamB.points, -3);
   });
 
   it('uses pair numbers, never the 1G+2N vs-par team total', () => {

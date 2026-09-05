@@ -2576,6 +2576,35 @@ img {
   margin: 4px 0 2px;
 }
 
+.vegas-board {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: #E8EAF6;
+  border: 1px solid #3F51B5;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #1a237e;
+}
+
+.vegas-board-this,
+.vegas-board-holes,
+.vegas-board-total {
+  font-weight: 700;
+}
+
+.vegas-board-total {
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.vegas-this,
+.vegas-cell-swing {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1a237e;
+}
+
 .race-strip,
 .ball-line,
 .ball-reveal {
@@ -2811,7 +2840,7 @@ img {
 
 .add-team-picks {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px;
   width: 100%;
 }
@@ -2831,6 +2860,17 @@ img {
   border-color: var(--accent);
   background: #E8F5E9;
   color: #1B5E20;
+}
+
+.add-team-more {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-weight: 800;
+  font-size: 0.85rem;
 }
 
 .hole-view.add-player-open .score-input,

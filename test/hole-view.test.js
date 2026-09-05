@@ -65,10 +65,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826p/);
-    assert.match(html, /js\/formats\.js\?v=20260826p/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826p/);
-    assert.match(src, /ASSET_V:\s*'20260826p'/);
+    assert.match(html, /20260826q/);
+    assert.match(html, /js\/formats\.js\?v=20260826q/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826q/);
+    assert.match(src, /ASSET_V:\s*'20260826q'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -99,9 +99,13 @@ describe('Combined PR3 hole view', () => {
     const race = sliceFn('raceStripText(state)', 'holePlayerRowHtml(state, member, holeNumber)');
     assert.match(race, /fmtTeam/);
     assert.match(race, /vegasStripText|isVegasOn/);
+    assert.match(race, /Race /);
     assert.match(src, /fmtTeam\(winner\.total\)/);
     assert.match(src, /fmtTeam\(team\.total\)/);
     assert.match(src, /oneHoleVegasTotal/);
+    assert.match(src, /vegasBoardHtml/);
+    assert.match(src, /fmtVegasPts/);
+    assert.match(src, /Race vs-par/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
   });
 
@@ -111,11 +115,16 @@ describe('Combined PR3 hole view', () => {
     assert.match(panel, /live-add-guest-hcp/);
     assert.match(panel, /addTeamChipsHtml/);
     assert.match(panel, /Save player/);
+    const names = sliceFn('addTeamNames(state)', 'nextAddTeamName(state)');
+    assert.match(names, /Team 1/);
+    assert.match(names, /Team 2/);
+    assert.match(names, /Team 3/);
     const chips = sliceFn('addTeamChipsHtml(selected)', 'snapshotAddPlayer()');
     assert.match(chips, /add-team-chip/);
-    assert.match(chips, /Team 1/);
-    assert.match(chips, /Team 2/);
-    assert.match(chips, /Team 3/);
+    assert.match(chips, /add-extra-team/);
+    assert.match(chips, /Add team/);
+    assert.match(src, /addExtraTeam\(/);
+    assert.match(src, /nextAddTeamName/);
     assert.doesNotMatch(panel, /<select/);
   });
 
@@ -148,6 +157,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(players, /group\.team/);
     assert.match(players, /oneHoleTeamTotal/);
     assert.match(players, /oneHoleVegasTotal/);
+    assert.ok(players.indexOf('oneHoleVegasTotal') < players.indexOf('oneHoleTeamTotal'), 'Vegas is primary under the team');
     assert.match(players, /isVegasOn/);
     assert.match(players, /visibleHoleMembers|group\.team &&/);
     assert.match(src, /Go to the 19th hole/);

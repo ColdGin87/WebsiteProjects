@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826p',
+  ASSET_V: '20260826q',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -316,18 +316,27 @@ const scorecard = {
     return null;
   },
 
+  fmtVegasPts(n) {
+    if (n == null || Number.isNaN(Number(n))) return '—';
+    const v = Number(n);
+    if (v === 0) return '0';
+    return v > 0 ? '+' + v : String(v);
+  },
+
   vegasHoleFor(state, team, holeNumber) {
     const v = this.vegasGame(state);
     const side = this.vegasSideForTeam(state, team);
     if (!v || !side) return null;
     const row = (v.holes || []).find((h) => h.holeNumber === holeNumber);
+    const runFallback = side === 'A' ? (v.teamA && v.teamA.points) || 0 : (v.teamB && v.teamB.points) || 0;
     if (!row || row.incomplete) {
-      return { incomplete: true, num: null, run: side === 'A' ? (v.teamA && v.teamA.points) || 0 : (v.teamB && v.teamB.points) || 0 };
+      return { incomplete: true, num: null, run: runFallback, swing: null, points: 0, flip: false };
     }
     return {
       incomplete: false,
       num: side === 'A' ? row.numA : row.numB,
-      run: side === 'A' ? (row.runA != null ? row.runA : v.teamA && v.teamA.points) : (row.runB != null ? row.runB : v.teamB && v.teamB.points),
+      run: side === 'A' ? (row.runA != null ? row.runA : runFallback) : (row.runB != null ? row.runB : runFallback),
+      swing: side === 'A' ? row.swingA : row.swingB,
       points: row.points,
       flip: side === 'A' ? row.flipA : row.flipB,
     };
@@ -338,9 +347,32 @@ const scorecard = {
     if (!v || !v.teamA || !v.teamB) return this.isVegasOn(state) ? 'Vegas —' : '';
     const hn = this.currentHole || 1;
     const row = (v.holes || []).find((h) => h.holeNumber === hn);
-    const run = `${v.teamA.name} ${v.teamA.points}–${v.teamB.points} ${v.teamB.name}`;
-    if (!row || row.incomplete) return `Vegas ${run}`;
-    return `Vegas ${row.numA}–${row.numB} (+${row.points}) · ${run}`;
+    const total = `TOTAL ${this.fmtVegasPts(v.teamA.points)}/${this.fmtVegasPts(v.teamB.points)}`;
+    if (!row || row.incomplete) return `Vegas ${total}`;
+    return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${total}`;
+  },
+
+  vegasBoardHtml(state) {
+    if (!this.isVegasOn(state)) return '';
+    return `<div class="vegas-board" id="vegas-board">${this.vegasBoardInner(state)}</div>`;
+  },
+
+  vegasBoardInner(state) {
+    const v = this.vegasGame(state);
+    if (!v || !v.teamA || !v.teamB) return '<div class="vegas-board-this">Vegas —</div>';
+    const hn = this.currentHole || 1;
+    const row = (v.holes || []).find((h) => h.holeNumber === hn);
+    const thisLine = (!row || row.incomplete)
+      ? 'This hole: —'
+      : `This hole: ${this.fmtVegasPts(row.swingA)} / ${this.fmtVegasPts(row.swingB)} · ${row.numA}–${row.numB}`;
+    const byHole = (v.holes || [])
+      .filter((h) => !h.incomplete && h.swingA != null)
+      .map((h) => `H${h.holeNumber} ${this.fmtVegasPts(h.swingA)}/${this.fmtVegasPts(h.swingB)}`)
+      .join(' · ');
+    const total = `TOTAL ${this.fmtVegasPts(v.teamA.points)} / ${this.fmtVegasPts(v.teamB.points)}`;
+    return `<div class="vegas-board-this">${_esc(thisLine)}</div>
+      <div class="vegas-board-holes">${_esc(byHole ? 'By hole: ' + byHole : 'By hole: —')}</div>
+      <div class="vegas-board-total">${_esc(total)}</div>`;
   },
 
   afterHoleScored(state, holeNumber) {
@@ -400,7 +432,7 @@ const scorecard = {
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player ${this.infoTip('add-player', 'Name, handicap index, and an explicit team. Strokes follow the rounded index on the scorecard SI. Auto-balance is only a helper.')}</h3>
-        <p class="card-subtitle">Name, HCP, then Team 1 / Team 2 / Team 3. Auto-balance is only a helper.</p>
+        <p class="card-subtitle">Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.</p>
         <form class="add-guest-row add-player-form" id="live-add-player-form">
           <label class="add-field">
             <span>Name</span>
@@ -420,12 +452,47 @@ const scorecard = {
       </div>`;
   },
 
+  addTeamNames(state) {
+    const names = new Set(['Team 1', 'Team 2', 'Team 3']);
+    for (const team of (state && state.teams) || []) {
+      if (team && team.name) names.add(team.name);
+    }
+    for (const extra of (this.addPlayerDraft && this.addPlayerDraft.extraTeams) || []) {
+      if (extra) names.add(extra);
+    }
+    return [...names].sort((a, b) => {
+      const na = Number((a.match(/(\d+)/) || [])[1] || 99);
+      const nb = Number((b.match(/(\d+)/) || [])[1] || 99);
+      return na - nb || a.localeCompare(b);
+    });
+  },
+
+  nextAddTeamName(state) {
+    const used = new Set(this.addTeamNames(state));
+    let n = 4;
+    while (used.has('Team ' + n) && n < 20) n += 1;
+    return 'Team ' + n;
+  },
+
   addTeamChipsHtml(selected) {
     const current = selected || 'Team 1';
+    const names = this.addTeamNames(this.state);
     return `<div class="add-team-picks" role="group" aria-label="Team">
-      ${['Team 1', 'Team 2', 'Team 3'].map((n) => `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${n}</button>`).join('')}
+      ${names.map((n) => `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${n}</button>`).join('')}
+      <button type="button" class="add-team-more" id="add-extra-team">Add team</button>
       <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
     </div>`;
+  },
+
+  addExtraTeam() {
+    this.snapshotAddPlayer();
+    const name = this.nextAddTeamName(this.state);
+    if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name, extraTeams: [] };
+    const extras = this.addPlayerDraft.extraTeams || [];
+    if (!extras.includes(name)) extras.push(name);
+    this.addPlayerDraft.extraTeams = extras;
+    this.addPlayerDraft.teamName = name;
+    this.mountAddPlayerPanel();
   },
 
   snapshotAddPlayer() {
@@ -438,6 +505,7 @@ const scorecard = {
       name: name ? name.value : prev.name,
       handicap: hcp ? hcp.value : prev.handicap,
       teamName: team ? team.value : (prev.teamName || 'Team 1'),
+      extraTeams: prev.extraTeams || [],
     };
   },
 
@@ -514,6 +582,14 @@ const scorecard = {
         this.pickAddTeam(btn.getAttribute('data-team-name'));
       };
     });
+    const addTeam = document.getElementById('add-extra-team');
+    if (addTeam) {
+      addTeam.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addExtraTeam();
+      };
+    }
     const done = document.getElementById('add-player-done');
     if (done) {
       done.onclick = (e) => {
@@ -1205,7 +1281,7 @@ const scorecard = {
     }
     if (g.vegas && g.vegas.teamA) {
       blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
-        <p>${_esc(g.vegas.teamA.name)} ${g.vegas.teamA.points} · ${_esc(g.vegas.teamB.name)} ${g.vegas.teamB.points}</p></div>`);
+        <p>${_esc(g.vegas.teamA.name)} ${this.fmtVegasPts(g.vegas.teamA.points)} · ${_esc(g.vegas.teamB.name)} ${this.fmtVegasPts(g.vegas.teamB.points)} <span class="tiny-label">zero-sum</span></p></div>`);
     }
     if (g.nassau && g.nassau.front) {
       blocks.push(`<div class="card"><h3 class="card-title">Nassau</h3>
@@ -1245,8 +1321,8 @@ const scorecard = {
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) {
-      const win = `${leader.name} wins · ${this.fmtTeam(leader.total)}`;
-      return [win, vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+      const win = `Race ${leader.name} wins · ${this.fmtTeam(leader.total)}`;
+      return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
     }
     const teamBits = teams.map((t) => {
       let bit = `${t.name} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
@@ -1255,7 +1331,7 @@ const scorecard = {
       }
       return bit;
     }).join(' · ');
-    return [teamBits, vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    return [vegasBit, `Race ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
   },
 
   holePlayerRowHtml(state, member, holeNumber) {
@@ -1290,9 +1366,9 @@ const scorecard = {
     const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length);
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
       const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
-      const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
       const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
-      return `<section class="hole-team-group" data-team-group="${group.team.id}">${rows}${raceHtml}${vegasHtml}</section>`;
+      const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+      return `<section class="hole-team-group" data-team-group="${group.team.id}">${rows}${vegasHtml}${raceHtml}</section>`;
     }).join('')}</div>`;
   },
 
@@ -1351,6 +1427,7 @@ const scorecard = {
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+          ${this.vegasBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
           ${this.pressableGames(state).length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to the end of that game or Nassau segment. Same dollars as the parent unless you change them.')}` : ''}
         </div>
@@ -1429,7 +1506,8 @@ const scorecard = {
         <div class="hole-team-scoreline">
           <span>${_esc(team.name)} Vegas</span>
           <strong data-vegas-num="${team.id}:${holeNumber}">—</strong>
-          <span class="running-total">run <span data-vegas-run="${team.id}">0</span></span>
+          <span class="vegas-this">this <span data-vegas-swing="${team.id}">—</span></span>
+          <span class="running-total">TOTAL <span data-vegas-run="${team.id}">0</span></span>
         </div>
       </div>`;
     }
@@ -1437,7 +1515,8 @@ const scorecard = {
       <div class="hole-team-scoreline">
         <span>${_esc(team.name)} Vegas${row.flip ? ' flip' : ''}</span>
         <strong data-vegas-num="${team.id}:${holeNumber}">${row.num == null ? '—' : row.num}</strong>
-        <span class="running-total">run <span data-vegas-run="${team.id}">${row.run == null ? 0 : row.run}</span></span>
+        <span class="vegas-this">this <span data-vegas-swing="${team.id}">${row.swing == null ? '—' : this.fmtVegasPts(row.swing)}</span></span>
+        <span class="running-total">TOTAL <span data-vegas-run="${team.id}">${row.run == null ? 0 : this.fmtVegasPts(row.run)}</span></span>
       </div>
     </div>`;
   },
@@ -1448,9 +1527,10 @@ const scorecard = {
     if (this.showOut(state) && team.out != null) bits.push(`OUT ${this.fmtTeam(team.out)}`);
     if (this.showIn(state) && team.inn != null) bits.push(`IN ${this.fmtTeam(team.inn)}`);
     if (this.showIn(state) && team.total != null) bits.push(`TOT ${this.fmtTeam(team.total)}`);
+    const raceLabel = this.isVegasOn(state) ? 'Race vs-par' : `${_esc(team.name)} hole`;
     return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
       <div class="hole-team-scoreline">
-        <span>${_esc(team.name)} hole</span>
+        <span>${raceLabel}</span>
         <strong data-team-hole-score="${team.id}:${holeNumber}">${this.fmtTeam(hole?.total)}</strong>
         <span class="running-total">run <span data-team-tot="${team.id}">${this.fmtTeam(team.total)}</span></span>
       </div>
@@ -1520,6 +1600,11 @@ const scorecard = {
       if (score) score.setAttribute('data-team-hole-score', teamId + ':' + holeNumber);
       const vs = wrap.querySelector('[data-vs-par]');
       if (vs) vs.setAttribute('data-vs-par', teamId + ':' + holeNumber);
+    });
+    document.querySelectorAll('#hole-players [data-vegas-total]').forEach((wrap) => {
+      const teamId = wrap.dataset.vegasTotal;
+      const num = wrap.querySelector('[data-vegas-num]');
+      if (num) num.setAttribute('data-vegas-num', teamId + ':' + holeNumber);
     });
   },
 
@@ -1692,13 +1777,7 @@ const scorecard = {
   },
 
   teamChoices(state) {
-    const names = new Set((state.teams || []).map((t) => t.name));
-    for (let i = 1; i <= 5; i++) names.add('Team ' + i);
-    return [...names].sort((a, b) => {
-      const na = Number((a.match(/(\d+)/) || [])[1] || 99);
-      const nb = Number((b.match(/(\d+)/) || [])[1] || 99);
-      return na - nb || a.localeCompare(b);
-    });
+    return this.addTeamNames(state);
   },
 
   teamSelectHtml(state, member, extraClass) {
@@ -1732,7 +1811,8 @@ const scorecard = {
       ${this.sideGamesSettingsHtml(state)}
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
-        <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3…). Auto-balance is only a helper.</p>
+        <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3, or Add team for 4+). Auto-balance is only a helper.</p>
+        <button type="button" class="btn btn-sm btn-secondary" id="settings-add-team" onclick="scorecard.addExtraTeamFromSettings()">Add team</button>
         <form class="add-guest-row" id="add-guest-form" onsubmit="event.preventDefault();scorecard.addGuestFromForm()">
           <input class="form-input" id="add-guest-name" placeholder="Name" required>
           <input class="form-input" id="add-guest-hcp" placeholder="HCP">
@@ -1782,9 +1862,9 @@ const scorecard = {
       const label = group.team.name;
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
       const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
-      const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
       const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
-      return head + rows + teamRow + vegasRow;
+      const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
+      return head + rows + vegasRow + teamRow;
     }).join('');
   },
 
@@ -1829,13 +1909,15 @@ const scorecard = {
         <td class="row-label">${_esc(team.name)} Vegas</td>
         ${holes.map((h) => {
           const row = this.vegasHoleFor(state, team, h.hole_number);
+          const swing = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
           return `<td data-vegas-cell="${team.id}:${h.hole_number}" class="team-hole-cell ${row && row.incomplete ? 'incomplete' : ''}">
             <span class="team-hole-score" data-vegas-num="${team.id}:${h.hole_number}">${row && row.num != null ? row.num : '—'}</span>
+            <span class="vegas-cell-swing" data-vegas-cell-swing="${team.id}:${h.hole_number}">${swing}</span>
           </td>`;
         }).join('')}
         ${showOut ? '<td class="sc-total"></td>' : ''}
         ${showIn ? '<td class="sc-total"></td>' : ''}
-        ${showIn ? `<td class="sc-total"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? lastRow.run : 0}</strong></td>` : ''}
+        ${showIn ? `<td class="sc-total"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? this.fmtVegasPts(lastRow.run) : '0'}</strong></td>` : ''}
       </tr>`;
   },
 
@@ -2057,12 +2139,20 @@ const scorecard = {
       document.querySelectorAll('[data-vegas-num="' + team.id + ':' + hn + '"]').forEach((el) => {
         el.textContent = row && row.num != null ? String(row.num) : '—';
       });
+      document.querySelectorAll('[data-vegas-swing="' + team.id + '"]').forEach((el) => {
+        el.textContent = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+      });
+      document.querySelectorAll('[data-vegas-cell-swing="' + team.id + ':' + hn + '"]').forEach((el) => {
+        el.textContent = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+      });
       document.querySelectorAll('[data-vegas-run="' + team.id + '"]').forEach((el) => {
-        el.textContent = row && row.run != null ? String(row.run) : '0';
+        el.textContent = row && row.run != null ? this.fmtVegasPts(row.run) : '0';
       });
       const wrap = document.querySelector('[data-vegas-total="' + team.id + '"]');
       if (wrap) wrap.classList.toggle('incomplete', !!(row && row.incomplete));
     }
+    const board = document.getElementById('vegas-board');
+    if (board) board.innerHTML = this.vegasBoardInner(this.state);
   },
 
   paintTeamVsPar(team) {
@@ -2247,7 +2337,12 @@ const scorecard = {
       this.writeCache(state.round.id, state);
       if (which === 'live') {
         this.addPlayerOpen = (state.members || []).length >= 2 ? true : this.addPlayerOpen;
-        this.addPlayerDraft = { name: '', handicap: '', teamName: teamName || 'Team 1' };
+        this.addPlayerDraft = {
+          name: '',
+          handicap: '',
+          teamName: teamName || 'Team 1',
+          extraTeams: (this.addPlayerDraft && this.addPlayerDraft.extraTeams) || [],
+        };
         this._preserveAddDraft = true;
       }
       this.draw(state);
@@ -2293,6 +2388,17 @@ const scorecard = {
       this.writeCache(state.round.id, state);
       this.draw(state);
       _toast('Team 1 vs-par demo: ColdGin (H 3 received, par) + Kurt / Chase / Brian.', 'success');
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addExtraTeamFromSettings() {
+    if (!this.state) return;
+    const name = this.nextAddTeamName(this.state);
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams`, { teamName: name });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
     } catch (err) { _toast(err.message, 'error'); }
   },
 
@@ -2424,7 +2530,7 @@ const scorecard = {
         <h3>Skins</h3>
         <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
         <h3>Vegas</h3>
-        <p>2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. Hole points = the difference. Running Vegas = sum of those diffs. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; flip only on a gross birdie or better. Presses apply.</p>
+        <p>2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. This-hole points = the difference. The winner adds those points; the loser subtracts the same (zero-sum). Example: H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; flip only on a gross birdie or better. Presses apply.</p>
         <h3>Nassau</h3>
         <p>Front 9, back 9, and overall 18 as three bets. Each hole is match play. A press is a child wager on that segment.</p>
         <h3>Wolf</h3>

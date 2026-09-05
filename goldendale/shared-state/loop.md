@@ -6,6 +6,12 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### P0 Vegas display + Team 4+ (ASSET_V `20260826q`)
+
+Vegas is pair numbers, not 1G+2N vs-par. 4+5=45, 10+4=104. This-hole points = |A−B|. Running TOTAL is **zero-sum**: winner adds, loser subtracts (H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3). Flip on gross birdie/eagle+; both sides birdie+ flips both. Live card leads with Vegas (pair + this-hole swing + TOTAL). Vs-par is labeled **Race vs-par** when Vegas is on.
+
+Add team button: chips stay Team 1 / 2 / 3; Add team creates Team 4, then 5…. Players assign to any existing team. Add-player bounce-out fix stays.
+
 ### P0 Vegas totaling (ASSET_V `20260826p`)
 
 Vegas is pair numbers, not 1G+2N vs-par. 4+5=45, 10+4=104. Hole points = |A−B|. Running = sum of diffs. Flip on gross birdie/eagle+; both sides birdie+ flips both. Race OFF + Vegas ON shows Vegas numbers/points on the live card.

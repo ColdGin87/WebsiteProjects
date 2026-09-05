@@ -17,7 +17,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1 },
-    rule: '2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. Points for the hole = the difference. Running Vegas = sum of those diffs. Birdie or eagle (or better) flips the other side so their high score goes first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point. Presses from the current hole to 18.',
+    rule: '2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10 or more is written high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. This-hole points = the difference. The winner adds those points and the loser subtracts the same (zero-sum). Example: H1 A +11 / B −11; H2 B wins 8 → A +3 / B −3. Birdie or eagle (or better) flips the other side so their high score goes first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; a flip still requires a gross birdie or better. $ per point. Presses from the current hole to 18.',
   },
   {
     key: 'nassau',
