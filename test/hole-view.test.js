@@ -67,6 +67,7 @@ describe('Combined PR3 hole view', () => {
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
     assert.match(html, /20260826l/);
     assert.match(html, /js\/formats\.js\?v=20260826l/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826l/);
     assert.match(src, /ASSET_V:\s*'20260826l'/);
   });
 
@@ -112,5 +113,7 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /1G3N/);
     assert.match(dash, /2G2N/);
     assert.match(dash, /gameRule/);
+    assert.match(dash, /create-side-games/);
+    assert.match(dash, /sideGames/);
   });
 });

@@ -266,6 +266,12 @@ const dashboard = {
             </select>
           </div>
           <label class="check-row" id="create-dual-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
+          <div class="form-group" id="create-side-games">
+            <label>Side games</label>
+            ${typeof scorecard !== 'undefined' && scorecard.sideGamesFieldsInner
+              ? scorecard.sideGamesFieldsInner((window.sideGames && window.sideGames.parseSideGames(null)) || {})
+              : ''}
+          </div>
           <div class="card-footer">
             <button class="btn btn-primary" type="submit">Create round</button>
           </div>
@@ -309,6 +315,9 @@ const dashboard = {
             grossBalls: game.grossBalls,
             netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
+            sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
+              ? scorecard.readSideGamesForm(fd)
+              : undefined,
           });
           app.navigate('#round/' + state.round.id);
         } catch (err) {
@@ -475,17 +484,26 @@ function _formPrompt({ title, submitLabel, fields }) {
     titleEl.textContent = title || 'Enter details';
     submitBtn.textContent = submitLabel || 'Save';
     errEl.textContent = '';
-    fieldsEl.innerHTML = (fields || []).map((f, i) => `
-      <div class="form-group">
+    fieldsEl.innerHTML = (fields || []).map((f, i) => {
+      if (f.type === 'select' && f.options) {
+        return `<div class="form-group">
+          <label for="app-form-f-${i}">${_esc(f.label)}</label>
+          <select id="app-form-f-${i}" class="form-input" name="${_esc(f.name)}">
+            ${f.options.map((o) => `<option value="${_esc(o.value)}" ${String(o.value) === String(f.value) ? 'selected' : ''}>${_esc(o.label)}</option>`).join('')}
+          </select>
+        </div>`;
+      }
+      return `<div class="form-group">
         <label for="app-form-f-${i}">${_esc(f.label)}</label>
         <input id="app-form-f-${i}" class="form-input${f.alphabet ? ' join-code-input' : ''}"
-          name="${_esc(f.name)}" type="${f.type || 'text'}" value="${_esc(f.value ?? '')}"
+          name="${_esc(f.name)}" type="${f.type === 'select' ? 'text' : (f.type || 'text')}" value="${_esc(f.value ?? '')}"
           ${f.maxlength ? `maxlength="${f.maxlength}"` : ''}
           ${f.required ? 'required' : ''}
           ${f.placeholder ? `placeholder="${_esc(f.placeholder)}"` : ''}
           ${f.uppercase ? 'style="text-transform:uppercase"' : ''}
           autocomplete="off">
-      </div>`).join('');
+      </div>`;
+    }).join('');
     modal.classList.add('active');
     const inputs = [...fieldsEl.querySelectorAll('input')];
     inputs.forEach((input, i) => {

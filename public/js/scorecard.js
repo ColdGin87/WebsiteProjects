@@ -199,6 +199,7 @@ const scorecard = {
         return next ? { ...m, resultText: next.resultText, score: next.score } : m;
       });
     }
+    if (patch.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...patch.sideGames };
   },
 
   writeMemberHole(memberId, holeNumber, gross, net, strokes) {
@@ -538,6 +539,7 @@ const scorecard = {
         if (idx >= 0) team.holes[idx] = { ...team.holes[idx], ...row.hole };
       }
     }
+    if (slim.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...slim.sideGames };
     this.paintTeamHole(slim.holeNumber);
     this.paintRaceStrip();
     this.paintBallLine(slim.holeNumber);
@@ -701,19 +703,240 @@ const scorecard = {
     this.updateSettings({ grossBalls: game.grossBalls, netBalls: game.netBalls });
   },
 
+  sideConfig(state) {
+    return (state && state.sideGames && state.sideGames.config)
+      || (state && state.round && state.round.sideGames)
+      || {};
+  },
+
+  pressableGames(state) {
+    const cfg = this.sideConfig(state);
+    const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
+    return defs.filter((g) => g.pressable && cfg[g.key] && cfg[g.key].on);
+  },
+
+  async confirmPress() {
+    if (!this.state) return;
+    const games = this.pressableGames(this.state);
+    if (!games.length) {
+      _toast('Turn on Vegas, Nassau, Wolf, or Nines to press.', 'error');
+      return;
+    }
+    const hole = this.currentHole || 1;
+    const fields = [
+      {
+        name: 'gameKey',
+        label: 'Game',
+        type: 'select',
+        options: games.map((g) => ({ value: g.key, label: g.label })),
+        value: games[0].key,
+      },
+      { name: 'dollars', label: '$ (blank = same as parent)', value: '' },
+    ];
+    if (games.some((g) => g.key === 'nassau')) {
+      fields.push({
+        name: 'segment',
+        label: 'Nassau segment (ignored for other games)',
+        type: 'select',
+        options: [
+          { value: hole <= 9 ? 'front' : 'back', label: hole <= 9 ? 'Front 9' : 'Back 9' },
+          { value: 'overall', label: 'Overall 18' },
+        ],
+        value: hole <= 9 ? 'front' : 'back',
+      });
+    }
+    const values = await _formPrompt({ title: 'Press from hole ' + hole + ' → 18', submitLabel: 'Press', fields });
+    if (!values) return;
+    const gameKey = values.gameKey || games[0].key;
+    const segment = gameKey === 'nassau' ? (values.segment || (hole <= 9 ? 'front' : 'back')) : null;
+    const endHole = gameKey === 'nassau' && segment === 'front' ? 9 : 18;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
+        gameKey,
+        segment,
+        startHole: hole,
+        endHole,
+        dollars: values.dollars === '' ? null : Number(values.dollars),
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  async setWolfPick(holeNumber, partnerId, lone) {
+    if (!this.state) return;
+    const wolf = this.wolfForHole(this.state, holeNumber);
+    if (!wolf) return;
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/wolf/${holeNumber}`, {
+        wolfMemberId: wolf.id,
+        partnerMemberId: lone ? null : partnerId,
+        lone: !!lone,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  wolfForHole(state, holeNumber) {
+    const members = [...(state.members || [])].sort((a, b) => a.id - b.id);
+    if (!members.length) return null;
+    return members[(Math.max(1, Number(holeNumber)) - 1) % members.length];
+  },
+
+  wolfBarHtml(state, holeNumber) {
+    const cfg = this.sideConfig(state);
+    if (!cfg.wolf || !cfg.wolf.on) return '';
+    const wolf = this.wolfForHole(state, holeNumber);
+    if (!wolf) return '';
+    const pick = (state.wolfPicks || []).find((p) => Number(p.hole_number || p.holeNumber) === Number(holeNumber));
+    const lone = pick ? !!(pick.lone) : true;
+    const partnerId = pick && (pick.partner_member_id || pick.partnerMemberId);
+    const others = (state.members || []).filter((m) => m.id !== wolf.id);
+    return `<div class="wolf-bar" id="wolf-bar">
+      <span>Wolf: ${_esc(wolf.display_name)}</span>
+      <label class="tiny-label"><input type="checkbox" ${lone ? 'checked' : ''} onchange="scorecard.setWolfPick(${holeNumber}, null, this.checked)"> Lone wolf 2×</label>
+      ${!lone ? `<select class="form-input" onchange="scorecard.setWolfPick(${holeNumber}, Number(this.value), false)">
+        <option value="">Partner</option>
+        ${others.map((m) => `<option value="${m.id}" ${Number(partnerId) === m.id ? 'selected' : ''}>${_esc(m.display_name)}</option>`).join('')}
+      </select>` : ''}
+    </div>`;
+  },
+
+  sideGamesFieldsInner(cfg) {
+    cfg = cfg || {};
+    const skinsOn = !!(cfg.skins && cfg.skins.on);
+    const vegasOn = !!(cfg.vegas && cfg.vegas.on);
+    const nassauOn = !!(cfg.nassau && cfg.nassau.on);
+    const wolfOn = !!(cfg.wolf && cfg.wolf.on);
+    const ninesOn = !!(cfg.nines && cfg.nines.on);
+    return `
+      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off.</p>
+      <label class="check-row"><input type="checkbox" name="skinsOn" ${skinsOn ? 'checked' : ''}> Skins</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('skins')) || '')}</p>
+      <div class="form-group"><label>Skins pot</label><input class="form-input" name="skinsPot" type="number" min="0" step="1" value="${cfg.skins && cfg.skins.pot != null ? cfg.skins.pot : 20}"></div>
+      <label class="check-row"><input type="checkbox" name="vegasOn" ${vegasOn ? 'checked' : ''}> Vegas</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('vegas')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Vegas scoring</label><select class="form-input" name="vegasScoring"><option value="gross" ${cfg.vegas && cfg.vegas.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.vegas && cfg.vegas.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="vegasDollars" type="number" min="0" step="0.5" value="${cfg.vegas && cfg.vegas.dollarsPerPoint != null ? cfg.vegas.dollarsPerPoint : 1}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="nassauOn" ${nassauOn ? 'checked' : ''}> Nassau</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nassau')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Nassau scoring</label><select class="form-input" name="nassauScoring"><option value="net" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
+        <div class="form-group"><label>Front $</label><input class="form-input" name="nassauFront" type="number" min="0" value="${cfg.nassau && cfg.nassau.front != null ? cfg.nassau.front : 2}"></div>
+        <div class="form-group"><label>Back $</label><input class="form-input" name="nassauBack" type="number" min="0" value="${cfg.nassau && cfg.nassau.back != null ? cfg.nassau.back : 2}"></div>
+        <div class="form-group"><label>Overall $</label><input class="form-input" name="nassauOverall" type="number" min="0" value="${cfg.nassau && cfg.nassau.overall != null ? cfg.nassau.overall : 2}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="wolfOn" ${wolfOn ? 'checked' : ''}> Wolf</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('wolf')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Wolf scoring</label><select class="form-input" name="wolfScoring"><option value="gross" ${cfg.wolf && cfg.wolf.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.wolf && cfg.wolf.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
+      <label class="check-row"><input type="checkbox" name="ninesBlitz" ${!cfg.nines || cfg.nines.blitz !== false ? 'checked' : ''}> Blitz 9-0-0</label>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
+      </div>`;
+  },
+
+  sideGamesSettingsHtml(state) {
+    const cfg = this.sideConfig(state);
+    return `<form class="card" id="side-games-settings" onsubmit="event.preventDefault();scorecard.saveSideGames()">
+      <div class="card-title">Side games</div>
+      ${this.sideGamesFieldsInner(cfg)}
+      <button class="btn btn-secondary btn-sm" type="submit">Save side games</button>
+    </form>`;
+  },
+
+  saveSideGames() {
+    const form = document.getElementById('side-games-settings');
+    if (!form) return;
+    const fd = new FormData(form);
+    this.updateSettings({ sideGames: this.readSideGamesForm(fd) });
+  },
+
+  readSideGamesForm(fd) {
+    return {
+      skins: { on: fd.get('skinsOn') === 'on', pot: Number(fd.get('skinsPot') || 0) },
+      vegas: { on: fd.get('vegasOn') === 'on', scoring: fd.get('vegasScoring') || 'gross', dollarsPerPoint: Number(fd.get('vegasDollars') || 1) },
+      nassau: {
+        on: fd.get('nassauOn') === 'on',
+        scoring: fd.get('nassauScoring') || 'net',
+        front: Number(fd.get('nassauFront') || 0),
+        back: Number(fd.get('nassauBack') || 0),
+        overall: Number(fd.get('nassauOverall') || 0),
+      },
+      wolf: { on: fd.get('wolfOn') === 'on', scoring: fd.get('wolfScoring') || 'gross', dollarsPerPoint: Number(fd.get('wolfDollars') || 1) },
+      nines: {
+        on: fd.get('ninesOn') === 'on',
+        scoring: fd.get('ninesScoring') || 'net',
+        blitz: fd.get('ninesBlitz') === 'on',
+        dollarsPerPoint: Number(fd.get('ninesDollars') || 1),
+      },
+    };
+  },
+
+  sideGamesResultsHtml(state) {
+    const side = state.sideGames;
+    if (!side || !side.games) return '';
+    const blocks = [];
+    const g = side.games;
+    if (g.skins) {
+      const s = g.skins;
+      const gross = (s.grossWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
+      const net = (s.netWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
+      blocks.push(`<div class="card"><h3 class="card-title">Skins</h3>
+        <p>Pot ${s.pot} · ${s.skinCount} skins · ${s.valuePerSkin ? s.valuePerSkin.toFixed(2) : '0'} each</p>
+        <p>Gross: ${_esc(gross)}</p>
+        <p>Net: ${_esc(net)}</p></div>`);
+    }
+    if (g.vegas && g.vegas.teamA) {
+      blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
+        <p>${_esc(g.vegas.teamA.name)} ${g.vegas.teamA.points} · ${_esc(g.vegas.teamB.name)} ${g.vegas.teamB.points}</p></div>`);
+    }
+    if (g.nassau && g.nassau.front) {
+      blocks.push(`<div class="card"><h3 class="card-title">Nassau</h3>
+        <p>Front ${ _esc(g.nassau.front.status) } · Back ${ _esc(g.nassau.back.status) } · 18 ${ _esc(g.nassau.overall.status) }</p>
+        <p class="card-subtitle">Classic: each of F / B / O is its own wager.</p></div>`);
+    }
+    if (g.wolf) {
+      const pts = (g.wolf.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
+      blocks.push(`<div class="card"><h3 class="card-title">Wolf</h3><p>${_esc(pts || 'No holes decided')}</p></div>`);
+    }
+    if (g.nines) {
+      const pts = (g.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
+      blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
+    }
+    if (!blocks.length) return '';
+    return `<h3 class="section-title">Side games</h3>${blocks.join('')}`;
+  },
+
   raceStripText(state) {
     const teams = state.teams || [];
     if (!teams.length) return '';
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) return `${leader.name} wins · ${this.fmtTeam(leader.total)}`;
-    return teams.map((t) => {
+    const teamBits = teams.map((t) => {
       let bit = `${t.name} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
       if (leader && leader.total != null && t.total != null && t.id !== leader.id) {
         bit += ` (${this.fmtTeam(t.total - leader.total)})`;
       }
       return bit;
     }).join(' · ');
+    const extra = state.sideGames && state.sideGames.stripText;
+    return extra ? teamBits + ' · ' + extra : teamBits;
   },
 
   holePlayerRowHtml(state, member, holeNumber) {
@@ -753,6 +976,7 @@ const scorecard = {
         <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
+          ${this.pressableGames(state).length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
       </div>`;
@@ -799,6 +1023,7 @@ const scorecard = {
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
         </div>
+        ${this.wolfBarHtml(state, holeNumber)}
         ${this.holePlayersHtml(state, holeNumber)}
         ${this.addPlayerPanel(state)}
       </div>
@@ -1062,6 +1287,7 @@ const scorecard = {
             return `<div>Hole ${hr.holeNumber}: ${_esc(bits)}</div>`;
           }).join('')}</div>
         ` : this.matchBlock(state)}
+        ${this.sideGamesResultsHtml(state)}
         <div class="welcome-actions mt-md">
           <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
           <a class="btn btn-secondary btn-sm" href="/api/rounds/${r.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
@@ -1110,6 +1336,7 @@ const scorecard = {
         <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
+      ${this.sideGamesSettingsHtml(state)}
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
         <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3…). Auto-balance is only a helper.</p>

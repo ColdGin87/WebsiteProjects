@@ -418,6 +418,18 @@ img {
   border-radius: 8px;
 }
 
+.wolf-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0 12px;
+  padding: 8px 10px;
+  background: #eef6ea;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
 .card-body {
   font-size: 0.9rem;
 }
