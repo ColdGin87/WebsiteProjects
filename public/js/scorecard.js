@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905e',
+  ASSET_V: '20260905f',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -390,6 +390,11 @@ const scorecard = {
     return `RUNNING: ${game.teamB.name} up ${Math.abs(b)} · ${game.teamA.name} down ${Math.abs(a)}`;
   },
 
+  vegasRunDiffLine(game) {
+    if (!game || !game.teamA || !game.teamB) return 'RUNNING —';
+    return `RUNNING: ${game.teamA.name} ${this.fmtVegasPts(game.teamA.points)} · ${game.teamB.name} ${this.fmtVegasPts(game.teamB.points)}`;
+  },
+
   vegasThisHoleLine(game, holeNumber) {
     const row = (game.holes || []).find((h) => h.holeNumber === holeNumber);
     if (!row || row.incomplete) return 'This hole: —';
@@ -404,7 +409,7 @@ const scorecard = {
     }
     const hn = this.currentHole || 1;
     return `<div class="vegas-board-this">${_esc(this.vegasThisHoleLine(v, hn))}</div>
-      <div class="vegas-board-total vegas-named-run">${_esc(this.vegasNamedRun(v))}</div>`;
+      <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v))}</div>`;
   },
 
   vegasPressButtonHtml(state, holeNumber) {
@@ -2140,23 +2145,11 @@ const scorecard = {
   oneHoleVegasTotal(state, team, holeNumber) {
     if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
     const row = this.vegasHoleFor(state, team, holeNumber);
-    if (!row) {
-      return `<div class="hole-team-total hole-vegas-total" data-vegas-total="${team.id}">
-        <div class="hole-team-scoreline">
-          <span>${_esc(this.teamDisplay(team))} Vegas</span>
-          <strong data-vegas-num="${team.id}:${holeNumber}">—</strong>
-          <span class="vegas-this">this <span data-vegas-swing="${team.id}">—</span></span>
-          <span class="running-total">TOTAL <span data-vegas-run="${team.id}">0</span></span>
-        </div>
-      </div>`;
-    }
-    return `<div class="hole-team-total hole-vegas-total ${row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
-      <div class="hole-team-scoreline">
-        <span>${_esc(this.teamDisplay(team))} Vegas${row.flip ? ' flip' : ''}</span>
-        <strong data-vegas-num="${team.id}:${holeNumber}">${row.num == null ? '—' : row.num}</strong>
-        <span class="vegas-this">this <span data-vegas-swing="${team.id}">${row.swing == null ? '—' : this.fmtVegasPts(row.swing)}</span></span>
-        <span class="running-total vegas-named-run">${_esc(this.vegasNamedRun(this.vegasGame(state)))}</span>
-      </div>
+    const thisPts = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+    const runPts = row && row.run != null ? this.fmtVegasPts(row.run) : '0';
+    return `<div class="hole-team-total hole-vegas-total ${row && row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
+      <div class="vegas-line-this">This hole <span data-vegas-swing="${team.id}">${thisPts}</span></div>
+      <div class="vegas-line-run">RUNNING <span data-vegas-run="${team.id}">${runPts}</span></div>
     </div>`;
   },
 

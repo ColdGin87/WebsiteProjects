@@ -166,6 +166,44 @@ describe('Vegas', () => {
     assert.equal(vegas.teamB.points, -3);
   });
 
+  it('running is cumulative: +5 then −25 → −20, other team is the mirror', () => {
+    const holes = [
+      { holeNumber: 1, par: 4, strokeIndex: 1 },
+      { holeNumber: 2, par: 4, strokeIndex: 2 },
+    ];
+    const teams = [
+      {
+        id: 10,
+        name: 'Team A',
+        members: [
+          { id: 1, display_name: 'A', holes: [{ holeNumber: 1, gross: 4, net: 4 }, { holeNumber: 2, gross: 6, net: 6 }] },
+          { id: 2, display_name: 'B', holes: [{ holeNumber: 1, gross: 4, net: 4 }, { holeNumber: 2, gross: 9, net: 9 }] },
+        ],
+      },
+      {
+        id: 20,
+        name: 'Team B',
+        members: [
+          { id: 3, display_name: 'C', holes: [{ holeNumber: 1, gross: 4, net: 4 }, { holeNumber: 2, gross: 4, net: 4 }] },
+          { id: 4, display_name: 'D', holes: [{ holeNumber: 1, gross: 9, net: 9 }, { holeNumber: 2, gross: 4, net: 4 }] },
+        ],
+      },
+    ];
+    const vegas = scoreVegas({ holes, teams, scoring: 'gross', dollarsPerPoint: 1 });
+    assert.equal(vegas.holes[0].points, 5);
+    assert.equal(vegas.holes[0].swingA, 5);
+    assert.equal(vegas.holes[0].swingB, -5);
+    assert.equal(vegas.holes[0].runA, 5);
+    assert.equal(vegas.holes[0].runB, -5);
+    assert.equal(vegas.holes[1].points, 25);
+    assert.equal(vegas.holes[1].swingA, -25);
+    assert.equal(vegas.holes[1].swingB, 25);
+    assert.equal(vegas.holes[1].runA, -20);
+    assert.equal(vegas.holes[1].runB, 20);
+    assert.equal(vegas.teamA.points, -20);
+    assert.equal(vegas.teamB.points, 20);
+  });
+
   it('posts 5-point hole × 3 games as +15/−15, not child ledgers', () => {
     const holes = [{ holeNumber: 1, par: 4, strokeIndex: 1 }];
     const teams = [

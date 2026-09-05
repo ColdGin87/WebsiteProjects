@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905e/);
-    assert.match(html, /js\/formats\.js\?v=20260905e/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905e/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905e/);
-    assert.match(src, /ASSET_V:\s*'20260905e'/);
+    assert.match(html, /20260905f/);
+    assert.match(html, /js\/formats\.js\?v=20260905f/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905f/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905f/);
+    assert.match(src, /ASSET_V:\s*'20260905f'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -229,6 +229,13 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /type="tel"/);
     assert.match(src, /ONE_DIGIT_MS/);
     assert.match(src, /vegasNamedRun/);
+    assert.match(src, /vegasRunDiffLine/);
+    assert.match(src, /vegas-line-this/);
+    assert.match(src, /vegas-line-run/);
+    const vegasUnder = sliceFn('oneHoleVegasTotal(state, team, holeNumber)', 'oneHoleTeamTotal(state, team, holeNumber)');
+    assert.match(vegasUnder, /This hole/);
+    assert.match(vegasUnder, /RUNNING/);
+    assert.ok(vegasUnder.indexOf('vegas-line-this') < vegasUnder.indexOf('vegas-line-run'), 'this-hole sits above running');
     assert.match(src, /games running/);
     assert.match(src, /playPodiumReveal/);
     assert.match(src, /revealNineteenthCard/);

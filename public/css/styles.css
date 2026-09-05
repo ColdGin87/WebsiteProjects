@@ -2640,6 +2640,18 @@ img {
   margin-top: 2px;
 }
 
+.vegas-line-this,
+.vegas-line-run {
+  display: block;
+  font-weight: 800;
+  line-height: 1.35;
+  color: #1a237e;
+}
+
+.vegas-line-run {
+  margin-top: 2px;
+}
+
 .vegas-press-wrap {
   display: block;
   margin: 8px 0 10px;
