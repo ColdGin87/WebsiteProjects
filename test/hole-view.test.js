@@ -65,10 +65,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826m/);
-    assert.match(html, /js\/formats\.js\?v=20260826m/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826m/);
-    assert.match(src, /ASSET_V:\s*'20260826m'/);
+    assert.match(html, /20260826n/);
+    assert.match(html, /js\/formats\.js\?v=20260826n/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826n/);
+    assert.match(src, /ASSET_V:\s*'20260826n'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -100,6 +100,51 @@ describe('Combined PR3 hole view', () => {
     assert.match(race, /fmtTeam/);
     assert.match(src, /fmtTeam\(winner\.total\)/);
     assert.match(src, /fmtTeam\(team\.total\)/);
+  });
+
+  it('live add-player is name, HCP, and Team 1 / 2 / 3 chips in one flow', () => {
+    const panel = sliceFn('addPlayerPanelInner(state)', 'addTeamChipsHtml(selected)');
+    assert.match(panel, /live-add-guest-name/);
+    assert.match(panel, /live-add-guest-hcp/);
+    assert.match(panel, /addTeamChipsHtml/);
+    assert.match(panel, /Save player/);
+    const chips = sliceFn('addTeamChipsHtml(selected)', 'snapshotAddPlayer()');
+    assert.match(chips, /add-team-chip/);
+    assert.match(chips, /Team 1/);
+    assert.match(chips, /Team 2/);
+    assert.match(chips, /Team 3/);
+    assert.doesNotMatch(panel, /<select/);
+  });
+
+  it('opens add-player in place without a full draw', () => {
+    const open = sliceFn('openAddPlayer(e)', 'closeAddPlayer()');
+    assert.match(open, /mountAddPlayerPanel/);
+    assert.doesNotMatch(open, /this\.draw\(/);
+    const close = sliceFn('closeAddPlayer()', 'bindAddPlayerPanel()');
+    assert.match(close, /mountAddPlayerPanel/);
+    assert.doesNotMatch(close, /this\.draw\(/);
+  });
+
+  it('keeps the live add-player sheet open after save', () => {
+    const fn = sliceFn('addGuestFromForm(which)', 'addBulkGuests()');
+    assert.doesNotMatch(fn, /addPlayerOpen = false/);
+    assert.match(fn, /addPlayerOpen = \(state\.members/);
+    assert.match(fn, /_preserveAddDraft/);
+  });
+
+  it('poll and patch skip a full redraw while add-player is held', () => {
+    const live = sliceFn('async refreshLive(id)', 'applyLivePatch(patch)');
+    assert.match(live, /shouldHoldAddPlayer/);
+    const patch = sliceFn('patchUI()', 'openEditor(');
+    assert.match(patch, /shouldHoldAddPlayer/);
+    assert.match(src, /shouldHoldAddPlayer\(\)/);
+  });
+
+  it('hole Back is a button so a leftover tap cannot change the hash', () => {
+    const bar = sliceFn('holeToolbar(state) {', 'bindHoleOverflowDismiss');
+    assert.match(bar, /type="button"/);
+    assert.match(bar, /id="hole-back"/);
+    assert.doesNotMatch(bar, /href="#dashboard"/);
   });
 });
 

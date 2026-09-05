@@ -38,10 +38,13 @@ const scorecard = {
   focusCell: null,
   writeError: '',
   addPlayerOpen: false,
+  addPlayerDraft: { name: '', handicap: '', teamName: 'Team 1' },
+  addPlayerSuppressUntil: 0,
+  _preserveAddDraft: false,
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826m',
+  ASSET_V: '20260826n',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -86,12 +89,18 @@ const scorecard = {
       ? (screen === 'dashboard' ? 'results' : screen)
       : 'play';
     this.stopPoll();
+    const incoming = Number(id);
+    const sameRound = this.state && this.state.round && Number(this.state.round.id) === incoming;
+    if (!sameRound) {
+      this.addPlayerOpen = false;
+      this.addPlayerDraft = { name: '', handicap: '', teamName: 'Team 1' };
+    }
     const container = document.getElementById('app');
     const cached = this.readCache(id);
     if (cached) {
       this.state = cached;
       this.currentHole = this.pickCurrentHole(cached);
-      this.draw(cached);
+      if (!this.shouldHoldAddPlayer()) this.draw(cached);
     } else {
       container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading scorecard...</div>';
     }
@@ -100,7 +109,7 @@ const scorecard = {
       this.state = state;
       this.writeCache(id, state);
       this.currentHole = this.pickCurrentHole(state);
-      this.draw(state);
+      if (!this.shouldHoldAddPlayer()) this.draw(state);
       this.pollTimer = setInterval(() => this.refresh(id), 5000);
     } catch (err) {
       if (!cached) {
@@ -134,6 +143,7 @@ const scorecard = {
       if (!patch || patch.notModified) return;
       if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
       if (this.rosterChanged(patch)) {
+        if (this.shouldHoldAddPlayer()) return;
         const full = await svcApi('get', '/api/rounds/' + id);
         this.state = full;
         this.writeCache(id, full);
@@ -142,6 +152,7 @@ const scorecard = {
       }
       this.applyLivePatch(patch);
       this.writeCache(id, this.state);
+      if (this.shouldHoldAddPlayer()) return;
       this.patchUI();
     } catch {
       /* keep current view while offline */
@@ -279,35 +290,186 @@ const scorecard = {
 
   addPlayerPanel(state) {
     if (!this.isOrganizer(state)) return '';
+    return `<div id="add-player-panel" class="add-player-panel">${this.addPlayerPanelInner(state)}</div>`;
+  },
+
+  addPlayerPanelInner(state) {
     const count = (state.members || []).length;
     if (count >= 2 && !this.addPlayerOpen) {
-      return `<button type="button" class="btn btn-secondary add-player-toggle" id="add-player-toggle" onclick="scorecard.openAddPlayer()">Add player</button>`;
+      return `<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
     }
+    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: 'Team 1' };
+    const teamName = draft.teamName || 'Team 1';
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player</h3>
-        <p class="card-subtitle">Name, handicap, and team. A foursome or up to 15.</p>
-        <form class="add-guest-row" onsubmit="event.preventDefault();scorecard.addGuestFromForm('live')">
-          <input class="form-input" id="live-add-guest-name" placeholder="Name" required>
-          <input class="form-input" id="live-add-guest-hcp" placeholder="HCP">
-          <select class="form-input team-pick" id="live-add-guest-team">
-            <option value="Team 1" selected>Team 1</option>
-            ${this.teamChoices(state).filter((n) => n !== 'Team 1').map((n) => `<option value="${_esc(n)}">${_esc(n)}</option>`).join('')}
-          </select>
-          <button class="btn btn-accent" type="submit">Add player</button>
+        <p class="card-subtitle">Name, HCP, then Team 1 / Team 2 / Team 3. Auto-balance is only a helper.</p>
+        <form class="add-guest-row add-player-form" id="live-add-player-form">
+          <label class="add-field">
+            <span>Name</span>
+            <input class="form-input" id="live-add-guest-name" name="name" placeholder="Name" autocomplete="name" required value="${_esc(draft.name || '')}">
+          </label>
+          <label class="add-field">
+            <span>HCP</span>
+            <input class="form-input" id="live-add-guest-hcp" name="handicap" placeholder="HCP" inputmode="decimal" value="${_esc(draft.handicap || '')}">
+          </label>
+          <div class="add-field add-team-field">
+            <span>Team</span>
+            ${this.addTeamChipsHtml(teamName)}
+          </div>
+          <button class="btn btn-accent" type="submit" id="live-add-player-save">Save player</button>
         </form>
-        ${count >= 2 ? '<button type="button" class="btn btn-secondary" onclick="scorecard.closeAddPlayer()">Done adding</button>' : ''}
+        ${count >= 2 ? '<button type="button" class="btn btn-secondary" id="add-player-done">Done adding</button>' : ''}
       </div>`;
   },
 
-  openAddPlayer() {
+  addTeamChipsHtml(selected) {
+    const current = selected || 'Team 1';
+    return `<div class="add-team-picks" role="group" aria-label="Team">
+      ${['Team 1', 'Team 2', 'Team 3'].map((n) => `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${n}</button>`).join('')}
+      <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
+    </div>`;
+  },
+
+  snapshotAddPlayer() {
+    const name = document.getElementById('live-add-guest-name');
+    const hcp = document.getElementById('live-add-guest-hcp');
+    const team = document.getElementById('live-add-guest-team');
+    if (!name && !hcp && !team) return;
+    const prev = this.addPlayerDraft || { name: '', handicap: '', teamName: 'Team 1' };
+    this.addPlayerDraft = {
+      name: name ? name.value : prev.name,
+      handicap: hcp ? hcp.value : prev.handicap,
+      teamName: team ? team.value : (prev.teamName || 'Team 1'),
+    };
+  },
+
+  shouldHoldAddPlayer() {
+    if (this.addPlayerSuppressUntil && Date.now() < this.addPlayerSuppressUntil) return true;
+    if (this.addPlayerOpen) return true;
+    const card = document.getElementById('add-player-card');
+    if (card && card.contains(document.activeElement)) return true;
+    const name = document.getElementById('live-add-guest-name');
+    return !!(name && String(name.value || '').trim());
+  },
+
+  pickAddTeam(teamName) {
+    const name = teamName || 'Team 1';
+    if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name };
+    this.addPlayerDraft.teamName = name;
+    const hidden = document.getElementById('live-add-guest-team');
+    if (hidden) hidden.value = name;
+    document.querySelectorAll('#add-player-panel .add-team-chip').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.getAttribute('data-team-name') === name);
+    });
+  },
+
+  mountAddPlayerPanel() {
+    const mount = document.getElementById('add-player-panel');
+    if (!mount || !this.state) return;
+    mount.innerHTML = this.addPlayerPanelInner(this.state);
+    this.bindAddPlayerPanel();
+    this.syncAddPlayerChrome();
+  },
+
+  openAddPlayer(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     this.addPlayerOpen = true;
-    if (this.state) this.draw(this.state);
+    this.addPlayerSuppressUntil = Date.now() + 450;
+    this.mountAddPlayerPanel();
+    const name = document.getElementById('live-add-guest-name');
+    if (name) name.focus();
   },
 
   closeAddPlayer() {
+    this.snapshotAddPlayer();
     this.addPlayerOpen = false;
-    if (this.state) this.draw(this.state);
+    this.addPlayerSuppressUntil = 0;
+    this.mountAddPlayerPanel();
+    this.syncAddPlayerChrome();
+    if (this.isHoleView()) this.renderHoleNav();
+  },
+
+  bindAddPlayerPanel() {
+    const toggle = document.getElementById('add-player-toggle');
+    if (toggle) {
+      toggle.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openAddPlayer(e);
+      };
+    }
+    const form = document.getElementById('live-add-player-form');
+    if (form) {
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addGuestFromForm('live');
+      };
+    }
+    document.querySelectorAll('#add-player-panel .add-team-chip').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.pickAddTeam(btn.getAttribute('data-team-name'));
+      };
+    });
+    const done = document.getElementById('add-player-done');
+    if (done) {
+      done.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeAddPlayer();
+      };
+    }
+    ['live-add-guest-name', 'live-add-guest-hcp'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', () => this.snapshotAddPlayer());
+    });
+    this.bindAddPlayerGuards();
+  },
+
+  bindAddPlayerGuards() {
+    const appEl = document.getElementById('app');
+    if (!appEl || appEl.dataset.addGuard === '1') return;
+    appEl.dataset.addGuard = '1';
+    const block = (e) => {
+      if (!this.shouldHoldAddPlayer()) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('#add-player-panel, #add-player-card, .add-player-toggle')) return;
+      if (t.closest('.score-input, [data-score-cell], #hole-nav, .press-live')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    appEl.addEventListener('pointerdown', block, true);
+    appEl.addEventListener('click', block, true);
+  },
+
+  bindHoleBack() {
+    const back = document.getElementById('hole-back');
+    if (!back) return;
+    back.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof app !== 'undefined' && app.navigate) app.navigate('#dashboard');
+    };
+  },
+
+  syncAddPlayerChrome() {
+    const view = document.getElementById('hole-view');
+    const holding = this.shouldHoldAddPlayer();
+    if (view) view.classList.toggle('add-player-open', holding);
+    const nav = document.getElementById('hole-nav');
+    if (nav && this.isHoleView()) {
+      if (holding) nav.hidden = true;
+      else if (!this.stepperOpen) nav.hidden = false;
+    }
   },
 
   ensureVsPar() {
@@ -375,6 +537,7 @@ const scorecard = {
   },
 
   onScoreInput(e) {
+    if (this.shouldHoldAddPlayer()) return;
     const input = e.target;
     const raw = String(input.value || '').replace(/\D/g, '').slice(0, 2);
     input.value = raw;
@@ -399,6 +562,7 @@ const scorecard = {
   },
 
   onScoreBlur(e) {
+    if (this.shouldHoldAddPlayer()) return;
     const input = e.target;
     if (this._oneTimer) {
       clearTimeout(this._oneTimer);
@@ -491,6 +655,10 @@ const scorecard = {
       input.addEventListener('blur', (e) => this.onScoreBlur(e));
       input.addEventListener('keydown', (e) => this.onScoreKey(e));
       input.addEventListener('focus', (e) => {
+        if (this.shouldHoldAddPlayer()) {
+          e.target.blur();
+          return;
+        }
         this.focusCell = {
           memberId: Number(e.target.dataset.member),
           holeNumber: Number(e.target.dataset.hole),
@@ -515,6 +683,7 @@ const scorecard = {
   },
 
   openStepperFallback() {
+    if (this.shouldHoldAddPlayer()) return;
     if (!this.state) return;
     const focus = this.focusCell || {
       memberId: this.state.members[0] && this.state.members[0].id,
@@ -565,6 +734,8 @@ const scorecard = {
   },
 
   draw(state) {
+    if (!this._preserveAddDraft) this.snapshotAddPlayer();
+    this._preserveAddDraft = false;
     if (this.screen === 'settings') {
       this.drawSettings(state);
       return;
@@ -577,6 +748,9 @@ const scorecard = {
     else this.drawFullCard(state);
     this.bindOverlay();
     this.bindScoreInputs();
+    this.bindAddPlayerPanel();
+    this.bindHoleBack();
+    this.syncAddPlayerChrome();
     svcApi('updateBadge');
   },
 
@@ -978,7 +1152,7 @@ const scorecard = {
     const organizer = this.isOrganizer(state);
     return `
       <div class="round-toolbar hole-toolbar" id="hole-toolbar">
-        <a href="#dashboard" class="hole-back" onclick="event.preventDefault();app.navigate('#dashboard')">Back</a>
+        <button type="button" class="hole-back" id="hole-back">Back</button>
         <span class="unsynced-inline" id="unsynced-inline"></span>
         <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
@@ -1032,8 +1206,8 @@ const scorecard = {
           ${this.pressableGames(state).length ? '<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>' : ''}
         </div>
         ${this.wolfBarHtml(state, holeNumber)}
-        ${this.holePlayersHtml(state, holeNumber)}
         ${this.addPlayerPanel(state)}
+        ${this.holePlayersHtml(state, holeNumber)}
       </div>
       <div class="hole-nav thumb-zone" id="hole-nav"></div>
     `;
@@ -1064,6 +1238,10 @@ const scorecard = {
 
   renderHoleNav() {
     let nav = document.getElementById('hole-nav');
+    if (this.shouldHoldAddPlayer()) {
+      if (nav) nav.hidden = true;
+      return;
+    }
     if (this.stepperOpen && this.overlay) {
       if (!nav) {
         nav = document.createElement('div');
@@ -1142,6 +1320,7 @@ const scorecard = {
   },
 
   shiftHole(delta) {
+    if (this.shouldHoldAddPlayer()) return;
     const holes = (this.state && this.state.holes) || [];
     const idx = holes.findIndex((h) => h.hole_number === this.currentHole);
     const next = holes[idx + delta];
@@ -1666,6 +1845,7 @@ const scorecard = {
   patchUI() {
     if (!this.state) return;
     if (this.screen !== 'play') return;
+    if (this.shouldHoldAddPlayer()) return;
     if (this.isHoleView()) {
       const players = document.getElementById('hole-players');
       if (!players) {
@@ -1805,8 +1985,16 @@ const scorecard = {
       });
       this.state = state;
       this.writeCache(state.round.id, state);
-      if ((state.members || []).length >= 2) this.addPlayerOpen = false;
+      if (which === 'live') {
+        this.addPlayerOpen = (state.members || []).length >= 2 ? true : this.addPlayerOpen;
+        this.addPlayerDraft = { name: '', handicap: '', teamName: teamName || 'Team 1' };
+        this._preserveAddDraft = true;
+      }
       this.draw(state);
+      if (which === 'live') {
+        const nameEl = document.getElementById('live-add-guest-name');
+        if (nameEl) nameEl.focus();
+      }
     } catch (err) { _toast(err.message, 'error'); }
   },
 
