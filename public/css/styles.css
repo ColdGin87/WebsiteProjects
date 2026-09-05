@@ -2738,6 +2738,40 @@ img {
   font-weight: 800;
 }
 
+.nines-board {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: #FFF8E1;
+  border: 1px solid #F9A825;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #5D4037;
+}
+
+.nines-hole,
+.nines-run {
+  font-weight: 700;
+}
+
+.nines-run {
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+.nines-hole-row td,
+.nines-run-row td,
+.nines-cell {
+  font-size: 0.7rem;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.nines-run-row th,
+.nines-run-row td {
+  color: #5D4037;
+}
+
 .vegas-this,
 .vegas-cell-swing {
   font-size: 0.8rem;

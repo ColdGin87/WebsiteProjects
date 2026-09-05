@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826t',
+  ASSET_V: '20260826u',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -551,6 +551,76 @@ const scorecard = {
     } catch (err) {
       _toast(err.message, 'error');
     }
+  },
+
+  isNinesOn(state) {
+    const cfg = this.sideConfig(state);
+    return !!(cfg.nines && cfg.nines.on);
+  },
+
+  ninesGame(state) {
+    return state && state.sideGames && state.sideGames.games && state.sideGames.games.nines;
+  },
+
+  ninesBoardHtml(state) {
+    if (!this.isNinesOn(state)) return '';
+    return `<div class="nines-board" id="nines-board">${this.ninesBoardInner(state)}</div>`;
+  },
+
+  ninesPtsLine(players, key) {
+    return (players || []).map((p) => {
+      const val = p[key];
+      return `${p.name} ${val == null ? '—' : val}`;
+    }).join(' · ');
+  },
+
+  ninesBoardInner(state) {
+    const g = this.ninesGame(state);
+    if (!g) return this.isNinesOn(state) ? '<div class="nines-hole">Nines —</div>' : '';
+    if (g.incomplete) return '<div class="nines-hole">Nines — need exactly 3 players</div>';
+    const hn = this.currentHole || 1;
+    const row = (g.holes || []).find((h) => h.holeNumber === hn);
+    const players = (row && row.players) || (g.points || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      hole: null,
+      run: p.points,
+    }));
+    const holeLine = row && !row.incomplete
+      ? this.ninesPtsLine(players, 'hole')
+      : (g.points || []).map((p) => `${p.name} —`).join(' · ');
+    const runLine = this.ninesPtsLine(players, 'run');
+    return `<div class="nines-hole">This hole: ${_esc(holeLine)}</div>
+      <div class="nines-run">Running: ${_esc(runLine)}</div>`;
+  },
+
+  ninesTableRows(state, holes, showOut, showIn) {
+    if (!this.isNinesOn(state)) return '';
+    const g = this.ninesGame(state);
+    if (!g || g.incomplete) return '';
+    const players = g.points || [];
+    const cell = (hn, kind) => {
+      const row = (g.holes || []).find((h) => h.holeNumber === hn);
+      const bits = players.map((p) => {
+        let val = null;
+        if (kind === 'hole') {
+          val = row && !row.incomplete && row.points
+            ? (row.points[p.id] ?? row.points[String(p.id)])
+            : null;
+        } else {
+          val = row && row.running
+            ? (row.running[p.id] ?? row.running[String(p.id)])
+            : null;
+        }
+        return `${_esc(p.name)} ${val == null ? '—' : val}`;
+      }).join('<br>');
+      return `<td class="nines-cell">${bits}</td>`;
+    };
+    const holeRow = holes.map((h) => cell(h.hole_number, 'hole')).join('');
+    const runRow = holes.map((h) => cell(h.hole_number, 'run')).join('');
+    const pad = `${showOut ? '<td></td>' : ''}${showIn ? '<td></td><td></td>' : ''}`;
+    return `<tr class="nines-hole-row"><th>Nines</th>${holeRow}${pad}</tr>
+      <tr class="nines-run-row"><th>Nines run</th>${runRow}${pad}</tr>`;
   },
 
   afterHoleScored(state, holeNumber) {
@@ -1748,6 +1818,7 @@ const scorecard = {
           ${this.vegasPressButtonHtml(state, holeNumber)}
           ${this.nassauBoardHtml(state)}
           ${this.nassauPressButtonsHtml(state, holeNumber)}
+          ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
           ${this.pressableGames(state).length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to the end of that game or Nassau segment. Same dollars as the parent unless you change them.')}` : ''}
         </div>
@@ -2021,6 +2092,7 @@ const scorecard = {
         </thead>
         <tbody>
           ${this.playerRows(state, holes, outHoles, inHoles, showOut, showIn)}
+          ${this.ninesTableRows(state, holes, showOut, showIn)}
         </tbody>
       </table>`;
   },
@@ -2509,6 +2581,8 @@ const scorecard = {
       document.querySelector('.hole-chrome .nassau-press-wrap'),
       this.nassauPressButtonsHtml(this.state, hn)
     );
+    const ninesBoard = document.getElementById('nines-board');
+    if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);
   },
 
   paintTeamVsPar(team) {
@@ -2894,7 +2968,7 @@ const scorecard = {
         <h3>Wolf</h3>
         <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before the hole is scored — Wolf + partner vs the field, or Lone Wolf vs the field. Those sides are not Team 1 / Team 2. Blind Lone Wolf (before others tee) is 3×. Lone after seeing drives is 2×. Partnered hole is 1×. Next hole is a new Wolf. Gross or net. Presses optional.</p>
         <h3>Nines</h3>
-        <p>Exactly 3 players. 5-3-1, ties split, Blitz 9-0-0 default ON. Net off the low man. Presses apply.</p>
+        <p>Exactly 3 individual players. Each hole shows that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0) and a second row with each player’s running total through that hole. Net off the low man. Presses apply.</p>
         <h3>Presses</h3>
         <p>Vegas / Wolf / Nines: from this hole to 18. Nassau: from this hole to the end of that segment only (Front dies at 9). Same $ as the parent unless you change it at confirm. Anyone can press. Original bets stay live.</p>
         <h3>Birdie slots</h3>

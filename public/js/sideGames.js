@@ -41,7 +41,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'net', blitz: true, dollarsPerPoint: 1 },
-    rule: 'Exactly 3 players. 9 points a hole: 5-3-1. Ties split 4-4-1, 5-2-2, or 3-3-3. Blitz (default ON): beat 2nd by 2 or more strokes and take 9-0-0. Gross or net (net off the low man). $ per point. Presses from the current hole to 18.',
+    rule: 'Exactly 3 individual players. 9 points a hole: 5-3-1. Ties split 4-4-1, 5-2-2, or 3-3-3. Blitz (default ON): beat 2nd by 2 or more strokes and take 9-0-0. Each hole shows that hole’s points and a second row with each player’s running total through that hole. Gross or net (net off the low man). $ per point. Presses from the current hole to 18.',
   },
 ];
 

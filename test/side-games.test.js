@@ -271,6 +271,35 @@ describe('Nines', () => {
     assert.equal(three.incomplete, false);
     assert.equal(three.points.find((p) => p.id === 1).points, 5);
   });
+
+  it('shows hole points and a running total through each hole', () => {
+    const holes = [
+      { holeNumber: 1, par: 4, strokeIndex: 1 },
+      { holeNumber: 2, par: 4, strokeIndex: 2 },
+    ];
+    const nines = scoreNines({
+      holes,
+      members: [
+        member(1, 'A', 0, [3, 4]),
+        member(2, 'B', 0, [4, 5]),
+        member(3, 'C', 0, [5, 6]),
+      ],
+      scoring: 'gross',
+      blitz: false,
+    });
+    assert.equal(nines.holes[0].points[1], 5);
+    assert.equal(nines.holes[0].points[2], 3);
+    assert.equal(nines.holes[0].points[3], 1);
+    assert.equal(nines.holes[0].running[1], 5);
+    assert.equal(nines.holes[0].running[2], 3);
+    assert.equal(nines.holes[0].running[3], 1);
+    assert.equal(nines.holes[1].points[1], 5);
+    assert.equal(nines.holes[1].running[1], 10);
+    assert.equal(nines.holes[1].running[2], 6);
+    assert.equal(nines.holes[1].running[3], 2);
+    assert.equal(nines.holes[0].players[0].hole, 5);
+    assert.equal(nines.holes[1].players[0].run, 10);
+  });
 });
 
 describe('Presses', () => {
