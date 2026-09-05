@@ -2640,6 +2640,46 @@ img {
   margin-top: 2px;
 }
 
+.vegas-press-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.vegas-press-btn {
+  min-width: 48px;
+  min-height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: #1a237e;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.vegas-press-label {
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.vegas-press-badge {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #C62828;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.vegas-press-block {
+  margin-top: 6px;
+}
+
 .vegas-this,
 .vegas-cell-swing {
   font-size: 0.8rem;

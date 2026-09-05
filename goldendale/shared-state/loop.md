@@ -6,6 +6,10 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### Vegas per-hole Press (ASSET_V `20260826s`)
+
+Big **P** under each hole starts a Vegas child press from that hole through 18 (same pair + flip + zero-sum math). Board shows Original + each press, with a live press count badge.
+
 ### Live title + Wolf sides (ASSET_V `20260826r`)
 
 Live card title lists the games above the fold (e.g. `1G+2N + Vegas`, or `Vegas + Skins`). Wolf rotates by hole with a Wolf badge, per-hole sides (not Team 1/2), Blind Lone 3× / Lone 2× / partner 1×, and pick-or-pass after each tee.

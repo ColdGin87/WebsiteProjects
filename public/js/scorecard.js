@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826r',
+  ASSET_V: '20260826s',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -362,22 +362,71 @@ const scorecard = {
     return `<div class="vegas-board" id="vegas-board">${this.vegasBoardInner(state)}</div>`;
   },
 
-  vegasBoardInner(state) {
-    const v = this.vegasGame(state);
-    if (!v || !v.teamA || !v.teamB) return '<div class="vegas-board-this">Vegas —</div>';
-    const hn = this.currentHole || 1;
-    const row = (v.holes || []).find((h) => h.holeNumber === hn);
+  vegasPresses(state) {
+    const g = state && state.sideGames && state.sideGames.games;
+    return (g && g.vegasPresses) || [];
+  },
+
+  vegasPressCount(state) {
+    return this.vegasPresses(state).length;
+  },
+
+  vegasLineHtml(label, game, holeNumber) {
+    if (!game || !game.teamA || !game.teamB) return `<div class="vegas-board-this">${_esc(label)} —</div>`;
+    const row = (game.holes || []).find((h) => h.holeNumber === holeNumber);
     const thisLine = (!row || row.incomplete)
       ? 'This hole: —'
       : `This hole: ${this.fmtVegasPts(row.swingA)} / ${this.fmtVegasPts(row.swingB)} · ${row.numA}–${row.numB}`;
-    const byHole = (v.holes || [])
+    const byHole = (game.holes || [])
       .filter((h) => !h.incomplete && h.swingA != null)
       .map((h) => `H${h.holeNumber} ${this.fmtVegasPts(h.swingA)}/${this.fmtVegasPts(h.swingB)}`)
       .join(' · ');
-    const total = `TOTAL ${this.fmtVegasPts(v.teamA.points)} / ${this.fmtVegasPts(v.teamB.points)}`;
-    return `<div class="vegas-board-this">${_esc(thisLine)}</div>
+    const total = `TOTAL ${this.fmtVegasPts(game.teamA.points)} / ${this.fmtVegasPts(game.teamB.points)}`;
+    return `<div class="vegas-press-block">
+      <div class="vegas-board-this">${_esc(label)} · ${_esc(thisLine)}</div>
       <div class="vegas-board-holes">${_esc(byHole ? 'By hole: ' + byHole : 'By hole: —')}</div>
-      <div class="vegas-board-total">${_esc(total)}</div>`;
+      <div class="vegas-board-total">${_esc(total)}</div>
+    </div>`;
+  },
+
+  vegasBoardInner(state) {
+    const v = this.vegasGame(state);
+    if (!v || !v.teamA || !v.teamB) {
+      return this.isVegasOn(state) ? '<div class="vegas-board-this">Vegas —</div>' : '';
+    }
+    const hn = this.currentHole || 1;
+    const presses = this.vegasPresses(state);
+    const badge = presses.length ? `<div class="vegas-press-badge">${presses.length} press${presses.length === 1 ? '' : 'es'}</div>` : '';
+    const pressLines = presses.map((p, i) =>
+      this.vegasLineHtml(`Press ${i + 1} H${p.startHole}–${p.endHole || 18}`, p, hn)
+    ).join('');
+    return `${badge}${this.vegasLineHtml('Original', v, hn)}${pressLines}`;
+  },
+
+  vegasPressButtonHtml(state, holeNumber) {
+    if (!this.isVegasOn(state)) return '';
+    const n = this.vegasPressCount(state);
+    return `<div class="vegas-press-wrap">
+      <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Press Vegas from hole ${holeNumber}">P</button>
+      <span class="vegas-press-label">Press</span>
+      ${n ? `<span class="vegas-press-badge">${n}</span>` : ''}
+    </div>`;
+  },
+
+  async pressVegasFromHole(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
+        gameKey: 'vegas',
+        startHole: holeNumber,
+        endHole: 18,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
   },
 
   afterHoleScored(state, holeNumber) {
@@ -1565,6 +1614,7 @@ const scorecard = {
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
           ${this.vegasBoardHtml(state)}
+          ${this.vegasPressButtonHtml(state, holeNumber)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
           ${this.pressableGames(state).length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'A press starts a child wager from this hole to the end of that game or Nassau segment. Same dollars as the parent unless you change them.')}` : ''}
         </div>
@@ -1821,6 +1871,13 @@ const scorecard = {
             ${showIn ? '<th>IN</th>' : ''}
             ${showIn ? '<th>TOT</th>' : ''}
           </tr>
+          ${this.isVegasOn(state) ? `<tr class="vegas-press-row">
+            <th>Press</th>
+            ${holes.map((h) => `<th>${this.vegasPressButtonHtml(state, h.hole_number)}</th>`).join('')}
+            ${showOut ? '<th></th>' : ''}
+            ${showIn ? '<th></th>' : ''}
+            ${showIn ? '<th></th>' : ''}
+          </tr>` : ''}
           <tr class="par-row">
             <th class="row-label">Par / SI</th>
             ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
