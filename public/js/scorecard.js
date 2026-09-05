@@ -41,7 +41,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826i',
+  ASSET_V: '20260826j',
 
   stopPoll() {
     if (this.pollTimer) {

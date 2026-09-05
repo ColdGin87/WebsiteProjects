@@ -112,7 +112,9 @@ const dashboard = {
     const game = this.gameFromKey(key);
     const api = this.formatsApi();
     if (typeof api.formatRuleText === 'function') return api.formatRuleText(game.grossBalls, game.netBalls);
-    return '';
+    const g = game.grossBalls ?? 1;
+    const n = game.netBalls ?? 2;
+    return `Count the best ${g} gross and ${n} net from ${g + n} different players. Each counted ball is vs par (birdie −1, par E, bogey +1). The hole total is those vs-par values added together. Every legal assignment is tried; the lowest (best) combo is kept. The race is the running vs-par total, not a stroke sum.`;
   },
 
   gameChip(round) {
@@ -221,10 +223,10 @@ const dashboard = {
           </div>
           <div class="form-group" id="create-game-wrap">
             <label>Team game</label>
+            <p class="game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
             <select class="form-input" name="gameKey" id="create-game">
               ${dashboard.gameOptionsHtml('1G2N')}
             </select>
-            <p class="card-subtitle game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
           </div>
           <div class="form-group">
             <label>Holes</label>

@@ -65,9 +65,9 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826i/);
-    assert.match(html, /js\/formats\.js\?v=20260826i/);
-    assert.match(src, /ASSET_V:\s*'20260826i'/);
+    assert.match(html, /20260826j/);
+    assert.match(html, /js\/formats\.js\?v=20260826j/);
+    assert.match(src, /ASSET_V:\s*'20260826j'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -103,6 +103,9 @@ describe('Game select vs-par formats', () => {
   it('create form lists the five games and outlines the calculation', () => {
     const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
     assert.match(dash, /create-game-rule/);
+    const ruleAt = dash.indexOf('id="create-game-rule"');
+    const gameSelAt = dash.indexOf('id="create-game"');
+    assert.ok(ruleAt >= 0 && gameSelAt > ruleAt, 'rule text sits above the game select');
     assert.match(dash, /1G2N/);
     assert.match(dash, /3G/);
     assert.match(dash, /3N/);

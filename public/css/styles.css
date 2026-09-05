@@ -408,8 +408,14 @@ img {
 }
 
 .game-rule {
-  margin-top: 8px;
+  margin: 8px 0 12px;
+  padding: 10px 12px;
   line-height: 1.45;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: #eef6ea;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .card-body {
