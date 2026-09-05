@@ -4,9 +4,9 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
-### Vegas two-line this-hole + RUNNING (ASSET_V `20260905f`)
+### Vegas two-line this-hole + RUNNING (ASSET_V `20260905g`)
 
-Vegas shows two stacked lines: this-hole difference after the games-running multiplier, then RUNNING cumulative underneath. Example +5 then −25 → running −20. Other team is the sign-flipped mirror. Same PR #2. Hold merge.
+Vegas shows two stacked lines: this-hole difference after the games-running multiplier, then RUNNING cumulative **through the hole you are on**. Example +5 then −25 → running −20. Other team is the sign-flipped mirror. Same PR #2. Hold merge.
 
 ### Vegas games-running Press (ASSET_V `20260905e`)
 
