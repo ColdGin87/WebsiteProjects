@@ -606,6 +606,42 @@ async function runSideGamesScenario(base) {
   const still = (pressed.holeResults || []).find((h) => h.holeNumber === 1);
   const stillTeam = (still.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillTeam && stillTeam.total, 1, 'press must not change hole-1 vs-par');
+
+  const frontPress = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token: friend.token,
+    body: { gameKey: 'nassau', segment: 'front', startHole: 1, endHole: 18 },
+  });
+  const frontRows = (frontPress.sideGames && frontPress.sideGames.games && frontPress.sideGames.games.nassauPresses) || [];
+  const front = frontRows.find((p) => p.segment === 'front');
+  assertEqual(front && front.endHole, 9, 'front Nassau press dies at 9');
+  assertEqual(front && front.startHole, 1, 'front Nassau press starts at tap hole');
+  const stillFront = (frontPress.holeResults || []).find((h) => h.holeNumber === 1);
+  const stillFrontTeam = (stillFront.teams || []).find((t) => t.teamName === 'Team 1');
+  assertEqual(stillFrontTeam && stillFrontTeam.total, 1, 'nassau front press must not change hole-1 vs-par');
+
+  await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token: friend.token,
+    body: { gameKey: 'nassau', segment: 'back', startHole: 12, endHole: 18 },
+  });
+  const overallPress = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token: friend.token,
+    body: { gameKey: 'nassau', segment: 'overall', startHole: 12, endHole: 18 },
+  });
+  const nassauRows = (overallPress.sideGames && overallPress.sideGames.games && overallPress.sideGames.games.nassauPresses) || [];
+  const back = nassauRows.find((p) => p.segment === 'back');
+  const overall = nassauRows.find((p) => p.segment === 'overall');
+  assertEqual(back && back.startHole, 12, 'back press from hole 12');
+  assertEqual(back && back.endHole, 18, 'back press dies at 18');
+  assertEqual(overall && overall.startHole, 12, 'overall press from hole 12');
+  assertEqual(overall && overall.endHole, 18, 'overall press is tap→18');
+  const from12 = nassauRows.filter((p) => Number(p.startHole) === 12);
+  if (from12.length < 2) fail('hole 12 should press Back and Overall independently');
+  if (!from12.some((p) => p.segment === 'back') || !from12.some((p) => p.segment === 'overall')) {
+    fail('hole 12 Back and Overall presses should both stay live');
+  }
+  const stillOverall = (overallPress.holeResults || []).find((h) => h.holeNumber === 1);
+  const stillOverallTeam = (stillOverall.teams || []).find((t) => t.teamName === 'Team 1');
+  assertEqual(stillOverallTeam && stillOverallTeam.total, 1, 'nassau presses must not change hole-1 vs-par');
   console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press');
 }
 

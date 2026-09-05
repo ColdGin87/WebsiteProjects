@@ -6,6 +6,10 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### Nassau (NASA) segment presses (ASSET_V `20260826t`)
+
+NASA = Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Manual Press (anyone). A press is from the tap hole through the **end of that segment only** — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Hole 12 can press Back **and** Overall. Live-press count is per segment. No auto 2-down.
+
 ### Vegas per-hole Press (ASSET_V `20260826s`)
 
 Big **P** under each hole starts a Vegas child press from that hole through 18 (same pair + flip + zero-sum math). Board shows Original + each press, with a live press count badge.

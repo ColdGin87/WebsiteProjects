@@ -306,10 +306,52 @@ describe('Presses', () => {
       presses: [{ game_key: 'nassau', segment: 'front', start_hole: 5, end_hole: 9, dollars: 4 }],
     });
     assert.ok(side.games.nassau);
+    assert.equal(side.games.nassauPresses.length, 1);
+    assert.equal(side.games.nassauPresses[0].segment, 'front');
+    assert.equal(side.games.nassauPresses[0].startHole, 5);
+    assert.equal(side.games.nassauPresses[0].endHole, 9);
     const t1 = side.money.find((m) => m.id === 1);
     assert.ok(t1.dollars >= 2);
     assert.match(side.stripText, /Nassau/);
+    assert.match(side.stripText, /press F1/);
     assert.match(side.stripText, /All games/);
+  });
+
+  it('Nassau front press dies at 9; hole 12 can press Back and Overall', () => {
+    const holes = Array.from({ length: 18 }, (_, i) => ({ holeNumber: i + 1, par: 4, strokeIndex: i + 1 }));
+    const low = Array(18).fill(3);
+    const high = Array(18).fill(5);
+    const teams = [
+      { id: 1, name: 'Team 1', members: [member(1, 'A', 0, low), member(2, 'B', 0, low)] },
+      { id: 2, name: 'Team 2', members: [member(3, 'C', 0, high), member(4, 'D', 0, high)] },
+    ];
+    const side = computeSideGames({
+      config: { nassau: { on: true, scoring: 'gross', front: 2, back: 2, overall: 2 } },
+      holes,
+      members: teams.flatMap((t) => t.members),
+      teams,
+      presses: [
+        { id: 1, game_key: 'nassau', segment: 'front', start_hole: 5, end_hole: 18, dollars: 4 },
+        { id: 2, game_key: 'nassau', segment: 'back', start_hole: 12, end_hole: 18, dollars: 4 },
+        { id: 3, game_key: 'nassau', segment: 'overall', start_hole: 12, end_hole: 18, dollars: 4 },
+      ],
+    });
+    const rows = side.games.nassauPresses;
+    assert.equal(rows.length, 3);
+    const front = rows.find((p) => p.segment === 'front');
+    const back = rows.find((p) => p.segment === 'back');
+    const overall = rows.find((p) => p.segment === 'overall');
+    assert.equal(front.startHole, 5);
+    assert.equal(front.endHole, 9);
+    assert.equal(back.startHole, 12);
+    assert.equal(back.endHole, 18);
+    assert.equal(overall.startHole, 12);
+    assert.equal(overall.endHole, 18);
+    const from12 = rows.filter((p) => p.startHole === 12);
+    assert.equal(from12.length, 2);
+    assert.ok(from12.some((p) => p.segment === 'back'));
+    assert.ok(from12.some((p) => p.segment === 'overall'));
+    assert.match(side.stripText, /press F1 B1 181/);
   });
 });
 

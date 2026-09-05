@@ -25,7 +25,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'net', front: 2, back: 2, overall: 2 },
-    rule: 'Classic three bets: front 9, back 9, and overall 18 — each settled on its own. Each hole is match play (lower team score wins the hole). Gross uses the sum of that hole’s gross scores; net uses the sum of nets. Winner of a segment is the side that wins more holes (or AS). A press is a new wager on that segment from the current hole to the end of the segment.',
+    rule: 'NASA means Nassau. Classic three independent bets: Front 1–9, Back 10–18, and Overall 1–18. Each hole is match play (lower team score wins the hole). Gross uses the sum of that hole’s gross scores; net uses the sum of nets. Winner of a segment is the side that wins more holes (or AS). Anyone can press. A press is a new wager from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Front, Back, and Overall can be pressed independently (hole 12 can press Back and Overall). No auto 2-down.',
   },
   {
     key: 'wolf',

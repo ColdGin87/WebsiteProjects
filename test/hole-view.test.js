@@ -66,10 +66,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826s/);
-    assert.match(html, /js\/formats\.js\?v=20260826s/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826s/);
-    assert.match(src, /ASSET_V:\s*'20260826s'/);
+    assert.match(html, /20260826t/);
+    assert.match(html, /js\/formats\.js\?v=20260826t/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826t/);
+    assert.match(src, /ASSET_V:\s*'20260826t'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -110,6 +110,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /vegas-press-btn/);
     assert.match(src, /pressVegasFromHole/);
     assert.match(src, /vegasPresses/);
+    assert.match(src, /nassauPressButtonsHtml/);
+    assert.match(src, /pressNassauFromHole/);
+    assert.match(src, /nassauPresses/);
+    assert.match(css, /\.nassau-press-btn/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
   });
 

@@ -2680,6 +2680,64 @@ img {
   margin-top: 6px;
 }
 
+.nassau-board {
+  margin: 6px 0 8px;
+  padding: 8px 10px;
+  background: #E8F5E9;
+  border: 1px solid #2E7D32;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #1b5e20;
+}
+
+.nassau-press-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 8px;
+}
+
+.nassau-press-btn {
+  min-height: 44px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #1b5e20;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.nassau-press-count,
+.nassau-press-badge {
+  display: inline-block;
+  min-width: 1.5rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #C62828;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.nassau-press-badge {
+  margin-bottom: 6px;
+}
+
+.nassau-press-line {
+  margin-top: 6px;
+}
+
+.nassau-line-title,
+.nassau-line-run,
+.nassau-original {
+  font-weight: 800;
+}
+
 .vegas-this,
 .vegas-cell-swing {
   font-size: 0.8rem;
