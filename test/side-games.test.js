@@ -123,6 +123,32 @@ describe('Vegas', () => {
     assert.equal(vegas.teamB.points, 0);
     assert.equal(vegas.money.find((m) => m.id === 10).dollars, 22);
   });
+
+  it('uses pair numbers, never the 1G+2N vs-par team total', () => {
+    const players = [
+      { id: 'A', handicap: 4, gross: 5 },
+      { id: 'B', handicap: 11, gross: 6 },
+      { id: 'C', handicap: 18, gross: 7 },
+      { id: 'D', handicap: 24, gross: 8 },
+    ].map((p) => {
+      const strokes = strokesOnHole(p.handicap, 1);
+      return { ...p, strokes, net: netScore(p.gross, strokes) };
+    });
+    const vsPar = teamHoleScore(players, { grossBalls: 1, netBalls: 2, dualCount: false, par: 5 });
+    assert.equal(vsPar.total, 1);
+    const hole = scoreVegasHole(
+      [{ gross: 5, net: 4 }, { gross: 6, net: 5 }],
+      [{ gross: 6, net: 6 }, { gross: 7, net: 7 }],
+      { scoring: 'gross', par: 5 }
+    );
+    assert.equal(hole.numA, 56);
+    assert.equal(hole.numB, 67);
+    assert.equal(hole.points, 11);
+    assert.equal(hole.flipA, false);
+    assert.equal(hole.flipB, false);
+    assert.notEqual(hole.numA, vsPar.total);
+    assert.notEqual(hole.points, vsPar.total);
+  });
 });
 
 describe('Nassau', () => {

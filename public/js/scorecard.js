@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826o',
+  ASSET_V: '20260826p',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -296,6 +296,51 @@ const scorecard = {
     const r = (state && state.round) || {};
     if (r.teamRace === false || r.team_race === 0 || r.team_race === false) return false;
     return true;
+  },
+
+  isVegasOn(state) {
+    const cfg = this.sideConfig(state);
+    return !!(cfg.vegas && cfg.vegas.on);
+  },
+
+  vegasGame(state) {
+    const g = state && state.sideGames && state.sideGames.games && state.sideGames.games.vegas;
+    return g && (g.teamA || g.holes) ? g : null;
+  },
+
+  vegasSideForTeam(state, team) {
+    const v = this.vegasGame(state);
+    if (!v || !team) return null;
+    if (v.teamA && Number(v.teamA.id) === Number(team.id)) return 'A';
+    if (v.teamB && Number(v.teamB.id) === Number(team.id)) return 'B';
+    return null;
+  },
+
+  vegasHoleFor(state, team, holeNumber) {
+    const v = this.vegasGame(state);
+    const side = this.vegasSideForTeam(state, team);
+    if (!v || !side) return null;
+    const row = (v.holes || []).find((h) => h.holeNumber === holeNumber);
+    if (!row || row.incomplete) {
+      return { incomplete: true, num: null, run: side === 'A' ? (v.teamA && v.teamA.points) || 0 : (v.teamB && v.teamB.points) || 0 };
+    }
+    return {
+      incomplete: false,
+      num: side === 'A' ? row.numA : row.numB,
+      run: side === 'A' ? (row.runA != null ? row.runA : v.teamA && v.teamA.points) : (row.runB != null ? row.runB : v.teamB && v.teamB.points),
+      points: row.points,
+      flip: side === 'A' ? row.flipA : row.flipB,
+    };
+  },
+
+  vegasStripText(state) {
+    const v = this.vegasGame(state);
+    if (!v || !v.teamA || !v.teamB) return this.isVegasOn(state) ? 'Vegas —' : '';
+    const hn = this.currentHole || 1;
+    const row = (v.holes || []).find((h) => h.holeNumber === hn);
+    const run = `${v.teamA.name} ${v.teamA.points}–${v.teamB.points} ${v.teamB.name}`;
+    if (!row || row.incomplete) return `Vegas ${run}`;
+    return `Vegas ${row.numA}–${row.numB} (+${row.points}) · ${run}`;
   },
 
   afterHoleScored(state, holeNumber) {
@@ -1188,12 +1233,21 @@ const scorecard = {
 
   raceStripText(state) {
     const extra = state.sideGames && state.sideGames.stripText;
-    if (!this.isTeamRaceOn(state)) return extra || '';
+    const vegasBit = this.isVegasOn(state) ? this.vegasStripText(state) : '';
+    const extraSansVegas = extra
+      ? extra.split(' · ').filter((bit) => !/^Vegas\b/.test(bit)).join(' · ')
+      : '';
+    if (!this.isTeamRaceOn(state)) {
+      return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    }
     const teams = state.teams || [];
-    if (!teams.length) return extra || '';
+    if (!teams.length) return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
-    if (completed && leader) return `${leader.name} wins · ${this.fmtTeam(leader.total)}`;
+    if (completed && leader) {
+      const win = `${leader.name} wins · ${this.fmtTeam(leader.total)}`;
+      return [win, vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    }
     const teamBits = teams.map((t) => {
       let bit = `${t.name} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
       if (leader && leader.total != null && t.total != null && t.id !== leader.id) {
@@ -1201,7 +1255,7 @@ const scorecard = {
       }
       return bit;
     }).join(' · ');
-    return extra ? teamBits + ' · ' + extra : teamBits;
+    return [teamBits, vegasBit, extraSansVegas].filter(Boolean).join(' · ');
   },
 
   holePlayerRowHtml(state, member, holeNumber) {
@@ -1236,8 +1290,9 @@ const scorecard = {
     const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length);
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
       const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
-      const teamHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
-      return `<section class="hole-team-group" data-team-group="${group.team.id}">${rows}${teamHtml}</section>`;
+      const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+      const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
+      return `<section class="hole-team-group" data-team-group="${group.team.id}">${rows}${raceHtml}${vegasHtml}</section>`;
     }).join('')}</div>`;
   },
 
@@ -1364,6 +1419,27 @@ const scorecard = {
     if (prev) prev.onclick = () => this.shiftHole(-1);
     if (next) next.onclick = () => this.shiftHole(1);
     if (stepper) stepper.onclick = () => this.openStepperFallback();
+  },
+
+  oneHoleVegasTotal(state, team, holeNumber) {
+    if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
+    const row = this.vegasHoleFor(state, team, holeNumber);
+    if (!row) {
+      return `<div class="hole-team-total hole-vegas-total" data-vegas-total="${team.id}">
+        <div class="hole-team-scoreline">
+          <span>${_esc(team.name)} Vegas</span>
+          <strong data-vegas-num="${team.id}:${holeNumber}">—</strong>
+          <span class="running-total">run <span data-vegas-run="${team.id}">0</span></span>
+        </div>
+      </div>`;
+    }
+    return `<div class="hole-team-total hole-vegas-total ${row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
+      <div class="hole-team-scoreline">
+        <span>${_esc(team.name)} Vegas${row.flip ? ' flip' : ''}</span>
+        <strong data-vegas-num="${team.id}:${holeNumber}">${row.num == null ? '—' : row.num}</strong>
+        <span class="running-total">run <span data-vegas-run="${team.id}">${row.run == null ? 0 : row.run}</span></span>
+      </div>
+    </div>`;
   },
 
   oneHoleTeamTotal(state, team, holeNumber) {
@@ -1707,7 +1783,8 @@ const scorecard = {
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
       const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
       const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
-      return head + rows + teamRow;
+      const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
+      return head + rows + teamRow + vegasRow;
     }).join('');
   },
 
@@ -1740,6 +1817,25 @@ const scorecard = {
         ${showOut ? `<td class="sc-total">${this.fmtTeam(team.out)}</td>` : ''}
         ${showIn ? `<td class="sc-total">${this.fmtTeam(team.inn)}</td>` : ''}
         ${showIn ? `<td class="sc-total"><strong data-team-tot="${team.id}">${this.fmtTeam(team.total)}</strong></td>` : ''}
+      </tr>`;
+  },
+
+  oneVegasRow(state, team, holes, showOut, showIn) {
+    if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
+    const last = holes[holes.length - 1];
+    const lastRow = last ? this.vegasHoleFor(state, team, last.hole_number) : null;
+    return `
+      <tr class="row-team row-vegas" data-vegas-row="${team.id}">
+        <td class="row-label">${_esc(team.name)} Vegas</td>
+        ${holes.map((h) => {
+          const row = this.vegasHoleFor(state, team, h.hole_number);
+          return `<td data-vegas-cell="${team.id}:${h.hole_number}" class="team-hole-cell ${row && row.incomplete ? 'incomplete' : ''}">
+            <span class="team-hole-score" data-vegas-num="${team.id}:${h.hole_number}">${row && row.num != null ? row.num : '—'}</span>
+          </td>`;
+        }).join('')}
+        ${showOut ? '<td class="sc-total"></td>' : ''}
+        ${showIn ? '<td class="sc-total"></td>' : ''}
+        ${showIn ? `<td class="sc-total"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? lastRow.run : 0}</strong></td>` : ''}
       </tr>`;
   },
 
@@ -1949,6 +2045,23 @@ const scorecard = {
       const tot = document.querySelector('[data-team-tot="' + team.id + '"]');
       if (tot) tot.textContent = this.fmtTeam(team.total);
       this.paintTeamVsPar(team);
+    }
+    this.paintVegas(holeNumber);
+  },
+
+  paintVegas(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    const hn = holeNumber || this.currentHole;
+    for (const team of this.state.teams || []) {
+      const row = this.vegasHoleFor(this.state, team, hn);
+      document.querySelectorAll('[data-vegas-num="' + team.id + ':' + hn + '"]').forEach((el) => {
+        el.textContent = row && row.num != null ? String(row.num) : '—';
+      });
+      document.querySelectorAll('[data-vegas-run="' + team.id + '"]').forEach((el) => {
+        el.textContent = row && row.run != null ? String(row.run) : '0';
+      });
+      const wrap = document.querySelector('[data-vegas-total="' + team.id + '"]');
+      if (wrap) wrap.classList.toggle('incomplete', !!(row && row.incomplete));
     }
   },
 
@@ -2311,7 +2424,7 @@ const scorecard = {
         <h3>Skins</h3>
         <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
         <h3>Vegas</h3>
-        <p>2v2. Two scores become a number, low first. 10+ is high-first. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas flips only on a gross birdie or better. Presses apply.</p>
+        <p>2v2. Each side’s two hole scores become a number, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104). That is not the 1G+2N vs-par team total. Hole points = the difference. Running Vegas = sum of those diffs. Birdie or eagle (or better) flips the other side high-first. If both sides birdie or better, both numbers flip — they do not cancel. Net Vegas uses net numbers; flip only on a gross birdie or better. Presses apply.</p>
         <h3>Nassau</h3>
         <p>Front 9, back 9, and overall 18 as three bets. Each hole is match play. A press is a child wager on that segment.</p>
         <h3>Wolf</h3>

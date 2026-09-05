@@ -554,10 +554,29 @@ async function runSideGamesScenario(base) {
       body: { memberId: member.id, holeNumber: 1, gross: player.gross },
     });
   }
+  const eve = state.members.find((m) => m.display_name === 'Eve');
+  const fay = state.members.find((m) => m.display_name === 'Fay');
+  if (!eve || !fay) fail('side games missing Team 2');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token,
+    body: { memberId: eve.id, holeNumber: 1, gross: 6 },
+  });
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token,
+    body: { memberId: fay.id, holeNumber: 1, gross: 7 },
+  });
   const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
   const holeResult = (live.holeResults || []).find((h) => h.holeNumber === 1);
   const teamHole = (holeResult.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(teamHole && teamHole.total, 1, 'side games must not change hole-1 best 1G+2N');
+  const vegas = live.sideGames && live.sideGames.games && live.sideGames.games.vegas;
+  if (!vegas || !vegas.holes || !vegas.holes[0]) fail('vegas should score pair numbers');
+  assertEqual(vegas.holes[0].numA, 56, 'Vegas Team 1 pair is 5+6=56, not vs-par +1');
+  assertEqual(vegas.holes[0].numB, 67, 'Vegas Team 2 pair is 6+7=67');
+  assertEqual(vegas.holes[0].points, 11, 'Vegas hole points are |56-67|');
+  if (vegas.holes[0].numA === 1 || vegas.holes[0].points === 1) {
+    fail('Vegas must not use the 1G+2N vs-par total');
+  }
   if (!live.sideGames || !live.sideGames.games || !live.sideGames.games.skins) {
     fail('skins should run from the same hole scores');
   }

@@ -65,10 +65,10 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826o/);
-    assert.match(html, /js\/formats\.js\?v=20260826o/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826o/);
-    assert.match(src, /ASSET_V:\s*'20260826o'/);
+    assert.match(html, /20260826p/);
+    assert.match(html, /js\/formats\.js\?v=20260826p/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826p/);
+    assert.match(src, /ASSET_V:\s*'20260826p'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -98,8 +98,11 @@ describe('Combined PR3 hole view', () => {
   it('race strip and Team N totals format vs-par, not stroke sums', () => {
     const race = sliceFn('raceStripText(state)', 'holePlayerRowHtml(state, member, holeNumber)');
     assert.match(race, /fmtTeam/);
+    assert.match(race, /vegasStripText|isVegasOn/);
     assert.match(src, /fmtTeam\(winner\.total\)/);
     assert.match(src, /fmtTeam\(team\.total\)/);
+    assert.match(src, /oneHoleVegasTotal/);
+    assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
   });
 
   it('live add-player is name, HCP, and Team 1 / 2 / 3 chips in one flow', () => {
@@ -144,6 +147,8 @@ describe('Combined PR3 hole view', () => {
     const players = sliceFn('holePlayersHtml(state, holeNumber)', 'holeToolbar(state)');
     assert.match(players, /group\.team/);
     assert.match(players, /oneHoleTeamTotal/);
+    assert.match(players, /oneHoleVegasTotal/);
+    assert.match(players, /isVegasOn/);
     assert.match(players, /visibleHoleMembers|group\.team &&/);
     assert.match(src, /Go to the 19th hole/);
     assert.match(src, /drawGameRules/);

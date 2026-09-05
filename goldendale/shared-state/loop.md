@@ -6,7 +6,11 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
-### Batch on this revision (ASSET_V `20260826o`)
+### P0 Vegas totaling (ASSET_V `20260826p`)
+
+Vegas is pair numbers, not 1G+2N vs-par. 4+5=45, 10+4=104. Hole points = |A−B|. Running = sum of diffs. Flip on gross birdie/eagle+; both sides birdie+ flips both. Race OFF + Vegas ON shows Vegas numbers/points on the live card.
+
+### Batch on this revision (ASSET_V `20260826o`, still on the PR)
 
 1. **Team vs-par race** — setup toggle default ON. OFF hides the race. Format picker (1G+2N etc.) stays. Vegas / Wolf / Nassau / Nines / Skins run alone or stacked.
 2. **Per-team totals** — hole + running sit under that team’s names on the hole list and full card. No dump at the bottom.

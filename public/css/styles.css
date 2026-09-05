@@ -2964,6 +2964,10 @@ img {
   display: block;
 }
 
+.hole-vegas-total .hole-team-scoreline {
+  color: #1a237e;
+}
+
 .nine-line {
   font-size: 0.8rem;
   font-weight: 700;
