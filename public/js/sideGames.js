@@ -33,7 +33,7 @@ const SIDE_GAMES = [
     defaultOn: false,
     pressable: true,
     defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1 },
-    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before the hole is scored. Partnered hole = 1×. Lone Wolf after seeing drives = 2×. Blind Lone Wolf claimed before others tee = 3×. Low ball of Wolf’s side vs the field. Gross or net (net off low man). Presses optional, current hole to 18.',
+    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before Wolf points settle; gross can be entered now. Better ball (gross or net) wins; tie = 0. Partnered: Wolf + partner +1 each, field −1 each (loss reverses). Lone after drives: Wolf +2 from each / −2 to each. Blind Lone before any drive: +3 from each / −3. Presses optional, current hole to 18.',
   },
   {
     key: 'nines',

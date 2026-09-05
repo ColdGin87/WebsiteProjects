@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826x',
+  ASSET_V: '20260826y',
 
   stopPoll() {
     if (this.pollTimer) {
@@ -214,6 +214,7 @@ const scorecard = {
       });
     }
     if (patch.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...patch.sideGames };
+    if (patch.wolfPicks) this.state.wolfPicks = patch.wolfPicks;
   },
 
   writeMemberHole(memberId, holeNumber, gross, net, strokes) {
@@ -656,6 +657,7 @@ const scorecard = {
   },
 
   visibleHoleMembers(state) {
+    if (this.isWolfOn(state)) return this.wolfRoster(state);
     return this.groupedMembers(state)
       .filter((g) => g.team)
       .flatMap((g) => g.members || []);
@@ -929,8 +931,9 @@ const scorecard = {
 
   commitScore(memberId, holeNumber, gross) {
     if (!this.state) return;
-    if (this.wolfHoldsScoring(this.state, holeNumber)) {
-      this.showWriteError('Lock Wolf sides before scoring this hole.');
+    const member = (this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
       return;
     }
     this.showWriteError('');
@@ -1099,6 +1102,10 @@ const scorecard = {
     const memberId = Number(input.dataset.member);
     const holeNumber = Number(input.dataset.hole);
     const member = this.state.members.find((m) => m.id === memberId);
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
     const hole = this.holeMeta(this.state, holeNumber);
     const hs = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
     this.openEditor(this.state.round.id, memberId, holeNumber, member.display_name, hs?.gross ?? null, hole.par);
@@ -1113,6 +1120,17 @@ const scorecard = {
     };
     const member = this.state.members.find((m) => m.id === focus.memberId) || this.state.members[0];
     if (!member) return;
+    if (!this.canWriteMember(this.state, member)) {
+      const writable = (this.state.members || []).find((m) => this.canWriteMember(this.state, m));
+      if (!writable) {
+        this.showWriteError('You can only enter scores for your own team.');
+        return;
+      }
+      this.openEditor(this.state.round.id, writable.id, focus.holeNumber || this.currentHole, writable.display_name,
+        ((writable.holes || []).find((h) => h.holeNumber === (focus.holeNumber || this.currentHole)) || {}).gross ?? null,
+        this.holeMeta(this.state, focus.holeNumber || this.currentHole).par);
+      return;
+    }
     const hole = this.holeMeta(this.state, focus.holeNumber || this.currentHole);
     const hs = (member.holes || []).find((h) => h.holeNumber === (focus.holeNumber || this.currentHole));
     this.openEditor(this.state.round.id, member.id, focus.holeNumber || this.currentHole, member.display_name, hs?.gross ?? null, hole.par);
@@ -1153,6 +1171,35 @@ const scorecard = {
     if (!user) return false;
     if (state.round.organizer_id === user.id) return true;
     return (state.members || []).some((m) => m.player_id === user.id && m.role === 'organizer');
+  },
+
+  myMember(state) {
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (!user || !state) return null;
+    return (state.members || []).find((m) => Number(m.player_id) === Number(user.id)) || null;
+  },
+
+  sameTeamIds(a, b) {
+    if (a == null || b == null || a === '') return false;
+    return Number(a) === Number(b) && Number.isFinite(Number(a));
+  },
+
+  canWriteMember(state, member) {
+    if (!state || !member) return false;
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (user && user.is_admin) return true;
+    if (this.isOrganizer(state)) return true;
+    const me = this.myMember(state);
+    if (this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId)) return true;
+    return !!(this.isWolfOn(state) && me);
+  },
+
+  scoreInputDisabled(state, member) {
+    return !this.canWriteMember(state, member);
+  },
+
+  wolfRoster(state) {
+    return [...(state.members || [])];
   },
 
   draw(state) {
@@ -1456,10 +1503,14 @@ const scorecard = {
     return [];
   },
 
+  wolfFlag(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+  },
+
   wolfLocked(pick) {
     if (!pick) return false;
-    if (pick.locked === 1 || pick.locked === true) return true;
-    if (pick.blind || pick.lone || pick.lone_wolf) return true;
+    if (this.wolfFlag(pick.locked)) return true;
+    if (this.wolfFlag(pick.blind) || this.wolfFlag(pick.lone) || this.wolfFlag(pick.lone_wolf)) return true;
     if (pick.partner_member_id || pick.partnerMemberId) return true;
     return false;
   },
@@ -1529,7 +1580,7 @@ const scorecard = {
     }).join('');
     return `<div class="wolf-bar" id="wolf-bar">
       <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
-      <p class="card-subtitle">After each tee, pick that player or pass. Sides lock before this hole is scored. Next hole is a new Wolf.</p>
+      <p class="card-subtitle">After each tee, pick that player or pass. Lock Wolf sides before scoring this hole for points — you can still enter gross now. Next hole is a new Wolf.</p>
       ${canBlind ? `<button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, blind: true, locked: true })">Blind Lone Wolf 3×</button>` : ''}
       ${rows}
       <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, locked: true })">Lone Wolf 2×</button>
@@ -1708,14 +1759,15 @@ const scorecard = {
     const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
     const cls = this.cellClassList(hs, hole.par);
     const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
-    return `<div class="hole-player-row" data-member-row="${member.id}">
+    const writable = this.canWriteMember(state, member);
+    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}" data-member-row="${member.id}">
       <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
-      <div class="hole-player-score ${cls}" data-score-cell="${member.id}:${holeNumber}">
+      <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
           <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
             data-member="${member.id}" data-hole="${holeNumber}"
             data-committed="${hs?.gross ?? ''}"
-            ${this.wolfHoldsScoring(state, holeNumber) ? 'disabled' : ''}
+            ${writable ? '' : 'disabled'}
             value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
           ${this.strokeDotsHtml(hs?.strokes)}
         </div>
@@ -1744,19 +1796,24 @@ const scorecard = {
   },
 
   holePlayersHtml(state, holeNumber) {
-    const wolfOnly = this.isWolfOn(state) && !this.isTeamRaceOn(state) && !this.isVegasOn(state);
-    if (wolfOnly) {
+    if (this.isWolfOn(state)) {
       const sides = this.wolfSides(state, holeNumber);
       const sections = sides
         ? [
           { name: sides.blind ? 'Blind Lone Wolf' : (sides.lone ? 'Lone Wolf' : 'Wolf side'), members: sides.wolfSide },
           { name: 'Field', members: sides.field },
         ]
-        : [{ name: 'Wolf hole', members: this.visibleHoleMembers(state) }];
-      return `<div class="hole-players" id="hole-players">${sections.map((group) => {
+        : [{ name: 'Wolf hole', members: this.wolfRoster(state) }];
+      const wolfHtml = sections.map((group) => {
         const rows = (group.members || []).map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
         return `<section class="hole-team-group">${rows}<div class="hole-team-total"><div class="hole-team-scoreline"><span>${_esc(group.name)}</span></div></div></section>`;
-      }).join('')}</div>`;
+      }).join('');
+      const extra = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
+        const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
+        const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+        return vegasHtml || raceHtml ? `<section class="hole-team-group" data-team-group="${group.team.id}">${vegasHtml}${raceHtml}</section>` : '';
+      }).join('');
+      return `<div class="hole-players" id="hole-players">${wolfHtml}${extra}</div>`;
     }
     const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length);
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
@@ -1992,6 +2049,9 @@ const scorecard = {
       if (input) {
         input.dataset.hole = String(holeNumber);
         input.setAttribute('aria-label', (member ? member.display_name : 'Player') + ' hole ' + holeNumber);
+        const writable = this.canWriteMember(this.state, member);
+        input.disabled = !writable;
+        row.classList.toggle('is-readonly', !writable);
       }
     });
     document.querySelectorAll('#hole-players [data-team-total]').forEach((wrap) => {
@@ -2263,6 +2323,15 @@ const scorecard = {
 
   playerRows(state, holes, outHoles, inHoles, showOut, showIn) {
     const extra = (showOut ? 1 : 0) + (showIn ? 2 : 0);
+    if (this.isWolfOn(state)) {
+      const rows = this.wolfRoster(state).map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
+      const extras = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
+        const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
+        const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
+        return vegasRow + teamRow;
+      }).join('');
+      return rows + extras;
+    }
     return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
       const label = group.team.name;
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
@@ -2279,7 +2348,7 @@ const scorecard = {
       return this.scoreCellHtml(state, m, h, hs);
     }).join('');
     return `
-      <tr class="row-player" data-member-row="${m.id}">
+      <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}" data-member-row="${m.id}">
         <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
         ${cells}
         ${showOut ? `<td class="sc-total" data-out="${m.id}">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
@@ -2328,12 +2397,13 @@ const scorecard = {
 
   scoreCellHtml(state, member, hole, hs) {
     const cls = this.cellClassList(hs, hole.par);
-    return `<td class="${cls}" data-score-cell="${member.id}:${hole.hole_number}">
+    const writable = this.canWriteMember(state, member);
+    return `<td class="${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${hole.hole_number}">
       <div class="gross-box">
         <input class="score-input" inputmode="numeric" pattern="[0-9]*" min="1" max="15" maxlength="2"
           data-member="${member.id}" data-hole="${hole.hole_number}"
           data-committed="${hs?.gross ?? ''}"
-          ${this.wolfHoldsScoring(state, hole.hole_number) ? 'disabled' : ''}
+          ${writable ? '' : 'disabled'}
           value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
         ${this.strokeDotsHtml(hs?.strokes)}
       </div>
@@ -2475,6 +2545,11 @@ const scorecard = {
       const holeRow = cell.classList.contains('hole-player-score');
       cell.className = (holeRow ? 'hole-player-score ' : '') + this.cellClassList(hs, hole.par);
       if (input) {
+        const writable = this.canWriteMember(this.state, member);
+        input.disabled = !writable;
+        cell.classList.toggle('is-readonly', !writable);
+        const row = cell.closest('.hole-player-row, tr.row-player');
+        if (row) row.classList.toggle('is-readonly', !writable);
         if (document.activeElement !== input) {
           input.value = hs?.gross ?? '';
           input.dataset.committed = hs?.gross ?? '';
@@ -2680,6 +2755,11 @@ const scorecard = {
   },
 
   openEditor(roundId, memberId, holeNumber, name, current, par) {
+    const member = this.state && (this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (this.state && !this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
     this.overlay = { roundId, memberId, holeNumber, name, current, par };
     this.stepperOpen = true;
     this.renderHoleNav();
@@ -2972,7 +3052,9 @@ const scorecard = {
         <h3>Nassau (NASA)</h3>
         <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Front, Back, and Overall can be pressed independently. No auto 2-down.</p>
         <h3>Wolf</h3>
-        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before the hole is scored — Wolf + partner vs the field, or Lone Wolf vs the field. Those sides are not Team 1 / Team 2. Blind Lone Wolf (before others tee) is 3×. Lone after seeing drives is 2×. Partnered hole is 1×. Next hole is a new Wolf. Gross or net. Presses optional.</p>
+        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Wolf + partner vs the field, or Lone Wolf vs the field. Those sides are not Team 1 / Team 2. Better ball wins the hole (gross or net per toggle). Tie = 0. Partnered win: Wolf + partner +1 each, field −1 each (loss reverses). Lone Wolf after drives: Wolf +2 from each, or −2 to each. Blind Lone before any drive: +3 from each, or −3. Next hole is a new Wolf. Presses optional.</p>
+        <h3>Live card write lock</h3>
+        <p>Everyone sees the same live round. You may enter scores only for players on your own team. Other teams are visible read-only. The server rejects cross-team score writes. Wolf is individual — rostered players can enter the Wolf card.</p>
         <h3>Nines</h3>
         <p>Exactly 3 individual players. Each hole shows that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0) and a second row with each player’s running total through that hole. Net off the low man. Presses apply.</p>
         <h3>Presses</h3>

@@ -236,6 +236,51 @@ describe('Wolf', () => {
     });
     assert.equal(partnered.points, 1);
   });
+
+  it('pays house points: partnered ±1, lone +2 from each, blind +3 from each; tie 0', () => {
+    const hole = { holeNumber: 1, par: 4, strokeIndex: 1 };
+    const four = [
+      { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 3 }] },
+      { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+      { id: 3, display_name: 'C', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
+      { id: 4, display_name: 'D', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 6, net: 6 }] },
+    ];
+    const holes = [hole];
+    const pts = (picks) => {
+      const game = scoreWolf({ holes, members: four, picks, scoring: 'gross', dollarsPerPoint: 1 });
+      return Object.fromEntries((game.points || []).map((p) => [p.id, p.points]));
+    };
+    const partnered = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: 2, lone: 0, locked: 1 }]);
+    assert.equal(partnered[1], 1);
+    assert.equal(partnered[2], 1);
+    assert.equal(partnered[3], -1);
+    assert.equal(partnered[4], -1);
+    const loneWin = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: null, lone: 1, locked: 1 }]);
+    assert.equal(loneWin[1], 6);
+    assert.equal(loneWin[2], -2);
+    assert.equal(loneWin[3], -2);
+    assert.equal(loneWin[4], -2);
+    const blindWin = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: null, lone: 1, blind: 1, locked: 1 }]);
+    assert.equal(blindWin[1], 9);
+    assert.equal(blindWin[2], -3);
+    assert.equal(blindWin[3], -3);
+    assert.equal(blindWin[4], -3);
+    const tied = [
+      { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+      { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
+      { id: 3, display_name: 'C', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
+      { id: 4, display_name: 'D', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 6, net: 6 }] },
+    ];
+    const tieGame = scoreWolf({
+      holes,
+      members: tied,
+      picks: [{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: 2, lone: 0, locked: 1 }],
+      scoring: 'gross',
+    });
+    assert.equal(tieGame.holes[0].winner, null);
+    assert.equal(tieGame.holes[0].points, 0);
+    assert.equal((tieGame.points || []).reduce((s, p) => s + p.points, 0), 0);
+  });
 });
 
 describe('Nines', () => {

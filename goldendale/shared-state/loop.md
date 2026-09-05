@@ -6,6 +6,10 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
+### Wolf score entry + team write lock (ASSET_V `20260826y`)
+
+Wolf live card no longer disables every gross input until sides lock. Players can type/advance scores; sides still lock before Wolf points settle. Wolf-only rows list the full roster (not team-filtered). House points: partnered ±1 each; Lone Wolf +2/−2 from each; Blind Lone +3/−3 from each; better ball; tie 0. Multi-device write lock: same-team score writes only (organizer/admin host exception; Wolf roster may write the Wolf card). Server rejects cross-team POSTs. Sunday game + 1G+1N / 1G+2N + Wyrm Coil stay.
+
 ### Sunday batch + Wyrm Coil (ASSET_V `20260826x`)
 
 Sunday game brand and **1G+1N** / **1G+2N** stay. Birdie dragon slots now fire on the confirmed 19th: spin count is **gross birdies + net birdies**. **Wyrm Coil** is an original multi-reel overlay (not Dragon Link / Dragon Spin). Player takes those spins; each awards points; running total + saved high score. Fun only; toggle still applies.

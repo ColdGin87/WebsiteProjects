@@ -94,6 +94,24 @@ async function api(base, method, urlPath, { token, body } = {}) {
   return data;
 }
 
+async function apiStatus(base, method, urlPath, { token, body } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  const res = await fetch(base + urlPath, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: res.status, body: data };
+}
+
 function startServer(port, dbFile) {
   const child = spawn(process.execPath, ['api/index.js'], {
     cwd: ROOT,
@@ -192,14 +210,6 @@ async function runScenario(base) {
     token,
     body: { teamCount: 1 },
   });
-
-  const organizer = state.members.find((m) => m.role === 'organizer' || !m.is_guest);
-  if (organizer && organizer.team_id) {
-    state = await api(base, 'PUT', `/api/rounds/${roundId}/members/${organizer.id}`, {
-      token,
-      body: { teamId: null },
-    });
-  }
 
   const team = state.teams.find((t) => t.name === 'Team 1') || state.teams[0];
   if (!team) fail('Team 1 was not created');
@@ -353,6 +363,29 @@ async function runScenario(base) {
   const teamFromFriend = (friendSees.teams || []).find((t) => t.name === 'Team 1');
   const friendHole1 = (teamFromFriend && teamFromFriend.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(friendHole1 && friendHole1.total, 1, 'friend sees live team 1 hole 1 vs par');
+
+  const team2State = await api(base, 'POST', `/api/rounds/${roundId}/teams`, {
+    token,
+    body: { name: 'Team 2' },
+  });
+  const team2 = (team2State.teams || []).find((t) => t.name === 'Team 2');
+  if (!team2) fail('Team 2 was not created');
+  await api(base, 'PUT', `/api/rounds/${roundId}/members/${friendMember.id}`, {
+    token,
+    body: { teamId: team2.id },
+  });
+  const cross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: friend.token,
+    body: { memberId: playerA.id, holeNumber: 2, gross: 5 },
+  });
+  assertEqual(cross.status, 403, 'cross-team score write rejected');
+  if (!/own team/i.test((cross.body && cross.body.error) || '')) {
+    fail('cross-team error should name own team');
+  }
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: friend.token,
+    body: { memberId: friendMember.id, holeNumber: 3, gross: 5 },
+  });
 
   console.log('PASS Goldendale four-player hole 1');
   console.log('  course   Goldendale Golf Club 18 holes');
@@ -539,13 +572,6 @@ async function runSideGamesScenario(base) {
       });
     }
   }
-  const host = state.members.find((m) => m.display_name === 'Side Host');
-  if (host && host.team_id) {
-    state = await api(base, 'PUT', `/api/rounds/${roundId}/members/${host.id}`, {
-      token,
-      body: { teamId: null },
-    });
-  }
   for (const player of PLAYERS) {
     const member = state.members.find((m) => m.display_name === player.name);
     if (!member) fail('side games missing ' + player.name);
@@ -645,6 +671,60 @@ async function runSideGamesScenario(base) {
   console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press');
 }
 
+async function runWolfScenario(base) {
+  const stamp = Date.now();
+  const registered = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Wolf Host',
+      email: `scorecard.wolf.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const token = registered.token;
+  const created = await api(base, 'POST', '/api/rounds', {
+    token,
+    body: {
+      name: 'Wolf live card',
+      format: 'team_net',
+      holes: '18',
+      teamRace: false,
+      sideGames: { wolf: { on: true, scoring: 'gross', dollarsPerPoint: 1 } },
+    },
+  });
+  const roundId = created.round.id;
+  let state = created;
+  const names = ['W1', 'W2', 'W3', 'W4'];
+  for (const name of names) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token,
+      body: { name, handicap: 0, playingHandicap: 0 },
+    });
+  }
+  const guests = names.map((name) => state.members.find((m) => m.display_name === name));
+  if (guests.some((g) => !g)) fail('wolf guests missing');
+  const grosses = [3, 5, 6, 6];
+  for (let i = 0; i < guests.length; i++) {
+    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: guests[i].id, holeNumber: 1, gross: grosses[i] },
+    });
+    if (!posted || posted.ok !== true) fail('wolf score before lock should save');
+  }
+  await api(base, 'PUT', `/api/rounds/${roundId}/wolf/1`, {
+    token,
+    body: { wolfMemberId: guests[0].id, lone: true, locked: true },
+  });
+  const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const wolf = live.sideGames && live.sideGames.games && live.sideGames.games.wolf;
+  if (!wolf) fail('wolf game missing after lock');
+  const w1 = (wolf.points || []).find((p) => Number(p.id) === Number(guests[0].id));
+  assertEqual(w1 && w1.points, 6, 'lone wolf +2 from each of 3');
+  const hole = (wolf.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hole && hole.winner, 'wolf', 'better ball wolf wins');
+  assertEqual(hole && hole.points, 2, 'lone multiplier 2');
+  console.log('PASS Wolf card accepts gross before sides lock; lone +2 from each');
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -682,6 +762,7 @@ async function main() {
     await runDemoScenario(base);
     await runTeam1VsParDemo(base);
     await runSideGamesScenario(base);
+    await runWolfScenario(base);
   } finally {
     if (child) {
       child.kill('SIGTERM');

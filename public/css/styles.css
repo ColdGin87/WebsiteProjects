@@ -2845,6 +2845,18 @@ img {
   max-width: 56px;
 }
 
+.hole-player-row.is-readonly,
+td.sc-cell-editable.is-readonly {
+  opacity: 0.78;
+}
+
+.hole-player-row.is-readonly .score-input,
+td.is-readonly .score-input,
+input.score-input:disabled {
+  background: #ececec;
+  color: #444;
+}
+
 .hole-player-score .gross-box {
   min-width: 44px;
   min-height: 44px;

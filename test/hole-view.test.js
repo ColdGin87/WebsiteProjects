@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826x/);
-    assert.match(html, /js\/formats\.js\?v=20260826x/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826x/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260826x/);
-    assert.match(src, /ASSET_V:\s*'20260826x'/);
+    assert.match(html, /20260826y/);
+    assert.match(html, /js\/formats\.js\?v=20260826y/);
+    assert.match(html, /js\/sideGames\.js\?v=20260826y/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260826y/);
+    assert.match(src, /ASSET_V:\s*'20260826y'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -183,6 +183,13 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /Blind Lone Wolf/);
     assert.match(src, /wolfHoldsScoring/);
     assert.match(src, /Lock Wolf sides before scoring/);
+    assert.match(src, /canWriteMember/);
+    assert.match(src, /wolfRoster/);
+    assert.match(src, /is-readonly/);
+    assert.match(src, /You can still enter gross/);
+    const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
+    assert.match(holeRow, /canWriteMember/);
+    assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);
