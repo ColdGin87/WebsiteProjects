@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260826z',
+  ASSET_V: '20260905a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
 
@@ -748,7 +748,11 @@ const scorecard = {
     const current = selected || 'Team 1';
     const names = this.addTeamNames(this.state);
     return `<div class="add-team-picks" role="group" aria-label="Team">
-      ${names.map((n) => `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${n}</button>`).join('')}
+      ${names.map((n) => {
+        const team = ((this.state && this.state.teams) || []).find((t) => t.name === n);
+        const label = team ? this.teamDisplay(team) : n;
+        return `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${_esc(label)}</button>`;
+      }).join('')}
       <button type="button" class="add-team-more" id="add-extra-team">Add team</button>
       <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
     </div>`;
@@ -950,7 +954,14 @@ const scorecard = {
 
   teamNameFor(state, member) {
     const team = (state.teams || []).find((t) => t.id === member.team_id);
-    return team ? team.name : '—';
+    return team ? this.teamDisplay(team) : '—';
+  },
+
+  teamDisplay(team) {
+    if (!team) return '—';
+    if (team.displayName) return team.displayName;
+    const nick = (team.nickname || '').trim();
+    return nick ? `${team.name} · ${nick}` : (team.name || '—');
   },
 
   commitScore(memberId, holeNumber, gross) {
@@ -1377,7 +1388,7 @@ const scorecard = {
   ballLineText(state, holeNumber) {
     return (state.teams || []).map((team) => {
       const balls = this.teamBallsText(team, holeNumber);
-      return balls ? `${team.name} ${balls}` : '';
+      return balls ? `${this.teamDisplay(team)} ${balls}` : '';
     }).filter(Boolean).join(' · ');
   },
 
@@ -1774,7 +1785,7 @@ const scorecard = {
     if (!side || !side.games) return '';
     const blocks = [];
     const g = side.games;
-    const raceTeams = (state.teams || []).map((t) => `${t.name} ${this.fmtTeam(t.total)}`).join(' · ');
+    const raceTeams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
     if (this.isTeamRaceOn(state) && raceTeams) {
       blocks.push(`<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`);
     }
@@ -1834,11 +1845,11 @@ const scorecard = {
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) {
-      const win = `Sunday game ${leader.name} wins · ${this.fmtTeam(leader.total)}`;
+      const win = `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
       return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
     }
     const teamBits = teams.map((t) => {
-      let bit = `${t.name} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
+      let bit = `${this.teamDisplay(t)} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
       if (leader && leader.total != null && t.total != null && t.id !== leader.id) {
         bit += ` (${this.fmtTeam(t.total - leader.total)})`;
       }
@@ -2055,7 +2066,7 @@ const scorecard = {
     if (!row) {
       return `<div class="hole-team-total hole-vegas-total" data-vegas-total="${team.id}">
         <div class="hole-team-scoreline">
-          <span>${_esc(team.name)} Vegas</span>
+          <span>${_esc(this.teamDisplay(team))} Vegas</span>
           <strong data-vegas-num="${team.id}:${holeNumber}">—</strong>
           <span class="vegas-this">this <span data-vegas-swing="${team.id}">—</span></span>
           <span class="running-total">TOTAL <span data-vegas-run="${team.id}">0</span></span>
@@ -2064,7 +2075,7 @@ const scorecard = {
     }
     return `<div class="hole-team-total hole-vegas-total ${row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
       <div class="hole-team-scoreline">
-        <span>${_esc(team.name)} Vegas${row.flip ? ' flip' : ''}</span>
+        <span>${_esc(this.teamDisplay(team))} Vegas${row.flip ? ' flip' : ''}</span>
         <strong data-vegas-num="${team.id}:${holeNumber}">${row.num == null ? '—' : row.num}</strong>
         <span class="vegas-this">this <span data-vegas-swing="${team.id}">${row.swing == null ? '—' : this.fmtVegasPts(row.swing)}</span></span>
         <span class="running-total vegas-named-run">${_esc(this.vegasNamedRun(this.vegasGame(state)))}</span>
@@ -2078,7 +2089,7 @@ const scorecard = {
     if (this.showOut(state) && team.out != null) bits.push(`OUT ${this.fmtTeam(team.out)}`);
     if (this.showIn(state) && team.inn != null) bits.push(`IN ${this.fmtTeam(team.inn)}`);
     if (this.showIn(state) && team.total != null) bits.push(`TOT ${this.fmtTeam(team.total)}`);
-    const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(team.name)} hole`;
+    const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(this.teamDisplay(team))} hole`;
     return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
       <div class="hole-team-scoreline">
         <span>${raceLabel}</span>
@@ -2124,7 +2135,7 @@ const scorecard = {
   },
 
   endTotalsHtml(state) {
-    const teams = (state.teams || []).map((t) => `${t.name} ${this.fmtTeam(t.total)}`).join(' · ');
+    const teams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
     return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
   },
 
@@ -2347,7 +2358,10 @@ const scorecard = {
     const current = (state.teams || []).find((t) => t.id === member.team_id);
     return `<select class="form-input team-pick ${extraClass || ''}" data-member-team="${member.id}"
       onchange="scorecard.assignTeam(${member.id}, this.value)">
-      ${this.teamChoices(state).map((n) => `<option value="${_esc(n)}" ${current && current.name === n ? 'selected' : ''}>${_esc(n)}</option>`).join('')}
+      ${this.teamChoices(state).map((n) => {
+        const team = (state.teams || []).find((t) => t.name === n);
+        return `<option value="${_esc(n)}" ${current && current.name === n ? 'selected' : ''}>${_esc(team ? this.teamDisplay(team) : n)}</option>`;
+      }).join('')}
     </select>`;
   },
 
@@ -2372,11 +2386,20 @@ const scorecard = {
         <div class="card-title">Players (${state.members.length}/20)</div>
         <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3, or Add team for 4+). Auto-balance is only a helper.</p>
         <button type="button" class="btn btn-sm btn-secondary" id="settings-add-team" onclick="scorecard.addExtraTeamFromSettings()">Add team</button>
+        <div class="team-nick-list">
+          ${(state.teams || []).map((t) => `
+            <label class="tiny-label">${_esc(t.name)} nickname
+              <input class="form-input team-nick-input" data-team-nick="${_esc(t.name)}" value="${_esc(t.nickname || '')}" maxlength="24" placeholder="optional" onchange="scorecard.saveTeamNickname('${_esc(t.name)}', this.value)">
+            </label>`).join('')}
+        </div>
         <form class="add-guest-row" id="add-guest-form" onsubmit="event.preventDefault();scorecard.addGuestFromForm()">
           <input class="form-input" id="add-guest-name" placeholder="Name" required>
           <input class="form-input" id="add-guest-hcp" placeholder="HCP">
           <select class="form-input team-pick" id="add-guest-team">
-            ${this.teamChoices(state).map((n) => `<option value="${_esc(n)}" ${n === 'Team 1' ? 'selected' : ''}>${_esc(n)}</option>`).join('')}
+            ${this.teamChoices(state).map((n) => {
+              const team = (state.teams || []).find((t) => t.name === n);
+              return `<option value="${_esc(n)}" ${n === 'Team 1' ? 'selected' : ''}>${_esc(team ? this.teamDisplay(team) : n)}</option>`;
+            }).join('')}
           </select>
           <button class="btn btn-sm btn-accent" type="submit">Add player</button>
         </form>
@@ -2427,7 +2450,7 @@ const scorecard = {
       return rows + extras;
     }
     return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
-      const label = group.team.name;
+      const label = this.teamDisplay(group.team);
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
       const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
       const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
@@ -2454,7 +2477,7 @@ const scorecard = {
   oneTeamRow(state, team, holes, showOut, showIn) {
     return `
       <tr class="row-team" data-team-row="${team.id}">
-        <td class="row-label">${_esc(team.name)}</td>
+        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
         ${holes.map((h) => {
           const hole = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
           return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
@@ -2474,7 +2497,7 @@ const scorecard = {
     const lastRow = last ? this.vegasHoleFor(state, team, last.hole_number) : null;
     return `
       <tr class="row-team row-vegas" data-vegas-row="${team.id}">
-        <td class="row-label">${_esc(team.name)} Vegas</td>
+        <td class="row-label">${_esc(this.teamDisplay(team))} Vegas</td>
         ${holes.map((h) => {
           const row = this.vegasHoleFor(state, team, h.hole_number);
           const swing = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
@@ -2544,7 +2567,7 @@ const scorecard = {
   teamRows(state, holes, outHoles, inHoles) {
     return (state.teams || []).map((team) => `
       <tr class="row-team" data-team-row="${team.id}">
-        <td class="row-label">${_esc(team.name)}</td>
+        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
         ${holes.map((h) => {
           const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
           return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
@@ -3003,6 +3026,18 @@ const scorecard = {
     } catch (err) { _toast(err.message, 'error'); }
   },
 
+  async saveTeamNickname(teamName, nickname) {
+    if (!this.state) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams`, {
+        teamName,
+        nickname,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
   async addExtraTeamFromSettings() {
     if (!this.state) return;
     const name = this.nextAddTeamName(this.state);
@@ -3147,6 +3182,8 @@ const scorecard = {
         <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. Front, Back, and Overall can be pressed independently. No auto 2-down.</p>
         <h3>Wolf</h3>
         <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
+        <h3>Join code teams</h3>
+        <p>Host is Team 1 (optional nickname). A joiner with the code picks Team 2 / 3 / 4… or Add team — they are not auto Team 1. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
         <p>Everyone sees the same live round. You may enter scores only for players on your own team. Other teams are visible read-only. The server rejects cross-team score writes. Wolf is individual — rostered players can enter the Wolf card.</p>
         <h3>Score entry</h3>
@@ -3184,7 +3221,7 @@ const scorecard = {
     return `<div class="podium" id="podium">${places.map((p) => `
       <div class="podium-place ${p.cls}" data-place="${p.label}" hidden>
         <span class="podium-label">${p.label}</span>
-        <strong>${p.team ? _esc(p.team.name) : '—'}</strong>
+        <strong>${p.team ? _esc(this.teamDisplay(p.team)) : '—'}</strong>
         <span>${p.team ? this.fmtTeam(p.team.total) : ''}</span>
       </div>`).join('')}<div class="confetti" id="nineteenth-confetti" hidden></div></div>`;
   },
@@ -3253,7 +3290,7 @@ const scorecard = {
   drawNineteenth(state) {
     const container = document.getElementById('app');
     const fmt = (rows) => (rows || []).length
-      ? rows.map((t) => `${t.name} ${this.fmtTeam(t.total)}`).join(' · ')
+      ? rows.map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ')
       : '—';
     const facts = state.funFacts || {};
     const cfg = this.sideConfig(state);
@@ -3284,7 +3321,7 @@ const scorecard = {
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
         <h3>Sunday game</h3>
-        ${(state.teams || []).map((t) => `<p><strong>${_esc(t.name)}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
+        ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
         ${this.sideGamesResultsHtml(state)}
         ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
         ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}

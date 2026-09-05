@@ -6,9 +6,9 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 Hard gate stays: `npm run test:scorecard` hole-1 best 1G+2N = **+1** (A/B/C/D HCP 4/11/18/24, gross 5/6/7/8, Goldendale par 5 / SI 1). Unique Vercel hostname only when that holds. Co-author ColdGin87.
 
-### Sunday queue build-everything (ASSET_V `20260826z`)
+### Sunday queue build-everything (ASSET_V `20260905a`)
 
-Shipped the remaining Sunday/new queue on PR #2: Down/Across score advance (default Down), gross 1–19, Vegas games-running Press + two-line named up/down, Wolf setup toggles ±1/±2/Blind ±4 with live score entry, Nines running SUM paint, 19th podium 3→2→1 + confetti + reveal F/B/O/Skins + Spin your birdies door + share strip. Birdie slots count every gross or net better than par. Team write lock stays. Sunday game + 1G+1N / 1G+2N + Wyrm Coil stay. Hold merge.
+Shipped the remaining Sunday/new queue on PR #2: Down/Across score advance (default Down), gross 1–19, Vegas games-running Press + two-line named up/down, Wolf setup toggles ±1/±2/Blind ±4 with live score entry, Nines running SUM paint, 19th podium 3→2→1 + confetti + reveal F/B/O/Skins + Spin your birdies door + share strip. Birdie slots count every gross or net better than par. Team write lock stays. Join-code: host Team 1 + optional nickname; joiner picks Team 2+ or Add team (not auto Team 1); live card shows Team N · nickname on every login. Vegas no longer treats an unscored teammate (`gross: null`) as a birdie flip. Sunday game + 1G+1N / 1G+2N + Wyrm Coil stay. Hold merge.
 
 ### Wolf score entry + team write lock (ASSET_V `20260826y`)
 

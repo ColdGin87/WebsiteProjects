@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260826z/);
-    assert.match(html, /js\/formats\.js\?v=20260826z/);
-    assert.match(html, /js\/sideGames\.js\?v=20260826z/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260826z/);
-    assert.match(src, /ASSET_V:\s*'20260826z'/);
+    assert.match(html, /20260905a/);
+    assert.match(html, /js\/formats\.js\?v=20260905a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905a/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905a/);
+    assert.match(src, /ASSET_V:\s*'20260905a'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -243,6 +243,13 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /create-team-race-row/);
     assert.match(dash, /name="teamRace"/);
     assert.match(dash, /sideGamesFieldsInner/);
+    assert.match(dash, /team1Nickname/);
+    assert.match(dash, /renderJoinPicker/);
+    assert.match(dash, /not auto Team 1/);
+    const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+    assert.match(appSrc, /join-info/);
+    assert.match(src, /Join code teams/);
+    assert.match(src, /saveTeamNickname/);
     assert.match(src, /birdieSlotsOn/);
     assert.match(src, /wyrmCoil/);
     assert.match(src, /Birdie dragon slots/);

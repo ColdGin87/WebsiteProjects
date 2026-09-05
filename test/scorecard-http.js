@@ -364,7 +364,7 @@ async function runScenario(base) {
   });
   const joined = await api(base, 'POST', '/api/rounds/join', {
     token: friend.token,
-    body: { code: live.round.join_code || live.round.joinCode },
+    body: { code: live.round.join_code || live.round.joinCode, teamName: 'Team 2' },
   });
   const friendMember = joined.members.find((m) => m.display_name === 'Friend Two');
   if (!friendMember) fail('friend did not join the round');
@@ -637,7 +637,7 @@ async function runSideGamesScenario(base) {
   });
   await api(base, 'POST', '/api/rounds/join', {
     token: friend.token,
-    body: { code: live.round.join_code || live.round.joinCode },
+    body: { code: live.round.join_code || live.round.joinCode, teamName: 'Team 2' },
   });
   const pressed = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
     token: friend.token,
@@ -686,6 +686,67 @@ async function runSideGamesScenario(base) {
   const stillOverallTeam = (stillOverall.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillOverallTeam && stillOverallTeam.total, 1, 'nassau presses must not change hole-1 vs-par');
   console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press');
+}
+
+async function runJoinIdentityScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Join Host',
+      email: `scorecard.joinhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Join identity Sunday game',
+      format: 'team_net',
+      holes: '18',
+      team1Nickname: 'Birds',
+    },
+  });
+  const team1 = (created.teams || []).find((t) => t.name === 'Team 1');
+  assertEqual(team1 && team1.nickname, 'Birds', 'host Team 1 nickname');
+  assertEqual(team1 && team1.displayName, 'Team 1 · Birds', 'host Team 1 display');
+  const preview = await api(base, 'GET', `/api/rounds/join-info?code=${created.round.join_code || created.round.joinCode}`, {
+    token: host.token,
+  });
+  assertEqual(preview.nextTeamName, 'Team 2', 'next join team is Team 2');
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Join Friend',
+      email: `scorecard.joinfriend.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const refused = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: created.round.join_code || created.round.joinCode },
+  });
+  assertEqual(refused.status, 400, 'joiner must pick a team');
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: {
+      code: created.round.join_code || created.round.joinCode,
+      addTeam: true,
+      teamNickname: 'Wolves',
+      displayName: 'Ace',
+    },
+  });
+  const team2 = (joined.teams || []).find((t) => t.name === 'Team 2');
+  if (!team2) fail('joiner Add team should create Team 2');
+  assertEqual(team2.nickname, 'Wolves', 'joiner Team 2 nickname');
+  assertEqual(team2.displayName, 'Team 2 · Wolves', 'joiner Team 2 display');
+  const ace = (joined.members || []).find((m) => m.display_name === 'Ace');
+  if (!ace) fail('joiner card name Ace missing');
+  assertEqual(ace.team_id, team2.id, 'joiner is on Team 2 not Team 1');
+  const hostSees = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
+  const hostT2 = (hostSees.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(hostT2 && hostT2.displayName, 'Team 2 · Wolves', 'host sees same Team 2 name');
+  const hostAce = (hostSees.members || []).find((m) => m.display_name === 'Ace');
+  if (!hostAce) fail('host does not see joiner name Ace');
+  console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner not auto Team 1');
 }
 
 async function runWolfScenario(base) {
@@ -780,6 +841,7 @@ async function main() {
     await runTeam1VsParDemo(base);
     await runSideGamesScenario(base);
     await runWolfScenario(base);
+    await runJoinIdentityScenario(base);
   } finally {
     if (child) {
       child.kill('SIGTERM');

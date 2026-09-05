@@ -3059,6 +3059,24 @@ input.score-input:disabled {
   font-size: 0.85rem;
 }
 
+.add-team-more.is-on {
+  border-style: solid;
+  border-color: var(--accent);
+  background: #E8F5E9;
+  color: #1B5E20;
+}
+
+.join-picker .add-team-picks {
+  margin-bottom: 12px;
+}
+
+.team-nick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 8px 0 12px;
+}
+
 .hole-view.add-player-open .score-input,
 .hole-view.add-player-open [data-score-cell] {
   pointer-events: none;

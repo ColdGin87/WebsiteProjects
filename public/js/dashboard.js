@@ -182,7 +182,7 @@ const dashboard = {
   async promptJoin() {
     const values = await _formPrompt({
       title: 'Join a round',
-      submitLabel: 'Join',
+      submitLabel: 'Next',
       fields: [{
         name: 'code',
         label: '6-character join code',
@@ -194,12 +194,74 @@ const dashboard = {
       }],
     });
     if (!values) return;
-    try {
-      const state = await svcApi('post', '/api/rounds/join', { code: values.code });
-      app.navigate('#round/' + state.round.id);
-    } catch (err) {
-      _toast(err.message, 'error');
-    }
+    app.navigate('#join/' + String(values.code || '').trim().toUpperCase());
+  },
+
+  defaultJoinTeam(info) {
+    const next = (info && info.nextTeamName) || 'Team 2';
+    return next === 'Team 1' ? 'Team 2' : next;
+  },
+
+  renderJoinPicker(code, info) {
+    const container = document.getElementById('app');
+    const teams = (info && info.teams) || [];
+    const nextName = (info && info.nextTeamName) || 'Team 2';
+    const selected = this.defaultJoinTeam(info);
+    const chips = teams.map((t) => {
+      const on = t.name === selected ? ' is-on' : '';
+      return `<button type="button" class="add-team-chip${on}" data-join-team="${_esc(t.name)}">${_esc(t.displayName || t.name)} · ${t.memberCount || 0}</button>`;
+    }).join('');
+    container.innerHTML = `
+      <h2 class="section-title">Join ${ _esc((info && info.name) || 'Sunday game') }</h2>
+      <form class="card join-picker" id="join-picker-form">
+        <p class="card-subtitle">Code <strong>${_esc(code)}</strong>. Pick Team 2+ or Add team — you are not auto Team 1.</p>
+        <div class="add-team-picks" role="group" aria-label="Team">
+          ${chips}
+          <button type="button" class="add-team-more${selected === nextName && !teams.some((t) => t.name === nextName) ? ' is-on' : ''}" id="join-add-team" data-join-team="${_esc(nextName)}">Add team · ${_esc(nextName)}</button>
+          <input type="hidden" id="join-team-name" name="teamName" value="${_esc(selected)}">
+          <input type="hidden" id="join-add-flag" name="addTeam" value="${teams.some((t) => t.name === selected) ? '0' : '1'}">
+        </div>
+        <div class="form-group">
+          <label>Team nickname (optional)</label>
+          <input class="form-input" id="join-team-nick" name="teamNickname" maxlength="24" placeholder="e.g. Wolves">
+        </div>
+        <div class="form-group">
+          <label>Your name on the card (optional)</label>
+          <input class="form-input" id="join-display-name" name="displayName" maxlength="40" placeholder="${_esc((auth.currentUser && auth.currentUser.name) || 'Nickname')}">
+        </div>
+        <div class="card-footer">
+          <button class="btn btn-primary" type="submit">Join this team</button>
+        </div>
+        <div class="form-error" id="join-picker-error"></div>
+      </form>`;
+    const form = document.getElementById('join-picker-form');
+    const hidden = document.getElementById('join-team-name');
+    const addFlag = document.getElementById('join-add-flag');
+    form.querySelectorAll('[data-join-team]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        form.querySelectorAll('[data-join-team]').forEach((b) => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        hidden.value = btn.getAttribute('data-join-team');
+        addFlag.value = btn.id === 'join-add-team' ? '1' : '0';
+      });
+    });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById('join-picker-error');
+      try {
+        const state = await svcApi('post', '/api/rounds/join', {
+          code,
+          teamName: hidden.value,
+          addTeam: addFlag.value === '1',
+          teamNickname: (document.getElementById('join-team-nick') || {}).value || '',
+          displayName: (document.getElementById('join-display-name') || {}).value || '',
+        });
+        app.navigate('#round/' + state.round.id);
+      } catch (err) {
+        if (errEl) errEl.textContent = err.message;
+        else _toast(err.message, 'error');
+      }
+    });
   },
 
   async renderCreate() {
@@ -263,7 +325,11 @@ const dashboard = {
               <option value="back9">Back 9</option>
             </select>
           </div>
-          <p class="card-subtitle">Handicap = Index only. Round at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.</p>
+          <div class="form-group">
+            <label>Team 1 name (optional)</label>
+            <input class="form-input" name="team1Nickname" maxlength="24" placeholder="e.g. Birds">
+          </div>
+          <p class="card-subtitle">Handicap = Index only. Round at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap. You start on Team 1. Joiners pick Team 2+.</p>
           <label class="check-row" id="create-dual-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
           <div class="form-group" id="create-side-games">
             <label>Side games</label>
@@ -318,6 +384,7 @@ const dashboard = {
             netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
             teamRace: fd.get('teamRace') === 'on',
+            team1Nickname: fd.get('team1Nickname') || '',
             sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
               ? scorecard.readSideGamesForm(fd)
               : undefined,

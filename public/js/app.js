@@ -128,8 +128,13 @@ const app = {
       return;
     }
     try {
-      const state = await svcApi('post', '/api/rounds/join', { code });
-      this.navigate('#round/' + state.round.id);
+      const info = await svcApi('get', '/api/rounds/join-info?code=' + encodeURIComponent(code));
+      if (info && info.alreadyJoined) {
+        const state = await svcApi('post', '/api/rounds/join', { code });
+        this.navigate('#round/' + state.round.id);
+        return;
+      }
+      dashboard.renderJoinPicker(String(code).toUpperCase(), info);
     } catch (err) {
       container.innerHTML = `<div class="empty-state"><h3>Could not join</h3><p>${_esc(err.message)}</p></div>`;
     }

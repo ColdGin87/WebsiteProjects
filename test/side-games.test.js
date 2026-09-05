@@ -104,6 +104,17 @@ describe('Vegas', () => {
     assert.equal(both.numB, 64);
   });
 
+  it('does not treat a missing teammate gross as a birdie flip', () => {
+    const par = 5;
+    const a = [{ gross: null, net: null }, { gross: 5, net: 4 }, { gross: 6, net: 5 }];
+    const b = [{ gross: 6, net: 6 }, { gross: 7, net: 7 }];
+    const row = scoreVegasHole(a, b, { scoring: 'gross', par });
+    assert.equal(row.numA, 56);
+    assert.equal(row.numB, 67);
+    assert.equal(row.flipB, false);
+    assert.equal(row.points, 11);
+  });
+
   it('uses net numbers but only flips on a gross birdie', () => {
     const par = 4;
     const a = [{ gross: 5, net: 3 }, { gross: 5, net: 4 }];

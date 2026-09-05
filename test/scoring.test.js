@@ -13,6 +13,9 @@ const {
   formatRuleText,
   formatLabel,
   shortFormatLabel,
+  teamDisplayName,
+  nextTeamLabel,
+  sanitizeNickname,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
@@ -506,6 +509,16 @@ describe('resultsText leading vs winning', () => {
     });
     assert.equal(text.includes('Individual'), false);
     assert.match(text, /Unassigned/);
+  });
+});
+
+describe('team identity', () => {
+  it('shows Team N · nickname and finds the next Team number', () => {
+    assert.equal(sanitizeNickname('  Birds  '), 'Birds');
+    assert.equal(teamDisplayName({ name: 'Team 1' }), 'Team 1');
+    assert.equal(teamDisplayName({ name: 'Team 1', nickname: 'Birds' }), 'Team 1 · Birds');
+    assert.equal(nextTeamLabel([{ name: 'Team 1' }]), 'Team 2');
+    assert.equal(nextTeamLabel([{ name: 'Team 1' }, { name: 'Team 2' }]), 'Team 3');
   });
 });
 
