@@ -2,9 +2,17 @@
 
 ## Developer
 
-Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
+### Phone Full card + joiner Add player (ASSET_V `20260906a`)
+
+New PR from Main (`cursor/goldendale-phone-fixes-e030`). Hole view stays the default on ~390px, with a visible **Full card** control next to Hole N (not overflow-only) and **This hole** to flip back. Back + ⋯ still holds Settings / Game Rules.
+
+Join-code: host stays Team 1; joiners pick Team 2+ / Add team. After joining, a member can **Add player** (name + HCP) onto **their own team only**. Server accepts those guest adds and rejects cross-team adds. Own-team score write lock is unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
 
 ### Production clean slate (ASSET_V `20260905u`)
+
+Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
 
 Shipped app no longer opens demo foursomes or Team 1 vs-par sample rounds. Demo HTTP routes stay for unit tests behind `ALLOW_DEMO=1`. Production runtime does not preload players or scores. Same PR #2.
 

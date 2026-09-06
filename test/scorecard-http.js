@@ -772,7 +772,48 @@ async function runJoinIdentityScenario(base) {
   assertEqual(hostT2 && hostT2.displayName, 'Team 2 · Wolves', 'host sees same Team 2 name');
   const hostAce = (hostSees.members || []).find((m) => m.display_name === 'Ace');
   if (!hostAce) fail('host does not see joiner name Ace');
-  console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner not auto Team 1');
+
+  const added = await api(base, 'POST', `/api/rounds/${created.round.id}/guests`, {
+    token: joiner.token,
+    body: { name: 'Buddy', handicap: 12, teamName: 'Team 2' },
+  });
+  const buddy = (added.members || []).find((m) => m.display_name === 'Buddy');
+  if (!buddy) fail('joiner Add player Buddy missing');
+  assertEqual(buddy.team_id, team2.id, 'joiner added guest to own Team 2');
+  assertEqual(!!buddy.is_guest, true, 'Buddy is a guest');
+
+  const implicit = await api(base, 'POST', `/api/rounds/${created.round.id}/guests`, {
+    token: joiner.token,
+    body: { name: 'Pal', handicap: 10 },
+  });
+  const pal = (implicit.members || []).find((m) => m.display_name === 'Pal');
+  if (!pal) fail('joiner default Add player Pal missing');
+  assertEqual(pal.team_id, team2.id, 'joiner default add lands on own team');
+
+  const cross = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/guests`, {
+    token: joiner.token,
+    body: { name: 'Spy', handicap: 8, teamName: 'Team 1' },
+  });
+  assertEqual(cross.status, 403, 'joiner cannot add a player to Team 1');
+  const spy = ((cross.body && cross.body.members) || []).find((m) => m.display_name === 'Spy');
+  if (spy) fail('cross-team guest must not be created');
+
+  const hostAfter = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
+  if ((hostAfter.members || []).some((m) => m.display_name === 'Spy')) {
+    fail('host must not see a rejected Team 1 guest');
+  }
+  const hostBuddy = (hostAfter.members || []).find((m) => m.display_name === 'Buddy');
+  assertEqual(hostBuddy && hostBuddy.team_id, team2.id, 'host sees joiner guest on Team 2');
+
+  const hostMember = (hostAfter.members || []).find((m) => Number(m.player_id) === Number(host.user && host.user.id));
+  if (!hostMember) fail('host member missing for score-lock check');
+  const scoreLock = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/scores`, {
+    token: joiner.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  assertEqual(scoreLock.status, 403, 'joiner must not write Team 1 scores');
+
+  console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner Add player own team only');
 }
 
 async function runWolfScenario(base) {

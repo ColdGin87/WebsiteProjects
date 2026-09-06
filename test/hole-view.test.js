@@ -68,18 +68,19 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905u/);
-    assert.match(html, /js\/formats\.js\?v=20260905u/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905u/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905u/);
-    assert.match(src, /ASSET_V:\s*'20260905u'/);
+    assert.match(html, /20260906a/);
+    assert.match(html, /js\/formats\.js\?v=20260906a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906a/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906a/);
+    assert.match(src, /ASSET_V:\s*'20260906a'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
     const draw = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(draw, /holeToolbar/);
     assert.doesNotMatch(draw, /See dashboard/);
-    assert.doesNotMatch(draw, /Full card/);
+    assert.match(draw, /hole-full-card-btn/);
+    assert.match(draw, /setCardMode\('full'\)/);
     const bar = sliceFn('holeToolbar(state) {', 'bindHoleOverflowDismiss');
     assert.match(bar, />Back</);
     assert.match(bar, /hole-overflow/);
@@ -199,6 +200,35 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.nines-board/);
     assert.match(css, /\.nines-player-stack/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
+  });
+
+  it('lets a joined non-organizer add players onto their own team', () => {
+    const gate = sliceFn('canAddPlayer(state)', 'myTeamName(state)');
+    assert.match(gate, /isOrganizer/);
+    assert.match(gate, /myMember/);
+    assert.match(src, /canAddPlayer\(state\)/);
+    const panel = sliceFn('addPlayerPanel(state)', 'addPlayerPanelInner(state)');
+    assert.match(panel, /canAddPlayer/);
+    assert.doesNotMatch(panel, /isOrganizer\(state\)\) return ''/);
+    assert.match(src, /myTeamName\(state\)/);
+    const chips = sliceFn('addTeamChipsHtml(selected)', 'addExtraTeam()');
+    assert.match(chips, /isOrganizer/);
+    assert.match(chips, /myTeamName/);
+    const extra = sliceFn('addExtraTeam()', 'snapshotAddPlayer()');
+    assert.match(extra, /isOrganizer\(this\.state\)\) return/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.match(routes, /canAddGuestToTeam/);
+    assert.match(routes, /You can only add players to your own team/);
+    assert.match(routes, /findExistingTeamId/);
+  });
+
+  it('shows This hole on the full card so phone users can leave Full card', () => {
+    const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    assert.match(full, /This hole/);
+    assert.match(full, /setCardMode\('hole'\)/);
+    assert.match(full, /hole-this-hole/);
+    assert.match(css, /\.hole-full-card-btn/);
+    assert.match(css, /\.hole-number-row/);
   });
 
   it('live add-player is name, HCP, and Team 1 / 2 / 3 chips in one flow', () => {

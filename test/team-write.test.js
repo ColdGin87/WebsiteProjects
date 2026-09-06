@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { sameTeamIds, canWriteTeamScore } = require('../lib/scoring/teamWrite');
+const { sameTeamIds, canWriteTeamScore, canAddGuestToTeam } = require('../lib/scoring/teamWrite');
 
 describe('Team write lock', () => {
   it('requires both sides to share a numeric team id', () => {
@@ -22,5 +22,15 @@ describe('Team write lock', () => {
     assert.equal(canWriteTeamScore(me, none), false);
     assert.equal(canWriteTeamScore(none, none), false);
     assert.equal(canWriteTeamScore(null, mate), false);
+  });
+
+  it('lets a member add a guest only onto their own team', () => {
+    const me = { id: 1, team_id: 10 };
+    assert.equal(canAddGuestToTeam(me, 10), true);
+    assert.equal(canAddGuestToTeam(me, '10'), true);
+    assert.equal(canAddGuestToTeam(me, 20), false);
+    assert.equal(canAddGuestToTeam({ id: 2, teamId: 7 }, 7), true);
+    assert.equal(canAddGuestToTeam({ id: 3, team_id: null }, 10), false);
+    assert.equal(canAddGuestToTeam(null, 10), false);
   });
 });

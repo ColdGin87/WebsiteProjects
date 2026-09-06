@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905u',
+  ASSET_V: '20260906a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -975,8 +975,21 @@ const scorecard = {
       .flatMap((g) => g.members || []);
   },
 
+  canAddPlayer(state) {
+    if (this.isOrganizer(state)) return true;
+    const me = this.myMember(state);
+    return !!(me && ((me.team_id != null && me.team_id !== '') || (me.teamId != null && me.teamId !== '')));
+  },
+
+  myTeamName(state) {
+    const me = this.myMember(state);
+    if (!me) return 'Team 1';
+    const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me.team_id ?? me.teamId));
+    return (team && team.name) || 'Team 1';
+  },
+
   addPlayerPanel(state) {
-    if (!this.isOrganizer(state)) return '';
+    if (!this.canAddPlayer(state)) return '';
     return `<div id="add-player-panel" class="add-player-panel">${this.addPlayerPanelInner(state)}</div>`;
   },
 
@@ -985,12 +998,17 @@ const scorecard = {
     if (count >= 2 && !this.addPlayerOpen) {
       return `<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
     }
-    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: 'Team 1' };
-    const teamName = draft.teamName || 'Team 1';
+    const organizer = this.isOrganizer(state);
+    const mine = this.myTeamName(state);
+    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: organizer ? 'Team 1' : mine };
+    const teamName = organizer ? (draft.teamName || 'Team 1') : mine;
+    const subtitle = organizer
+      ? 'Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.'
+      : 'Name, HCP, then your team. Guests you add stay on your team.';
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player ${this.infoTip('add-player', 'Name, handicap index, and an explicit team. Strokes follow the rounded index on the scorecard SI. Auto-balance is only a helper.')}</h3>
-        <p class="card-subtitle">Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.</p>
+        <p class="card-subtitle">${subtitle}</p>
         <form class="add-guest-row add-player-form" id="live-add-player-form">
           <label class="add-field">
             <span>Name</span>
@@ -1033,20 +1051,23 @@ const scorecard = {
   },
 
   addTeamChipsHtml(selected) {
-    const current = selected || 'Team 1';
-    const names = this.addTeamNames(this.state);
+    const organizer = this.isOrganizer(this.state);
+    const mine = this.myTeamName(this.state);
+    const current = organizer ? (selected || 'Team 1') : mine;
+    const names = organizer ? this.addTeamNames(this.state) : [mine];
     return `<div class="add-team-picks" role="group" aria-label="Team">
       ${names.map((n) => {
         const team = ((this.state && this.state.teams) || []).find((t) => t.name === n);
         const label = team ? this.teamDisplay(team) : n;
         return `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${_esc(label)}</button>`;
       }).join('')}
-      <button type="button" class="add-team-more" id="add-extra-team">Add team</button>
+      ${organizer ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
       <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
     </div>`;
   },
 
   addExtraTeam() {
+    if (!this.isOrganizer(this.state)) return;
     this.snapshotAddPlayer();
     const name = this.nextAddTeamName(this.state);
     if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name, extraTeams: [] };
@@ -1081,7 +1102,7 @@ const scorecard = {
   },
 
   pickAddTeam(teamName) {
-    const name = teamName || 'Team 1';
+    const name = this.isOrganizer(this.state) ? (teamName || 'Team 1') : this.myTeamName(this.state);
     if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name };
     this.addPlayerDraft.teamName = name;
     const hidden = document.getElementById('live-add-guest-team');
@@ -1106,6 +1127,11 @@ const scorecard = {
     }
     this.addPlayerOpen = true;
     this.addPlayerSuppressUntil = Date.now() + 450;
+    if (!this.isOrganizer(this.state)) {
+      const mine = this.myTeamName(this.state);
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: mine };
+      else this.addPlayerDraft.teamName = mine;
+    }
     this.mountAddPlayerPanel();
     const name = document.getElementById('live-add-guest-name');
     if (name) name.focus();
@@ -2426,7 +2452,10 @@ const scorecard = {
           ${this.nassauPressButtonsHtml(state, holeNumber, 'nassau-press-wrap-card')}
           ${this.nassauBoardHtml(state, 'nassau-board-card')}
           ${this.liveGameTitleHtml(state)}
-          <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+          <div class="hole-number-row">
+            <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+            <button type="button" class="btn btn-sm btn-accent hole-full-card-btn" onclick="scorecard.setCardMode('full')">Full card</button>
+          </div>
           ${this.vegasBoardHtml(state)}
           ${this.vegasPressButtonHtml(state, holeNumber)}
           ${this.ninesBoardHtml(state)}
@@ -2639,7 +2668,7 @@ const scorecard = {
     const formatLabel = this.teamFormatLabel(r);
     const outHoles = holes.filter((h) => h.hole_number <= 9);
     const inHoles = holes.filter((h) => h.hole_number >= 10);
-    const holeToggle = '<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode(\'hole\')">This hole</button>';
+    const holeToggle = '<button type="button" class="btn btn-sm btn-accent hole-this-hole" onclick="scorecard.setCardMode(\'hole\')">This hole</button>';
 
     container.innerHTML = `
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
@@ -3421,7 +3450,9 @@ const scorecard = {
     const prefix = which === 'live' ? 'live-add-guest-' : 'add-guest-';
     const name = (document.getElementById(prefix + 'name') || {}).value;
     const handicap = (document.getElementById(prefix + 'hcp') || {}).value;
-    const teamName = (document.getElementById(prefix + 'team') || {}).value;
+    const rawTeam = (document.getElementById(prefix + 'team') || {}).value;
+    const organizer = this.isOrganizer(this.state);
+    const teamName = organizer ? (rawTeam || 'Team 1') : this.myTeamName(this.state);
     if (!name) return;
     try {
       const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests`, {
@@ -3436,7 +3467,7 @@ const scorecard = {
         this.addPlayerDraft = {
           name: '',
           handicap: '',
-          teamName: teamName || 'Team 1',
+          teamName: teamName || (organizer ? 'Team 1' : this.myTeamName(this.state)),
           extraTeams: (this.addPlayerDraft && this.addPlayerDraft.extraTeams) || [],
         };
         this._preserveAddDraft = true;

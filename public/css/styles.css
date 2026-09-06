@@ -2612,6 +2612,42 @@ img {
   margin: 4px 0 2px;
 }
 
+.hole-number-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+
+.hole-number-row .hole-number {
+  margin: 0;
+}
+
+.hole-full-card-btn {
+  flex: 0 0 auto;
+  min-height: 48px;
+  min-width: 7.25rem;
+  padding: 0 14px;
+  font-weight: 800;
+  font-size: 1rem;
+}
+
+.hole-this-hole {
+  font-weight: 800;
+}
+
+@media (max-width: 600px) {
+  .hole-full-card-btn {
+    min-height: 52px;
+    font-size: 1.05rem;
+  }
+
+  .round-toolbar .hole-this-hole {
+    min-height: 48px;
+  }
+}
+
 .vegas-board {
   margin: 6px 0 8px;
   padding: 8px 10px;
