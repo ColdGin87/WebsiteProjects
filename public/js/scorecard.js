@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906b',
+  ASSET_V: '20260906c',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -1886,6 +1886,38 @@ const scorecard = {
     return n > 0 ? '+' + n : String(n);
   },
 
+  teamRunThrough(team, holeNumber) {
+    const vp = window.vsPar;
+    const rows = (team && team.holes) || [];
+    if (vp && typeof vp.runningTeamVsPar === 'function') {
+      return vp.runningTeamVsPar(rows, holeNumber);
+    }
+    let sum = 0;
+    let any = false;
+    const through = Number(holeNumber);
+    for (const hole of rows) {
+      const n = Number(hole.holeNumber ?? hole.hole_number);
+      if (!Number.isFinite(n) || n > through) continue;
+      if (hole.total == null || hole.total === '') continue;
+      const v = Number(hole.total);
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      any = true;
+    }
+    return any ? sum : null;
+  },
+
+  teamRunText(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) return '—';
+    return this.fmtTeam(this.teamRunThrough(team, holeNumber));
+  },
+
+  teamHoleText(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) return '—';
+    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    return this.fmtTeam(hole && hole.total);
+  },
+
   teamFormatLabel(round) {
     if (!round || round.format === 'match_play') return 'Match play';
     const tf = window.teamFormats;
@@ -2596,20 +2628,22 @@ const scorecard = {
 
   oneHoleTeamTotal(state, team, holeNumber) {
     const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    const seen = this.canSeeTeamScores(state, team);
     const bits = [];
-    if (this.showOut(state) && team.out != null) bits.push(`OUT ${this.fmtTeam(team.out)}`);
-    if (this.showIn(state) && team.inn != null) bits.push(`IN ${this.fmtTeam(team.inn)}`);
-    if (this.showIn(state) && team.total != null) bits.push(`TOT ${this.fmtTeam(team.total)}`);
+    if (this.showOut(state)) bits.push(`OUT ${seen ? this.fmtTeam(team.out) : '—'}`);
+    if (this.showIn(state)) bits.push(`IN ${seen ? this.fmtTeam(team.inn) : '—'}`);
+    if (this.showIn(state)) bits.push(`TOT ${seen ? this.fmtTeam(team.total) : '—'}`);
     const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(this.teamDisplay(team))} hole`;
     return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
       <div class="hole-team-scoreline">
         <span>${raceLabel}</span>
-        <strong data-team-hole-score="${team.id}:${holeNumber}">${this.fmtTeam(hole?.total)}</strong>
-        <span class="running-total">run <span data-team-tot="${team.id}">${this.fmtTeam(team.total)}</span></span>
+        <strong data-team-hole-score="${team.id}:${holeNumber}">${this.teamHoleText(state, team, holeNumber)}</strong>
+      </div>
+      <div class="hole-team-runline vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
+        <div class="vs-par-run"><span class="vs-par-label">Running</span> <strong data-team-run="${team.id}:${holeNumber}">${this.teamRunText(state, team, holeNumber)}</strong></div>
       </div>
       ${bits.length ? `<div class="nine-line">${bits.join(' · ')}</div>` : ''}
       ${this.teamBallsHtml(team, holeNumber)}
-      ${this.vsParLinesHtml(state, team, holeNumber)}
     </div>`;
   },
 
@@ -2682,6 +2716,8 @@ const scorecard = {
       if (score) score.setAttribute('data-team-hole-score', teamId + ':' + holeNumber);
       const vs = wrap.querySelector('[data-vs-par]');
       if (vs) vs.setAttribute('data-vs-par', teamId + ':' + holeNumber);
+      const run = wrap.querySelector('[data-team-run]');
+      if (run) run.setAttribute('data-team-run', teamId + ':' + holeNumber);
     });
     document.querySelectorAll('#hole-players [data-vegas-total]').forEach((wrap) => {
       const teamId = wrap.dataset.vegasTotal;
@@ -2988,6 +3024,7 @@ const scorecard = {
   },
 
   oneTeamRow(state, team, holes, showOut, showIn) {
+    const seen = this.canSeeTeamScores(state, team);
     return `
       <tr class="row-team" data-team-row="${team.id}">
         <td class="row-label">${_esc(this.teamDisplay(team))}</td>
@@ -2995,12 +3032,13 @@ const scorecard = {
           const hole = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
           return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
             onclick="scorecard.revealHoleBalls(${h.hole_number})">
-            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.fmtTeam(hole?.total)}</span>
+            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
+            <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
           </td>`;
         }).join('')}
-        ${showOut ? `<td class="sc-total">${this.fmtTeam(team.out)}</td>` : ''}
-        ${showIn ? `<td class="sc-total">${this.fmtTeam(team.inn)}</td>` : ''}
-        ${showIn ? `<td class="sc-total"><strong data-team-tot="${team.id}">${this.fmtTeam(team.total)}</strong></td>` : ''}
+        ${showOut ? `<td class="sc-total" data-team-out="${team.id}">${seen ? this.fmtTeam(team.out) : '—'}</td>` : ''}
+        ${showIn ? `<td class="sc-total" data-team-in="${team.id}">${seen ? this.fmtTeam(team.inn) : '—'}</td>` : ''}
+        ${showIn ? `<td class="sc-total"><strong data-team-tot="${team.id}">${seen ? this.fmtTeam(team.total) : '—'}</strong></td>` : ''}
       </tr>`;
   },
 
@@ -3056,18 +3094,16 @@ const scorecard = {
   },
 
   vsParPair(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) {
+      return { holeText: '—', runText: '—' };
+    }
     const vp = window.vsPar || {};
-    const course = (state.holes || []).find((h) => h.hole_number === holeNumber);
     const teamHole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
-    const holeVal = vp.holeTeamVsPar ? vp.holeTeamVsPar(teamHole && teamHole.total, course && course.par) : null;
-    const runRows = (state.holes || []).map((h) => {
-      const th = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
-      return { holeNumber: h.hole_number, par: h.par, total: th && th.total };
-    });
-    const runVal = vp.runningTeamVsPar ? vp.runningTeamVsPar(runRows, holeNumber) : null;
+    const holeVal = vp.holeTeamVsPar ? vp.holeTeamVsPar(teamHole && teamHole.total) : (teamHole && teamHole.total);
+    const runVal = this.teamRunThrough(team, holeNumber);
     return {
-      holeText: vp.formatVsPar ? (vp.formatVsPar(holeVal) || '—') : '—',
-      runText: vp.formatVsPar ? (vp.formatVsPar(runVal) || '—') : '—',
+      holeText: this.fmtTeam(holeVal),
+      runText: this.fmtTeam(runVal),
     };
   },
 
@@ -3075,7 +3111,7 @@ const scorecard = {
     const pair = this.vsParPair(state, team, holeNumber);
     return `<div class="vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
       <div class="vs-par-hole"><span class="vs-par-label">Hole</span> ${pair.holeText}</div>
-      <div class="vs-par-run"><span class="vs-par-label">Running</span> ${pair.runText}</div>
+      <div class="vs-par-run"><span class="vs-par-label">Running</span> <strong data-team-run="${team.id}:${holeNumber}">${pair.runText}</strong></div>
     </div>`;
   },
 
@@ -3087,12 +3123,13 @@ const scorecard = {
           const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
           return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
             onclick="scorecard.revealHoleBalls(${h.hole_number})">
-            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.fmtTeam(hole?.total)}</span>
+            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
+            <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
           </td>`;
         }).join('')}
-        ${outHoles.length ? `<td class="sc-total">${this.fmtTeam(team.out)}</td>` : ''}
-        ${inHoles.length ? `<td class="sc-total">${this.fmtTeam(team.inn)}</td>` : ''}
-        <td class="sc-total"><strong data-team-tot="${team.id}">${this.fmtTeam(team.total)}</strong></td>
+        ${outHoles.length ? `<td class="sc-total" data-team-out="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.out) : '—'}</td>` : ''}
+        ${inHoles.length ? `<td class="sc-total" data-team-in="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.inn) : '—'}</td>` : ''}
+        <td class="sc-total"><strong data-team-tot="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.total) : '—'}</strong></td>
       </tr>`).join('');
   },
 
@@ -3245,10 +3282,17 @@ const scorecard = {
       document.querySelectorAll('[data-team-hole-score="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
         el.textContent = seen ? this.fmtTeam(hole?.total) : '—';
       });
+      document.querySelectorAll('[data-team-run="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
+        el.textContent = seen ? this.fmtTeam(this.teamRunThrough(team, holeNumber)) : '—';
+      });
       const wrap = document.querySelector('[data-team-total="' + team.id + '"]');
       if (wrap) wrap.classList.toggle('incomplete', !!hole?.incomplete);
       const tot = document.querySelector('[data-team-tot="' + team.id + '"]');
-      if (tot) tot.textContent = this.fmtTeam(team.total);
+      if (tot) tot.textContent = seen ? this.fmtTeam(team.total) : '—';
+      const out = document.querySelector('[data-team-out="' + team.id + '"]');
+      if (out) out.textContent = seen ? this.fmtTeam(team.out) : '—';
+      const inn = document.querySelector('[data-team-in="' + team.id + '"]');
+      if (inn) inn.textContent = seen ? this.fmtTeam(team.inn) : '—';
       this.paintTeamVsPar(team);
     }
     this.paintVegas(holeNumber);
@@ -3350,9 +3394,13 @@ const scorecard = {
       const pair = this.vsParPair(this.state, team, course.hole_number);
       document.querySelectorAll('[data-vs-par="' + team.id + ':' + course.hole_number + '"]').forEach((el) => {
         const holeEl = el.querySelector('.vs-par-hole');
-        const runEl = el.querySelector('.vs-par-run');
+        const runEl = el.querySelector('[data-team-run], .vs-par-run strong, .vs-par-run');
         if (holeEl) holeEl.innerHTML = '<span class="vs-par-label">Hole</span> ' + pair.holeText;
-        if (runEl) runEl.innerHTML = '<span class="vs-par-label">Running</span> ' + pair.runText;
+        if (runEl && runEl.hasAttribute && runEl.hasAttribute('data-team-run')) {
+          runEl.textContent = pair.runText;
+        } else if (runEl) {
+          runEl.innerHTML = '<span class="vs-par-label">Running</span> ' + pair.runText;
+        }
       });
     }
   },
@@ -3716,7 +3764,7 @@ const scorecard = {
         <h2 class="card-title">Game Rules</h2>
         <p class="card-subtitle">House rules. Short and plain. Tap ℹ on the live card for one-line help.</p>
         <h3>Sunday game</h3>
-        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
+        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
         <h3>Handicap index</h3>
         <p>No course handicap. Round the index at 0.5 (2.4→2, 2.5→3, 18.7→19, 1.3→1). That integer is applied by scorecard stroke index for every net game.</p>
         <h3>Skins</h3>

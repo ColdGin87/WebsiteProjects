@@ -2,6 +2,12 @@
 
 ## Developer
 
+### Sunday game Running vs-par (ASSET_V `20260906c`)
+
+Same PR #3. Hold merge. Under each hole’s team vs-par total, **Running** is the cumulative vs-par through that hole (−2 then −3 = −5; −2 then +3 = +1). Hole view shows it under the current hole so you don’t need the full card. Full card keeps the hole total plus Running, and OUT / IN / TOT after 9 / 18. Show-other-teams OFF still hides opposing Running. Write lock unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
 ### Team write lock + hide other teams (ASSET_V `20260906b`)
 
 Same PR #3 (`cursor/goldendale-phone-fixes-e030`). Hold merge.

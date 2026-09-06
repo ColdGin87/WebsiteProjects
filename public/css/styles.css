@@ -3059,11 +3059,16 @@ input.score-input[readonly] {
   gap: 4px;
 }
 
-.hole-team-scoreline {
+.hole-team-scoreline,
+.hole-team-runline {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+.hole-team-runline {
+  font-size: 0.95rem;
 }
 
 .team-balls,
@@ -3104,8 +3109,14 @@ input.score-input[readonly] {
   font-weight: 800;
 }
 
-.team-hole-cell .vs-par-lines {
-  display: none;
+.team-hole-cell .vs-par-lines,
+.team-hole-cell .team-hole-run {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #333;
+  margin-top: 2px;
 }
 
 .hole-team-total.incomplete,

@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906b/);
-    assert.match(html, /js\/formats\.js\?v=20260906b/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906b/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906b/);
-    assert.match(src, /ASSET_V:\s*'20260906b'/);
+    assert.match(html, /20260906c/);
+    assert.match(html, /js\/formats\.js\?v=20260906c/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906c/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906c/);
+    assert.match(src, /ASSET_V:\s*'20260906c'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -278,6 +278,18 @@ describe('Combined PR3 hole view', () => {
     const players = sliceFn('holePlayersHtml(state, holeNumber)', 'holeToolbar(state)');
     assert.match(players, /group\.team/);
     assert.match(players, /oneHoleTeamTotal/);
+    assert.match(src, /teamRunThrough/);
+    assert.match(src, /data-team-run/);
+    assert.match(src, />Running</);
+    const holeTotal = sliceFn('oneHoleTeamTotal(state, team, holeNumber)', 'kpPickerHtml(state, holeNumber)');
+    assert.match(holeTotal, /Running/);
+    assert.match(holeTotal, /teamRunText/);
+    assert.match(holeTotal, /canSeeTeamScores/);
+    const teamRow = sliceFn('oneTeamRow(state, team, holes, showOut, showIn) {', 'oneVegasRow(state, team, holes, showOut, showIn)');
+    assert.match(teamRow, /data-team-run/);
+    assert.match(teamRow, /Running/);
+    assert.match(teamRow, /canSeeTeamScores/);
+    assert.match(teamRow, /data-team-out/);
     assert.match(players, /oneHoleVegasTotal/);
     assert.ok(players.indexOf('oneHoleVegasTotal') < players.indexOf('oneHoleTeamTotal'), 'Vegas is primary under the team');
     assert.match(players, /isVegasOn/);

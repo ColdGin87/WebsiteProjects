@@ -310,6 +310,10 @@ describe('stroke dots and team vs-par display', () => {
     assert.equal(formatVsPar(runningTeamVsPar(holes, 1)), '-2');
     assert.equal(runningTeamVsPar(holes, 2), 0);
     assert.equal(formatVsPar(runningTeamVsPar(holes, 2)), 'E');
+    assert.equal(runningTeamVsPar([{ holeNumber: 1, total: -2 }, { holeNumber: 2, total: -3 }], 2), -5);
+    assert.equal(formatVsPar(runningTeamVsPar([{ holeNumber: 1, total: -2 }, { holeNumber: 2, total: -3 }], 2)), '-5');
+    assert.equal(runningTeamVsPar([{ holeNumber: 1, total: -2 }, { holeNumber: 2, total: 3 }], 2), 1);
+    assert.equal(formatVsPar(runningTeamVsPar([{ holeNumber: 1, total: -2 }, { holeNumber: 2, total: 3 }], 2)), '+1');
   });
 });
 
