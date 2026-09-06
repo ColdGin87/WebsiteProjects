@@ -10,6 +10,8 @@ The shared join / access code sits at the **top** of hole view and the full card
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
+Unique host (READY, SHA `f37258c`, ASSET_V `20260906f`): https://website-projects-gzdxc9cyi-coldgin87s-projects.vercel.app
+
 ### Scam / hack / backdoor hardening (ASSET_V `20260906e`)
 
 New PR from Main. Hold merge — David must say merge.
