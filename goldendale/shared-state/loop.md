@@ -10,6 +10,8 @@ Join-code: host stays Team 1; joiners pick Team 2+ / Add team. After joining, a 
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
+Unique host (READY, SHA `f4f4c28`, ASSET_V `20260906a`): https://website-projects-f4be1n5yt-coldgin87s-projects.vercel.app
+
 ### Production clean slate (ASSET_V `20260905u`)
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
