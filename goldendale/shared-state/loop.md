@@ -6,7 +6,7 @@ Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`
 
 ### Nassau Press pinned under the header (ASSET_V `20260905p`)
 
-MUST-FIX: David still saw no Nassau Press. The sticky dock sat at `top: 0` / `z-index: 45` and slid under the 60px site header. Press Front / Back / Overall now live in the hole toolbar (yellow/red, always on the live card) and the dock sticks at 60px. RUNNING for Front, Back, Overall, and each press stays. Same PR #2. Hold merge.
+MUST-FIX: David still saw no Nassau Press. The sticky dock sat at `top: 0` / `z-index: 45` and slid under the 60px site header. Press Front / Back / Overall now live in the hole toolbar and the full-card chrome (yellow/red). That bar sticks at 60px so it stays while scores scroll. The live dock is no longer trapped inside the full-card box. RUNNING for Front, Back, Overall, and each press stays. Same PR #2. Hold merge.
 
 ### Nassau Front/Back/Overall Press + live RUNNING (ASSET_V `20260905o`)
 

@@ -161,6 +161,13 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.nassau-live-dock[\s\S]{0,80}position:\s*sticky/);
     assert.match(css, /\.nassau-toolbar-press/);
     assert.match(css, /\.nassau-live-dock[\s\S]{0,120}top:\s*60px/);
+    assert.match(css, /\.nassau-toolbar-press[\s\S]{0,80}position:\s*sticky/);
+    assert.match(src, /drawFullCard\(state\)[\s\S]+nassauToolbarPressHtml/);
+    const fullCard = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    assert.match(fullCard, /nassauToolbarPressHtml/);
+    assert.match(fullCard, /nassauLiveDockHtml/);
+    assert.ok(fullCard.indexOf('nassauToolbarPressHtml') < fullCard.indexOf('nassauLiveDockHtml'), 'Nassau Press sits above the full-card dock');
+    assert.ok(fullCard.indexOf('nassauLiveDockHtml') < fullCard.indexOf('<div class="card">'), 'Nassau dock is not trapped inside the full-card box');
     assert.match(src, /ninesBoardHtml/);
     assert.match(src, /nines-run/);
     assert.match(src, /ninesRunningThrough/);

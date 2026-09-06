@@ -2639,20 +2639,19 @@ const scorecard = {
     const formatLabel = this.teamFormatLabel(r);
     const outHoles = holes.filter((h) => h.hole_number <= 9);
     const inHoles = holes.filter((h) => h.hole_number >= 10);
-    const holeToggle = this.isNarrow()
-      ? '<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode(\'hole\')">This hole</button>'
-      : '';
+    const holeToggle = '<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setCardMode(\'hole\')">This hole</button>';
 
     container.innerHTML = `
-      ${this.toolbar(state, (holeToggle || '') + this.advanceToggleHtml())}
+      ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
+      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
       ${this.addPlayerPanel(state)}
+      ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
         ${this.vegasBoardHtml(state)}
         ${this.vegasPressButtonHtml(state, this.currentHole || 1)}
-        ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>

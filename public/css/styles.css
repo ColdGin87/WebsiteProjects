@@ -2715,13 +2715,20 @@ img {
 }
 
 .nassau-toolbar-press {
-  position: relative;
-  z-index: 90;
+  position: sticky;
+  top: 60px;
+  z-index: 91;
   margin: 0 0 10px;
   padding: 8px;
   background: #FFF8E1;
   border: 3px solid #C62828;
   border-radius: var(--radius-sm);
+}
+
+.nassau-toolbar-press ~ .nassau-live-dock {
+  position: relative;
+  top: auto;
+  z-index: 1;
 }
 
 .nassau-toolbar-press .nassau-press-heading,
