@@ -883,6 +883,65 @@ async function runWolfScenario(base) {
   console.log('PASS Wolf card accepts cross-team gross; lone ±2, blind 3×, partnered ±1, tie 0');
 }
 
+async function runNinesScenario(base) {
+  const stamp = Date.now();
+  const registered = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Nines Host',
+      email: `scorecard.nines.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const token = registered.token;
+  const created = await api(base, 'POST', '/api/rounds', {
+    token,
+    body: {
+      name: 'Nines running card',
+      format: 'team_net',
+      holes: '18',
+      teamRace: false,
+      sideGames: { nines: { on: true, scoring: 'gross', blitz: false, dollarsPerPoint: 1 } },
+    },
+  });
+  const roundId = created.round.id;
+  let state = created;
+  for (const name of ['N1', 'N2']) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token,
+      body: { name, handicap: 0, playingHandicap: 0 },
+    });
+  }
+  if ((state.members || []).length !== 3) fail('nines needs host + 2 guests');
+  const host = (state.members || []).find((m) => m.role === 'organizer') || state.members[0];
+  const n1 = state.members.find((m) => m.display_name === 'N1');
+  const n2 = state.members.find((m) => m.display_name === 'N2');
+  if (!host || !n1 || !n2) fail('nines roster missing');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: host.id, holeNumber: 1, gross: 3 } });
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: n1.id, holeNumber: 1, gross: 5 } });
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: n2.id, holeNumber: 1, gross: 5 } });
+  const after1 = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const nines1 = after1.sideGames && after1.sideGames.games && after1.sideGames.games.nines;
+  if (!nines1) fail('nines game missing after hole 1');
+  const h1 = (nines1.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(h1 && h1.points && Number(h1.points[host.id] ?? h1.points[String(host.id)]), 5, 'hole1 5-2-2 host 5');
+  assertEqual(h1 && h1.running && Number(h1.running[host.id] ?? h1.running[String(host.id)]), 5, 'hole1 running 5');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: host.id, holeNumber: 2, gross: 3 } });
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: n1.id, holeNumber: 2, gross: 4 } });
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, { token, body: { memberId: n2.id, holeNumber: 2, gross: 5 } });
+  const after2 = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const nines2 = after2.sideGames && after2.sideGames.games && after2.sideGames.games.nines;
+  const h2 = (nines2.holes || []).find((h) => h.holeNumber === 2);
+  assertEqual(h2 && h2.points && Number(h2.points[host.id] ?? h2.points[String(host.id)]), 5, 'hole2 host 5');
+  assertEqual(h2 && h2.points && Number(h2.points[n1.id] ?? h2.points[String(n1.id)]), 3, 'hole2 N1 3');
+  assertEqual(h2 && h2.points && Number(h2.points[n2.id] ?? h2.points[String(n2.id)]), 1, 'hole2 N2 1');
+  assertEqual(h2 && h2.running && Number(h2.running[host.id] ?? h2.running[String(host.id)]), 10, 'running 10');
+  assertEqual(h2 && h2.running && Number(h2.running[n1.id] ?? h2.running[String(n1.id)]), 5, 'running 5');
+  assertEqual(h2 && h2.running && Number(h2.running[n2.id] ?? h2.running[String(n2.id)]), 3, 'running 3');
+  const hostPts = (nines2.points || []).find((p) => Number(p.id) === Number(host.id));
+  assertEqual(hostPts && hostPts.points, 10, 'card total sums to 10');
+  console.log('PASS Nines hole 5-2-2 then 5-3-1 running 10/5/3');
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -921,6 +980,7 @@ async function main() {
     await runTeam1VsParDemo(base);
     await runSideGamesScenario(base);
     await runWolfScenario(base);
+    await runNinesScenario(base);
     await runJoinIdentityScenario(base);
   } finally {
     if (child) {

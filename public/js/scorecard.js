@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905j',
+  ASSET_V: '20260905k',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -605,8 +605,11 @@ const scorecard = {
   },
 
   isNinesOn(state) {
+    if (!state) return false;
     const cfg = this.sideConfig(state);
-    return !!(cfg.nines && cfg.nines.on);
+    if (cfg && cfg.nines && this.flagOn(cfg.nines.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    return !!(games && games.nines);
   },
 
   ninesGame(state) {
@@ -625,16 +628,33 @@ const scorecard = {
     }).join(' · ');
   },
 
-  ninesRunValue(row, player) {
-    if (!row) return null;
-    if (row.players) {
-      const found = row.players.find((p) => Number(p.id) === Number(player.id));
-      if (found && found.run != null) return found.run;
+  ninesHoleValue(game, holeNumber, playerId) {
+    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (!row || row.incomplete || !row.points) return null;
+    const val = row.points[playerId] ?? row.points[String(playerId)];
+    return val == null || !Number.isFinite(Number(val)) ? null : Number(val);
+  },
+
+  ninesRunningThrough(game, holeNumber, playerId) {
+    let sum = 0;
+    let seen = false;
+    const cap = Number(holeNumber);
+    for (const h of (game && game.holes) || []) {
+      const hn = Number(h.holeNumber ?? h.hole_number);
+      if (!Number.isFinite(hn) || (Number.isFinite(cap) && hn > cap)) continue;
+      if (h.incomplete || !h.points) continue;
+      const add = h.points[playerId] ?? h.points[String(playerId)];
+      if (add == null || !Number.isFinite(Number(add))) continue;
+      sum += Number(add);
+      seen = true;
     }
-    if (row.running) {
-      return row.running[player.id] ?? row.running[String(player.id)] ?? null;
-    }
-    return null;
+    return seen ? sum : null;
+  },
+
+  ninesRoster(game) {
+    if (game && game.points && game.points.length) return game.points;
+    const first = ((game && game.holes) || []).find((h) => h.players && h.players.length);
+    return (first && first.players) || [];
   },
 
   ninesBoardInner(state) {
@@ -642,46 +662,32 @@ const scorecard = {
     if (!g) return this.isNinesOn(state) ? '<div class="nines-hole">Nines —</div>' : '';
     if (g.incomplete) return '<div class="nines-hole">Nines — need exactly 3 players</div>';
     const hn = this.currentHole || 1;
-    const row = (g.holes || []).find((h) => h.holeNumber === hn);
-    const players = (row && row.players) || (g.points || []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      hole: null,
-      run: p.points,
-    }));
+    const row = (g.holes || []).find((h) => Number(h.holeNumber) === Number(hn));
+    const roster = this.ninesRoster(g);
     const holeLine = row && !row.incomplete
-      ? this.ninesPtsLine(players, 'hole')
-      : (g.points || []).map((p) => `${p.name} —`).join(' · ');
-    const runPlayers = (g.points || []).map((p) => ({
+      ? this.ninesPtsLine(roster.map((p) => ({ name: p.name, hole: this.ninesHoleValue(g, hn, p.id) })), 'hole')
+      : roster.map((p) => `${p.name} —`).join(' · ');
+    const runLine = this.ninesPtsLine(roster.map((p) => ({
       name: p.name,
-      run: this.ninesRunValue(row, p) != null ? this.ninesRunValue(row, p) : p.points,
-    }));
-    const runLine = this.ninesPtsLine(runPlayers, 'run');
+      run: this.ninesRunningThrough(g, hn, p.id),
+    })), 'run');
     return `<div class="nines-hole">This hole: ${_esc(holeLine)}</div>
-      <div class="nines-run">Running: ${_esc(runLine)}</div>`;
+      <div class="nines-run">RUNNING: ${_esc(runLine)}</div>`;
   },
 
   ninesTableRows(state, holes, showOut, showIn) {
     if (!this.isNinesOn(state)) return '';
     const g = this.ninesGame(state);
     if (!g || g.incomplete) return '';
-    const players = g.points || [];
+    const players = this.ninesRoster(g);
     const cell = (hn, kind) => {
-      const row = (g.holes || []).find((h) => h.holeNumber === hn);
       const bits = players.map((p) => {
-        let val = null;
-        if (kind === 'hole') {
-          val = row && !row.incomplete && row.points
-            ? (row.points[p.id] ?? row.points[String(p.id)])
-            : null;
-        } else {
-          val = row && row.running
-            ? (row.running[p.id] ?? row.running[String(p.id)])
-            : null;
-        }
+        const val = kind === 'hole'
+          ? this.ninesHoleValue(g, hn, p.id)
+          : this.ninesRunningThrough(g, hn, p.id);
         return `${_esc(p.name)} ${val == null ? '—' : val}`;
       }).join('<br>');
-      return `<td class="nines-cell">${bits}</td>`;
+      return `<td class="nines-cell" data-nines-${kind}="${hn}">${bits}</td>`;
     };
     const holeRow = holes.map((h) => cell(h.hole_number, 'hole')).join('');
     const runRow = holes.map((h) => cell(h.hole_number, 'run')).join('');
@@ -1030,6 +1036,7 @@ const scorecard = {
         this.paintPlayerTotals(memberId);
         this.paintRaceStrip();
         this.paintEndTotals();
+        this.paintNinesBoard();
         this.writeCache(roundId, this.state);
       })
       .catch((err) => {
@@ -1226,6 +1233,48 @@ const scorecard = {
   paintNinesBoard() {
     const el = document.getElementById('nines-board');
     if (el && this.state) el.innerHTML = this.ninesBoardInner(this.state);
+    this.paintNinesTableRows();
+    this.paintNinesPlayerLines();
+  },
+
+  paintNinesTableRows() {
+    const table = document.getElementById('full-scorecard');
+    if (!table || !this.state) return;
+    const holes = this.state.holes || [];
+    const html = this.ninesTableRows(this.state, holes, this.showOut(this.state), this.showIn(this.state));
+    const oldHole = table.querySelector('tr.nines-hole-row');
+    const oldRun = table.querySelector('tr.nines-run-row');
+    if (!html) {
+      if (oldHole) oldHole.remove();
+      if (oldRun) oldRun.remove();
+      return;
+    }
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = html;
+    const nextHole = tmp.querySelector('tr.nines-hole-row');
+    const nextRun = tmp.querySelector('tr.nines-run-row');
+    const body = table.tBodies[0] || table;
+    if (oldHole && nextHole) oldHole.replaceWith(nextHole);
+    else if (nextHole) body.appendChild(nextHole);
+    if (oldRun && nextRun) oldRun.replaceWith(nextRun);
+    else if (nextRun) body.appendChild(nextRun);
+  },
+
+  paintNinesPlayerLines() {
+    if (!this.state) return;
+    const hn = this.currentHole || 1;
+    document.querySelectorAll('.hole-player-row').forEach((row) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(row.dataset.memberRow));
+      if (!member) return;
+      const html = this.playerNinesLineHtml(this.state, member, hn);
+      const line = row.querySelector('.nines-player-line');
+      if (!html) {
+        if (line) line.remove();
+        return;
+      }
+      if (line) line.outerHTML = html;
+      else row.insertAdjacentHTML('beforeend', html);
+    });
   },
 
   paintVegasBoard() {
@@ -1315,6 +1364,7 @@ const scorecard = {
     this.paintBallLine(slim.holeNumber);
     this.paintEndTotals();
     this.paintPlayerTotals();
+    this.paintNinesBoard();
     this.ensureEighteenBanner();
   },
 
@@ -1996,7 +2046,21 @@ const scorecard = {
         </div>
         ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
       </div>
+      ${this.playerNinesLineHtml(state, member, holeNumber)}
       ${this.playerNineLineHtml(state, member)}
+    </div>`;
+  },
+
+  playerNinesLineHtml(state, member, holeNumber) {
+    if (!this.isNinesOn(state)) return '';
+    const g = this.ninesGame(state);
+    if (!g || g.incomplete) return '';
+    const holePts = this.ninesHoleValue(g, holeNumber, member.id);
+    const runPts = this.ninesRunningThrough(g, holeNumber, member.id);
+    if (holePts == null && runPts == null) return '';
+    return `<div class="nines-player-line" data-nines-player="${member.id}">
+      <span class="nines-player-hole">hole ${holePts == null ? '—' : holePts}</span>
+      <span class="nines-player-run">run ${runPts == null ? '—' : runPts}</span>
     </div>`;
   },
 

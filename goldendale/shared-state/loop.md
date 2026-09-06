@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Nines running SUM (ASSET_V `20260905k`)
+
+Nines hole points stay on the first row. The second row per player is the **cumulative** running total through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → 10/5/3), not a reset to that hole’s points. Live card repaints after each save. Exactly 3 players. Same PR #2. Hold merge.
+
 ### Wolf score entry + 3× table (ASSET_V `20260905j`)
 
 David can type gross on the Wolf live card now. Team write lock does not disable Wolf inputs (Wolf sides are not Team 1/2). Tap a player row to focus the score box. Points: partnered ±1, Lone 2× (±2), Blind Lone 3× (±3); better ball; tie 0. Same PR #2. Hold merge.

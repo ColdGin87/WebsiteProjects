@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905j/);
-    assert.match(html, /js\/formats\.js\?v=20260905j/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905j/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905j/);
-    assert.match(src, /ASSET_V:\s*'20260905j'/);
+    assert.match(html, /20260905k/);
+    assert.match(html, /js\/formats\.js\?v=20260905k/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905k/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905k/);
+    assert.match(src, /ASSET_V:\s*'20260905k'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -150,6 +150,15 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.nassau-live-dock[\s\S]{0,80}position:\s*sticky/);
     assert.match(src, /ninesBoardHtml/);
     assert.match(src, /nines-run/);
+    assert.match(src, /ninesRunningThrough/);
+    assert.match(src, /playerNinesLineHtml/);
+    assert.match(src, /paintNinesBoard/);
+    const slim = sliceFn('applySlimPost(slim)', 'ensureEighteenBanner()');
+    assert.match(slim, /paintNinesBoard/);
+    const ninesInner = sliceFn('ninesBoardInner(state)', 'ninesTableRows(state, holes, showOut, showIn)');
+    assert.match(ninesInner, /ninesRunningThrough/);
+    assert.doesNotMatch(ninesInner, /p\.points/);
+    assert.match(ninesInner, /RUNNING:/);
     assert.match(css, /\.nassau-press-btn/);
     assert.match(css, /\.nines-board/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
@@ -272,6 +281,7 @@ describe('Combined PR3 hole view', () => {
     const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
     assert.match(holeRow, /canWriteMember/);
     assert.match(holeRow, /focusHoleScore/);
+    assert.match(holeRow, /playerNinesLineHtml/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
     const writeLock = sliceFn('canWriteMember(state, member)', 'onAuthReady()');
     assert.match(writeLock, /isWolfOn\(state\)\) return true/);

@@ -2837,6 +2837,20 @@ img {
   color: #5D4037;
 }
 
+.nines-player-line {
+  flex: 1 0 100%;
+  display: flex;
+  gap: 10px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #5D4037;
+  padding: 0 0 4px;
+}
+
+.nines-player-run {
+  font-weight: 800;
+}
+
 .vegas-this,
 .vegas-cell-swing {
   font-size: 0.8rem;
@@ -2870,6 +2884,7 @@ img {
 
 .hole-player-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   width: 100%;

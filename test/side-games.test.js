@@ -6,6 +6,7 @@ const {
   scoreVegasHole,
   scoreVegas,
   ninesHolePoints,
+  ninesRunningThrough,
   scoreNines,
   scoreWolf,
   scoreWolfHole,
@@ -488,6 +489,10 @@ describe('Nines', () => {
     assert.equal(nines.holes[1].players.find((p) => p.id === 1).run, 10);
     assert.equal(nines.holes[1].players.find((p) => p.id === 2).run, 5);
     assert.equal(nines.holes[1].players.find((p) => p.id === 3).run, 3);
+    assert.equal(ninesRunningThrough(nines.holes, 1, 1), 5);
+    assert.equal(ninesRunningThrough(nines.holes, 2, 1), 10);
+    assert.equal(ninesRunningThrough(nines.holes, 2, 2), 5);
+    assert.equal(ninesRunningThrough(nines.holes, 2, 3), 3);
   });
 });
 
