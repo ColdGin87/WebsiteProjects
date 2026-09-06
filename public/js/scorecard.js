@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905o',
+  ASSET_V: '20260905p',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -448,7 +448,9 @@ const scorecard = {
     const games = state.sideGames && state.sideGames.games;
     if (games && (games.nassau || (games.nassauPresses && games.nassauPresses.length))) return true;
     const presses = state.presses || [];
-    return presses.some((p) => (p.game_key || p.gameKey) === 'nassau');
+    if (presses.some((p) => (p.game_key || p.gameKey) === 'nassau')) return true;
+    const strip = state.sideGames && (state.sideGames.stripText || '');
+    return /\bNassau\b/i.test(strip);
   },
 
   nassauPresses(state) {
@@ -2355,6 +2357,15 @@ const scorecard = {
     }).join('')}</div>`;
   },
 
+  nassauToolbarPressHtml(state, holeNumber) {
+    if (!this.isNassauOn(state)) return '';
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    return `<div class="nassau-toolbar-press" id="nassau-toolbar-press">
+      ${this.nassauPressButtonsHtml(state, hn, 'nassau-press-wrap-toolbar')}
+      ${this.nassauBoardHtml(state, 'nassau-board-toolbar')}
+    </div>`;
+  },
+
   holeToolbar(state) {
     const organizer = this.isOrganizer(state);
     return `
@@ -2369,7 +2380,8 @@ const scorecard = {
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
-      </div>`;
+      </div>
+      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}`;
   },
 
   toggleHoleOverflow(e) {
@@ -3205,6 +3217,16 @@ const scorecard = {
     if (cardBtns) this.replaceNode(cardBtns, this.nassauPressButtonsHtml(this.state, holeNumber, 'nassau-press-wrap-card'));
     const cardBoard = document.getElementById('nassau-board-card');
     if (cardBoard) this.replaceNode(cardBoard, this.nassauBoardHtml(this.state, 'nassau-board-card'));
+    const bar = document.getElementById('nassau-toolbar-press');
+    if (bar) this.replaceNode(bar, this.nassauToolbarPressHtml(this.state, holeNumber));
+    else if (this.nassauToolbarPressHtml(this.state, holeNumber)) {
+      const toolbar = document.getElementById('hole-toolbar');
+      if (toolbar && toolbar.parentNode) {
+        const tmpBar = document.createElement('div');
+        tmpBar.innerHTML = this.nassauToolbarPressHtml(this.state, holeNumber);
+        if (tmpBar.firstElementChild) toolbar.insertAdjacentElement('afterend', tmpBar.firstElementChild);
+      }
+    }
     if (existing) return;
     if (!html) return;
     const tmp = document.createElement('div');

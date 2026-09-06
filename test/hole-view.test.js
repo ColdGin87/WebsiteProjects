@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905o/);
-    assert.match(html, /js\/formats\.js\?v=20260905o/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905o/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905o/);
-    assert.match(src, /ASSET_V:\s*'20260905o'/);
+    assert.match(html, /20260905p/);
+    assert.match(html, /js\/formats\.js\?v=20260905p/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905p/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905p/);
+    assert.match(src, /ASSET_V:\s*'20260905p'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -86,7 +86,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(bar, /Full card/);
     assert.match(bar, /Settings/);
     assert.match(bar, /confirmPress/);
+    assert.match(bar, /nassauToolbarPressHtml/);
     assert.doesNotMatch(bar, /See dashboard/);
+    assert.match(src, /nassau-toolbar-press/);
+    assert.match(src, /nassau-press-wrap-toolbar/);
     const hole = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(hole, /Press/);
     assert.match(src, /id="hole-players"/);
@@ -156,6 +159,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.nassau-press-btn[\s\S]{0,240}min-height:\s*56px/);
     assert.match(css, /\.nassau-press-btns[\s\S]{0,80}grid-template-columns:\s*1fr 1fr 1fr/);
     assert.match(css, /\.nassau-live-dock[\s\S]{0,80}position:\s*sticky/);
+    assert.match(css, /\.nassau-toolbar-press/);
+    assert.match(css, /\.nassau-live-dock[\s\S]{0,120}top:\s*60px/);
     assert.match(src, /ninesBoardHtml/);
     assert.match(src, /nines-run/);
     assert.match(src, /ninesRunningThrough/);

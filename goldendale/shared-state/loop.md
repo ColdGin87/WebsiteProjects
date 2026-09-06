@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Nassau Press pinned under the header (ASSET_V `20260905p`)
+
+MUST-FIX: David still saw no Nassau Press. The sticky dock sat at `top: 0` / `z-index: 45` and slid under the 60px site header. Press Front / Back / Overall now live in the hole toolbar (yellow/red, always on the live card) and the dock sticks at 60px. RUNNING for Front, Back, Overall, and each press stays. Same PR #2. Hold merge.
+
 ### Nassau Front/Back/Overall Press + live RUNNING (ASSET_V `20260905o`)
 
 MUST-FIX: Nassau Press is on the live card — sticky dock above the hole plus Press Front / Back / Overall on the hole chrome. All three are usable: Front dies at 9; Back from hole 1 starts at 10 and dies at 18; Overall tap→18. Originals stay live. RUNNING for Front, Back, Overall, and each press is named up/down through the hole you are on and repaints after each score. Same PR #2. Hold merge.
