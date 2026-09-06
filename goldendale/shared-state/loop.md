@@ -14,6 +14,8 @@ At setup, joiners can Remove / set Index on their own team; host can manage the 
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
+Unique host (READY, SHA `5ae7974`, ASSET_V `20260906g`): https://website-projects-7r7ouo3re-coldgin87s-projects.vercel.app
+
 ### Live join code on the scoring page (ASSET_V `20260906f`)
 
 Same PR #4. Hold merge.
