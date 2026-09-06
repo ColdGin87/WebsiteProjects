@@ -3492,6 +3492,8 @@ input.score-input:disabled {
 
 .wyrm-coil-machine {
   width: min(420px, 100%);
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
   background: radial-gradient(circle at 50% 0%, #2a1810 0%, #0d1612 55%, #08100c 100%);
   border: 3px solid #e6c36a;
   box-shadow: 0 0 0 4px #3a2414, 0 18px 40px rgba(0, 0, 0, 0.55);
@@ -3527,10 +3529,17 @@ input.score-input:disabled {
   border: 2px solid #7a5b24;
   border-radius: 10px;
   padding: 8px;
-  min-height: 168px;
+  height: 168px;
+  max-height: 168px;
+  overflow: hidden;
 }
 
 .wyrm-reel {
+  --wyrm-cell: 48px;
+  --wyrm-view: 3;
+  --wyrm-rows: 18;
+  --wyrm-rest: calc(var(--wyrm-cell) * (var(--wyrm-view) - var(--wyrm-rows)));
+  height: calc(var(--wyrm-cell) * var(--wyrm-view));
   overflow: hidden;
   background: #10241c;
   border: 1px solid #3f6a52;
@@ -3540,6 +3549,7 @@ input.score-input:disabled {
 .wyrm-reel-strip {
   display: flex;
   flex-direction: column;
+  transform: translateY(var(--wyrm-rest));
 }
 
 .wyrm-reel.is-spinning .wyrm-reel-strip {
@@ -3555,11 +3565,12 @@ input.score-input:disabled {
 }
 
 @keyframes wyrm-reel-roll {
-  0% { transform: translateY(-78%); filter: blur(4px); }
-  42% { transform: translateY(10%); filter: blur(2px); }
-  68% { transform: translateY(-8%); filter: blur(1px); }
-  86% { transform: translateY(3%); filter: blur(0.4px); }
-  100% { transform: translateY(0); filter: blur(0); }
+  0% { transform: translateY(0); filter: blur(4px); }
+  28% { transform: translateY(-55%); filter: blur(3px); }
+  52% { transform: translateY(calc(var(--wyrm-rest) + 28px)); filter: blur(2px); }
+  74% { transform: translateY(calc(var(--wyrm-rest) - 16px)); filter: blur(1px); }
+  88% { transform: translateY(calc(var(--wyrm-rest) + 6px)); filter: blur(0.4px); }
+  100% { transform: translateY(var(--wyrm-rest)); filter: blur(0); }
 }
 
 .wyrm-cell {

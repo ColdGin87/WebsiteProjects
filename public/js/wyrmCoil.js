@@ -137,7 +137,7 @@ const wyrmCoil = {
         const pay = row === rows - 2 ? ' is-pay' : '';
         return `<div class="wyrm-cell wyrm-${icon.key}${pay}" title="${icon.label}"><span>${icon.mark}</span><em>${icon.label}</em></div>`;
       }).join('');
-      return `<div class="wyrm-reel${spinning ? ' is-spinning' : ''}" data-reel="${reel}"><div class="wyrm-reel-strip">${cells}</div></div>`;
+      return `<div class="wyrm-reel${spinning ? ' is-spinning' : ''}" data-reel="${reel}" style="--wyrm-rows:${rows}"><div class="wyrm-reel-strip">${cells}</div></div>`;
     }).join('');
   },
 

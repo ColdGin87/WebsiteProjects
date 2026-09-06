@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905r/);
-    assert.match(html, /js\/formats\.js\?v=20260905r/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905r/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905r/);
-    assert.match(src, /ASSET_V:\s*'20260905r'/);
+    assert.match(html, /20260905s/);
+    assert.match(html, /js\/formats\.js\?v=20260905s/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905s/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905s/);
+    assert.match(src, /ASSET_V:\s*'20260905s'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -400,6 +400,7 @@ describe('Wyrm Coil overlay', () => {
     assert.match(coil, /HIGH_KEY/);
     assert.match(coil, /SPIN_MS:\s*3000/);
     assert.match(coil, /REEL_ROWS:\s*18/);
+    assert.match(coil, /--wyrm-rows/);
     assert.match(coil, /playerLogs/);
     assert.match(coil, /funBoardHtml/);
     assert.match(coil, /displayBest/);
@@ -407,6 +408,8 @@ describe('Wyrm Coil overlay', () => {
     assert.match(coil, /not team money/);
     assert.match(coil, /wyrm-screens/);
     assert.match(css, /wyrm-reel-roll/);
+    assert.match(css, /--wyrm-rest/);
+    assert.match(css, /max-height:\s*168px/);
     assert.match(css, /\.wyrm-fun-board/);
     assert.match(css, /\.wyrm-player-chip/);
     assert.match(css, /overflow-y:\s*auto/);

@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Wyrm Coil reel window clipped to 3 cells (ASSET_V `20260905s`)
+
+Longer 18-row strips still roll ~3s, but the machine window is 3 cells so gold player chips, This player, and Best stay on a 390px phone. Same PR #2. Hold merge.
+
 ### Wyrm Coil chips + Best from fun board (ASSET_V `20260905r`)
 
 Player chips sit above the reels in gold so they stay readable on a 390px phone. Best seeds from the fun-board high (not 0 after a +0 spin). This player stays that individual’s fun score. Same PR #2. Hold merge.
