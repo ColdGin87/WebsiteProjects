@@ -321,6 +321,10 @@ describe('Nassau', () => {
     assert.equal(nassau.overall.status, 'AS');
     const t1 = nassau.money.find((m) => m.id === 1);
     assert.equal(t1.dollars, 0);
+    const h1 = nassau.front.holeRows.find((h) => h.holeNumber === 1);
+    assert.equal(h1 && h1.winner, 'A');
+    assert.equal(nassau.front.holesWonA, 9);
+    assert.equal(nassau.back.holesWonB, 9);
   });
 });
 
