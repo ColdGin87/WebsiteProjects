@@ -2,6 +2,24 @@
 
 ## Developer
 
+### Scam / hack / backdoor hardening (ASSET_V `20260906e`)
+
+New PR from Main. Hold merge — David must say merge.
+
+Inventoried HTTP routes and locked unauthorized score tampering / access:
+
+- **Demo / seed / debug** — `POST /api/rounds/:id/demo/foursome` and `.../demo/team1-vs-par` stay 404 unless `ALLOW_DEMO=1`. `VERCEL_ENV=production` forces them off even if that env is set. No demo buttons. Course seed only; no player/score preload.
+- **Mutating score / guest / settings / press** — all require a signed-in JWT. Anonymous `POST /scores`, guests, presses, and `PUT` settings are 401. No anonymous score writes.
+- **Join codes** — new codes are 8 chars from a 32-symbol no-lookalike alphabet (~1.1e12). Invalid / too-short codes are 404 (same message). Existing 6-char field-test codes still work. Best-effort rate limit on join + join-info (30 / min / IP).
+- **Own-team write lock** — unchanged. Cross-team `POST /scores` is 403 and does not persist. Extra HTTP coverage in `test:scorecard`.
+- **Sunday rules / show-other-teams / formats** — `PUT /api/rounds/:id` is organizer/host only (403 for joiners). Covers `teamRace`, `showOtherScores`, format balls, side games.
+- **Secrets / leaks** — no JWT / Turso / DB creds in client JS. Weak hardcoded JWT fallback is rejected in Vercel production. 500s return `Internal server error` only. `/api/players` requires auth; non-admins do not see other emails. Magic/reset links are not returned on Vercel production.
+- **Abuse** — rate limit join attempts and score POST (180 / min / user, in-memory / best-effort on serverless).
+
+Still open (not a Sunday-game backdoor, leftover tournament surface): unauthenticated GET on legacy `/api/matches`, `/api/leaderboard`, and `/api/tournament/*` (read-only match-play lists, no emails, no score_rounds writes). Public leaderboard via unguessable token stays read-only by design. First registered account on an empty DB is still course admin (bootstrap). In-memory rate limits do not share across Vercel isolates.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
 ### Field test merge + clean slate (ASSET_V `20260906d`)
 
 David authorized merge of PR #3 for today’s field test. First boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260906`), then leaves new Sunday rounds alone. Goldendale course seed and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons.

@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906d/);
-    assert.match(html, /js\/formats\.js\?v=20260906d/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906d/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906d/);
-    assert.match(src, /ASSET_V:\s*'20260906d'/);
+    assert.match(html, /20260906e/);
+    assert.match(html, /js\/formats\.js\?v=20260906e/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906e/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906e/);
+    assert.match(src, /ASSET_V:\s*'20260906e'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -501,6 +501,10 @@ describe('Wyrm Coil overlay', () => {
     assert.match(dash, /New round/);
     assert.match(dash, /Join with code/);
     assert.match(dash, /Game Rules/);
-    assert.match(routes, /ALLOW_DEMO/);
+    assert.match(routes, /demoRoutesEnabled/);
+    const security = fs.readFileSync(path.join(ROOT, 'lib/security.js'), 'utf8');
+    assert.match(security, /VERCEL_ENV/);
+    assert.match(security, /ALLOW_DEMO/);
+    assert.match(security, /if \(isVercelProduction\(\)\) return false/);
   });
 });

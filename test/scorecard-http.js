@@ -112,7 +112,7 @@ async function apiStatus(base, method, urlPath, { token, body } = {}) {
   return { status: res.status, body: data };
 }
 
-function startServer(port, dbFile) {
+function startServer(port, dbFile, extraEnv = {}) {
   const child = spawn(process.execPath, ['api/index.js'], {
     cwd: ROOT,
     env: {
@@ -123,6 +123,7 @@ function startServer(port, dbFile) {
       JWT_SECRET: 'scorecard-tester-local-only',
       APP_BASE_URL: 'http://127.0.0.1:' + port,
       ALLOW_DEMO: '1',
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -1065,6 +1066,155 @@ async function runNinesScenario(base) {
   console.log('PASS Nines hole 5-2-2 then 5-3-1 running 10/5/3');
 }
 
+async function runHardeningScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Lock Host',
+      email: `scorecard.lockhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Hardening Sunday game',
+      format: 'team_net',
+      holes: '18',
+      teamRace: true,
+      showOtherScores: false,
+      grossBalls: 1,
+      netBalls: 2,
+    },
+  });
+  const joinCode = created.round.join_code || created.round.joinCode;
+  if (!joinCode || String(joinCode).length < 8) {
+    fail('new join codes must be at least 8 characters, got ' + joinCode);
+  }
+  const roundId = created.round.id;
+  const hostMember = (created.members || []).find((m) => Number(m.player_id) === Number(host.user && host.user.id));
+  if (!hostMember) fail('host member missing');
+
+  const anonScore = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  assertEqual(anonScore.status, 401, 'anonymous score write rejected');
+  const anonGuest = await apiStatus(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    body: { name: 'Ghost', handicap: 8 },
+  });
+  assertEqual(anonGuest.status, 401, 'anonymous guest add rejected');
+  const anonPress = await apiStatus(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    body: { gameKey: 'vegas', startHole: 1 },
+  });
+  assertEqual(anonPress.status, 401, 'anonymous press rejected');
+  const anonSettings = await apiStatus(base, 'PUT', `/api/rounds/${roundId}`, {
+    body: { showOtherScores: true, teamRace: false, grossBalls: 3, netBalls: 0 },
+  });
+  assertEqual(anonSettings.status, 401, 'anonymous settings write rejected');
+  const anonPlayers = await apiStatus(base, 'GET', '/api/players');
+  assertEqual(anonPlayers.status, 401, 'player directory requires auth');
+
+  const badJoin = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: host.token,
+    body: { code: 'ZZZZZZZZ', teamName: 'Team 2' },
+  });
+  assertEqual(badJoin.status, 404, 'invalid join code rejected');
+  const shortJoin = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: host.token,
+    body: { code: 'AB', teamName: 'Team 2' },
+  });
+  assertEqual(shortJoin.status, 404, 'short join code rejected as not found');
+
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Lock Joiner',
+      email: `scorecard.lockjoin.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: joinCode, addTeam: true },
+  });
+  const joinerMember = (joined.members || []).find((m) => Number(m.player_id) === Number(joiner.user && joiner.user.id));
+  if (!joinerMember) fail('joiner did not join');
+
+  const settingsSteal = await apiStatus(base, 'PUT', `/api/rounds/${roundId}`, {
+    token: joiner.token,
+    body: { showOtherScores: true, teamRace: false, format: 'match_play', grossBalls: 3, netBalls: 0 },
+  });
+  assertEqual(settingsSteal.status, 403, 'joiner cannot change Sunday rules / formats / show-other-teams');
+  const afterSteal = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  assertEqual(!!(afterSteal.round && afterSteal.round.showOtherScores), false, 'show-other-teams stayed OFF');
+  assertEqual(!!afterSteal.round.teamRace, true, 'Sunday game stayed ON');
+  assertEqual(Number(afterSteal.round.gross_balls ?? afterSteal.round.grossBalls), 1, 'format gross balls unchanged');
+  assertEqual(Number(afterSteal.round.net_balls ?? afterSteal.round.netBalls), 2, 'format net balls unchanged');
+
+  const cross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: joiner.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 3 },
+  });
+  assertEqual(cross.status, 403, 'cross-team score write is 403');
+  const afterCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const hostLocked = (afterCross.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hole1 = hostLocked && (hostLocked.holes || []).find((h) => h.holeNumber === 1);
+  if (hole1 && hole1.gross != null) fail('rejected cross-team score must not persist');
+
+  const directory = await api(base, 'GET', '/api/players', { token: joiner.token });
+  if (!Array.isArray(directory)) fail('signed-in player list should be an array');
+  const other = directory.find((p) => Number(p.id) !== Number(joiner.user && joiner.user.id));
+  if (other && other.email) fail('non-admin must not see other players’ emails');
+
+  const magic = await api(base, 'POST', '/api/auth/magic-link', {
+    body: { email: `scorecard.lockhost.${stamp}@example.com` },
+  });
+  if (process.env.VERCEL_ENV === 'production' && magic.link) {
+    fail('production must not return magic-link URLs');
+  }
+
+  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403');
+}
+
+async function runDemoOffScenario() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goldendale-demo-off-'));
+  const dbFile = path.join(tmpDir, 'demo-off.db');
+  const port = await getFreePort();
+  const child = startServer(port, dbFile, { ALLOW_DEMO: '0' });
+  const base = 'http://127.0.0.1:' + port;
+  try {
+    await waitForHealth(base);
+    const host = await api(base, 'POST', '/api/auth/register', {
+      body: {
+        name: 'Demo Off Host',
+        email: `scorecard.demooff.${Date.now()}@example.com`,
+        password: 'tester-pass-1',
+      },
+    });
+    const created = await api(base, 'POST', '/api/rounds', {
+      token: host.token,
+      body: { name: 'Demo must stay closed', format: 'team_net', holes: '18' },
+    });
+    const foursome = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/demo/foursome`, {
+      token: host.token,
+    });
+    assertEqual(foursome.status, 404, 'demo foursome off without ALLOW_DEMO');
+    const vsPar = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/demo/team1-vs-par`, {
+      token: host.token,
+    });
+    assertEqual(vsPar.status, 404, 'demo team1-vs-par off without ALLOW_DEMO');
+    console.log('PASS demo HTTP routes 404 when ALLOW_DEMO is off');
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 200));
+    if (!child.killed) child.kill('SIGKILL');
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -1105,6 +1255,8 @@ async function main() {
     await runWolfScenario(base);
     await runNinesScenario(base);
     await runJoinIdentityScenario(base);
+    await runHardeningScenario(base);
+    if (!requested) await runDemoOffScenario();
   } finally {
     if (child) {
       child.kill('SIGTERM');
