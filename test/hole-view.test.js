@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905n/);
-    assert.match(html, /js\/formats\.js\?v=20260905n/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905n/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905n/);
-    assert.match(src, /ASSET_V:\s*'20260905n'/);
+    assert.match(html, /20260905o/);
+    assert.match(html, /js\/formats\.js\?v=20260905o/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905o/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905o/);
+    assert.match(src, /ASSET_V:\s*'20260905o'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -124,9 +124,11 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(holeDrawVegas, /child wager/);
     assert.match(src, /nassauPressButtonsHtml/);
     assert.match(src, /nassauLiveDockHtml/);
+    assert.match(src, /nassauRunThrough/);
     assert.match(src, /ensureNassauLiveDock/);
     assert.match(src, /pressNassauFromHole/);
     assert.match(src, /nassauPresses/);
+    assert.match(src, /nassau-press-wrap-card/);
     const nassauOn = sliceFn('isNassauOn(state)', 'nassauPresses(state)');
     assert.match(nassauOn, /games\.nassau/);
     assert.doesNotMatch(nassauOn, /isOrganizer/);
@@ -142,12 +144,16 @@ describe('Combined PR3 hole view', () => {
     assert.match(nassauSegs, /key: 'front'/);
     assert.match(nassauSegs, /key: 'back'/);
     assert.match(nassauSegs, /key: 'overall'/);
+    assert.match(nassauSegs, /start: hn >= 10 \? hn : 10/);
+    assert.match(nassauSegs, /enabled: true/);
+    const slimPress = sliceFn('applySlimPost(slim)', 'ensureEighteenBanner()');
+    assert.match(slimPress, /paintPressChrome/);
     const holeDraw = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     const dockAt = holeDraw.indexOf('nassauLiveDockHtml');
     const cardAt = holeDraw.indexOf('id="hole-view"');
     assert.ok(dockAt >= 0 && cardAt > dockAt, 'Nassau Press dock sits on the live card above the hole scoring surface');
     assert.doesNotMatch(holeDraw, /isOrganizer\(\s*state\s*\)[\s\S]{0,80}nassauLiveDockHtml/);
-    assert.match(css, /\.nassau-press-btn[\s\S]{0,240}min-height:\s*48px/);
+    assert.match(css, /\.nassau-press-btn[\s\S]{0,240}min-height:\s*56px/);
     assert.match(css, /\.nassau-press-btns[\s\S]{0,80}grid-template-columns:\s*1fr 1fr 1fr/);
     assert.match(css, /\.nassau-live-dock[\s\S]{0,80}position:\s*sticky/);
     assert.match(src, /ninesBoardHtml/);

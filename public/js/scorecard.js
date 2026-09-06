@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905n',
+  ASSET_V: '20260905o',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -465,9 +465,9 @@ const scorecard = {
   nassauSegmentsForHole(holeNumber) {
     const hn = Number(holeNumber) || 1;
     return [
-      { key: 'front', label: 'Front', end: 9, enabled: hn <= 9, hint: hn <= 9 ? 'dies at 9' : 'closed after 9' },
-      { key: 'back', label: 'Back', end: 18, enabled: hn >= 10, hint: hn >= 10 ? 'dies at 18' : 'starts hole 10' },
-      { key: 'overall', label: 'Overall', end: 18, enabled: true, hint: 'tap→18' },
+      { key: 'front', label: 'Front', end: 9, enabled: hn <= 9, hint: hn <= 9 ? 'dies at 9' : 'closed after 9', start: hn },
+      { key: 'back', label: 'Back', end: 18, enabled: true, hint: hn >= 10 ? 'dies at 18' : 'starts hole 10', start: hn >= 10 ? hn : 10 },
+      { key: 'overall', label: 'Overall', end: 18, enabled: true, hint: 'tap→18', start: hn },
     ];
   },
 
@@ -495,24 +495,53 @@ const scorecard = {
     return bits.length ? 'By hole: ' + bits.join(' · ') : 'By hole: —';
   },
 
-  nassauRunText(seg) {
-    if (!seg) return 'RUNNING —';
+  nassauTeamName(team, fallback) {
+    if (!team) return fallback;
+    return team.displayName || team.name || fallback;
+  },
+
+  nassauRunThrough(seg, holeNumber, teamA, teamB) {
+    const hn = Number(holeNumber) || this.currentHole || 18;
+    const rows = ((seg && seg.holeRows) || []).filter((h) => (
+      Number(h.holeNumber) <= hn && h.scoreA != null && h.scoreB != null
+    ));
+    let a = 0;
+    let b = 0;
+    for (const row of rows) {
+      if (row.winner === 'A') a += 1;
+      else if (row.winner === 'B') b += 1;
+    }
+    const nameA = this.nassauTeamName(teamA, 'A');
+    const nameB = this.nassauTeamName(teamB, 'B');
+    if (!rows.length) return 'RUNNING even';
+    if (a === b) return `RUNNING even (${a}–${b})`;
+    if (a > b) return `RUNNING: ${nameA} up ${a - b} · ${nameB} down ${a - b}`;
+    return `RUNNING: ${nameB} up ${b - a} · ${nameA} down ${b - a}`;
+  },
+
+  nassauRunText(seg, holeNumber, teamA, teamB) {
+    if (seg && (seg.holeRows || []).length) return this.nassauRunThrough(seg, holeNumber, teamA, teamB);
+    if (!seg) return 'RUNNING even';
     const a = seg.holesWonA != null ? seg.holesWonA : 0;
     const b = seg.holesWonB != null ? seg.holesWonB : 0;
-    return `RUNNING ${seg.status || 'AS'} (${a}–${b})`;
+    const nameA = this.nassauTeamName(teamA, 'A');
+    const nameB = this.nassauTeamName(teamB, 'B');
+    if (a === b) return a || b ? `RUNNING even (${a}–${b})` : 'RUNNING even';
+    if (a > b) return `RUNNING: ${nameA} up ${a - b} · ${nameB} down ${a - b}`;
+    return `RUNNING: ${nameB} up ${b - a} · ${nameA} down ${b - a}`;
   },
 
   nassauLineHtml(label, seg, holeNumber, teamA, teamB) {
     return `<div class="nassau-press-line">
       <div class="nassau-line-title">${_esc(label)}</div>
-      <div class="nassau-line-run">${_esc(this.nassauRunText(seg))}</div>
+      <div class="nassau-line-run">${_esc(this.nassauRunText(seg, holeNumber, teamA, teamB))}</div>
       <div>${_esc(this.nassauThisHole(seg, holeNumber, teamA, teamB))}</div>
     </div>`;
   },
 
-  nassauBoardHtml(state) {
+  nassauBoardHtml(state, boardId) {
     if (!this.isNassauOn(state)) return '';
-    return `<div class="nassau-board" id="nassau-board">${this.nassauBoardInner(state)}</div>`;
+    return `<div class="nassau-board" id="${boardId || 'nassau-board'}">${this.nassauBoardInner(state)}</div>`;
   },
 
   nassauLiveDockHtml(state, holeNumber) {
@@ -554,10 +583,10 @@ const scorecard = {
     return `${badge}${original}${pressLines}`;
   },
 
-  nassauPressButtonsHtml(state, holeNumber) {
+  nassauPressButtonsHtml(state, holeNumber, wrapId) {
     if (!this.isNassauOn(state)) return '';
     const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-press-wrap" id="nassau-press-wrap">
+    return `<div class="nassau-press-wrap" id="${wrapId || 'nassau-press-wrap'}">
       <div class="nassau-press-heading">Nassau Press</div>
       <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
         const c = this.nassauPressCount(state, seg.key);
@@ -575,17 +604,19 @@ const scorecard = {
       _toast(seg.hint || 'That Nassau segment is not open on this hole.', 'error');
       return;
     }
+    const startHole = seg && seg.start != null ? Number(seg.start) : (segment === 'back' && hn < 10 ? 10 : hn);
     const endHole = segment === 'front' ? 9 : 18;
     try {
       const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
         gameKey: 'nassau',
         segment,
-        startHole: holeNumber,
+        startHole,
         endHole,
       });
       this.state = state;
       this.writeCache(state.round.id, state);
-      this.draw(state);
+      if (this.screen === 'play') this.paintPressChrome();
+      else this.draw(state);
     } catch (err) {
       _toast(err.message, 'error');
     }
@@ -1577,6 +1608,7 @@ const scorecard = {
     this.paintEndTotals();
     this.paintPlayerTotals();
     this.paintNinesBoard();
+    this.paintPressChrome();
     this.ensureEighteenBanner();
   },
 
@@ -2379,6 +2411,8 @@ const scorecard = {
       ${this.nassauLiveDockHtml(state, holeNumber)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
+          ${this.nassauPressButtonsHtml(state, holeNumber, 'nassau-press-wrap-card')}
+          ${this.nassauBoardHtml(state, 'nassau-board-card')}
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
           ${this.vegasBoardHtml(state)}
@@ -3163,12 +3197,15 @@ const scorecard = {
   ensureNassauLiveDock(holeNumber) {
     const html = this.nassauLiveDockHtml(this.state, holeNumber);
     const existing = document.getElementById('nassau-live-dock')
-      || document.getElementById('nassau-press-wrap')
-      || document.querySelector('.nassau-press-wrap');
+      || document.getElementById('nassau-press-wrap');
     if (existing) {
       this.replaceNode(existing, html);
-      return;
     }
+    const cardBtns = document.getElementById('nassau-press-wrap-card');
+    if (cardBtns) this.replaceNode(cardBtns, this.nassauPressButtonsHtml(this.state, holeNumber, 'nassau-press-wrap-card'));
+    const cardBoard = document.getElementById('nassau-board-card');
+    if (cardBoard) this.replaceNode(cardBoard, this.nassauBoardHtml(this.state, 'nassau-board-card'));
+    if (existing) return;
     if (!html) return;
     const tmp = document.createElement('div');
     tmp.innerHTML = html;

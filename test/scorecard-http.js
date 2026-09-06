@@ -665,6 +665,22 @@ async function runSideGamesScenario(base) {
   const stillFront = (frontPress.holeResults || []).find((h) => h.holeNumber === 1);
   const stillFrontTeam = (stillFront.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillFrontTeam && stillFrontTeam.total, 1, 'nassau front press must not change hole-1 vs-par');
+  const nassauLive = frontPress.sideGames && frontPress.sideGames.games && frontPress.sideGames.games.nassau;
+  if (!nassauLive || !nassauLive.front) fail('nassau originals should stay live after a Front press');
+  assertEqual(nassauLive.front.holesWonB, 1, 'Front RUNNING through hole 1 is Team 2 1 up');
+  assertEqual(nassauLive.front.holesWonA, 0, 'Front RUNNING Team 1 has 0 holes');
+  if (!(nassauLive.front.holeRows || []).some((h) => h.holeNumber === 1 && h.winner === 'B')) {
+    fail('Front RUNNING hole 1 should be on the live card');
+  }
+
+  const backFromOne = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token: friend.token,
+    body: { gameKey: 'nassau', segment: 'back', startHole: 1, endHole: 18 },
+  });
+  const backEarly = ((backFromOne.sideGames && backFromOne.sideGames.games && backFromOne.sideGames.games.nassauPresses) || [])
+    .find((p) => p.segment === 'back' && Number(p.startHole) === 10);
+  if (!backEarly) fail('Back press from hole 1 should start at 10 and stay live');
+  assertEqual(backEarly.endHole, 18, 'Back press dies at 18');
 
   await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
     token: friend.token,

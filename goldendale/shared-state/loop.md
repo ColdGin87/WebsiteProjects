@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Nassau Front/Back/Overall Press + live RUNNING (ASSET_V `20260905o`)
+
+MUST-FIX: Nassau Press is on the live card — sticky dock above the hole plus Press Front / Back / Overall on the hole chrome. All three are usable: Front dies at 9; Back from hole 1 starts at 10 and dies at 18; Overall tap→18. Originals stay live. RUNNING for Front, Back, Overall, and each press is named up/down through the hole you are on and repaints after each score. Same PR #2. Hold merge.
+
 ### Join-code Team 1 host / joiner Team 2+ (ASSET_V `20260905n`)
 
 Host create is Team 1 with an optional nickname. A join-code user is not auto Team 1: they pick Team 2+ or Add team, optional team nickname and card name. Signed-out welcome code stashes the code, then login/register opens the picker. Live hole groups show Team N · nickname (or Team N) on every device. Same PR #2. Hold merge.
