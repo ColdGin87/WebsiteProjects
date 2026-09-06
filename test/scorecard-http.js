@@ -122,6 +122,7 @@ function startServer(port, dbFile) {
       TURSO_AUTH_TOKEN: '',
       JWT_SECRET: 'scorecard-tester-local-only',
       APP_BASE_URL: 'http://127.0.0.1:' + port,
+      ALLOW_DEMO: '1',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

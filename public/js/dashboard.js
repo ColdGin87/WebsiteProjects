@@ -67,11 +67,8 @@ const dashboard = {
           <div class="welcome-actions">
             <a class="btn btn-accent btn-sm" href="#create" onclick="event.preventDefault();app.navigate('#create')">New round</a>
             <button class="btn btn-outline-light btn-sm" onclick="dashboard.promptJoin()">Join with code</button>
-            <button class="btn btn-accent btn-sm" onclick="dashboard.openTeam1VsParDemo()">Open Team 1 vs-par demo</button>
             <a class="btn btn-outline-light btn-sm" href="#rules" onclick="event.preventDefault();app.navigate('#rules')">Game Rules</a>
-            <button class="btn btn-outline-light btn-sm" onclick="dashboard.openDemoFoursome()">Open Kurt / Chase / Brian demo</button>
           </div>
-          <p class="welcome-subtitle demo-hint">Team 1 vs-par demo: ColdGin (H 3 received, par every hole) + Kurt / Chase / Brian · 1G+2N best-combo</p>
         </div>
         <div class="stats-row">
           <div class="stat-card"><div class="stat-value">${rounds.length}</div><div class="stat-label">My rounds</div></div>
@@ -141,42 +138,6 @@ const dashboard = {
     return games.map((game) =>
       `<option value="${game.key}" ${game.key === selectedKey ? 'selected' : ''}>${_esc(game.label)}</option>`
     ).join('');
-  },
-
-  async openDemoFoursome() {
-    try {
-      const created = await svcApi('post', '/api/rounds', {
-        name: 'Demo foursome — Kurt, Chase, Brian',
-        format: 'team_net',
-        holes: '18',
-        allowance: 100,
-        grossBalls: 1,
-        netBalls: 2,
-        dualCount: false,
-      });
-      const state = await svcApi('post', `/api/rounds/${created.round.id}/demo/foursome`);
-      app.navigate('#round/' + state.round.id);
-    } catch (err) {
-      _toast(err.message, 'error');
-    }
-  },
-
-  async openTeam1VsParDemo() {
-    try {
-      const created = await svcApi('post', '/api/rounds', {
-        name: 'Team 1 vs-par demo — ColdGin, Kurt, Chase, Brian',
-        format: 'team_net',
-        holes: '18',
-        allowance: 100,
-        grossBalls: 1,
-        netBalls: 2,
-        dualCount: false,
-      });
-      const state = await svcApi('post', `/api/rounds/${created.round.id}/demo/team1-vs-par`);
-      app.navigate('#round/' + state.round.id);
-    } catch (err) {
-      _toast(err.message, 'error');
-    }
   },
 
   async promptJoin() {

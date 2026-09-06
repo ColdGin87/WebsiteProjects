@@ -2,7 +2,11 @@
 
 ## Developer
 
-Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
+Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
+
+### Production clean slate (ASSET_V `20260905u`)
+
+Shipped app no longer opens demo foursomes or Team 1 vs-par sample rounds. Demo HTTP routes stay for unit tests behind `ALLOW_DEMO=1`. Production runtime does not preload players or scores. Same PR #2.
 
 ### Sunday helpers share one page without a colliding `api` (ASSET_V `20260905t`)
 

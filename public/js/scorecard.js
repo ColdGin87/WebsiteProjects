@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905t',
+  ASSET_V: '20260905u',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -2138,7 +2138,7 @@ const scorecard = {
         <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
         <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
       </div>
-      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (David 29 · Brian 50 · Matt 60). 19th hole shows the fun board. Longer reel before it settles.')}</label>
+      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (one player 29 · another 50). 19th hole shows the fun board. Longer reel before it settles.')}</label>
       <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
       <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
         <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
@@ -2842,7 +2842,6 @@ const scorecard = {
         <label class="tiny-label" for="bulk-guests">Add several (one per line: Name, handicap, team)</label>
         <textarea class="form-input" id="bulk-guests" rows="4" placeholder="Cole Jan, 12, 3"></textarea>
         <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.addBulkGuests()">Add names</button>
-        <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.addDemoTeam1VsPar()">Open Team 1 vs-par demo</button>
       </div>`;
   },
 
@@ -3466,28 +3465,6 @@ const scorecard = {
     } catch (err) { _toast(err.message, 'error'); }
   },
 
-  async addDemoFoursome() {
-    if (!this.state) return;
-    try {
-      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/demo/foursome`);
-      this.state = state;
-      this.writeCache(state.round.id, state);
-      this.draw(state);
-      _toast('Kurt, Chase, and Brian are on Team 1 with 18 holes in.', 'success');
-    } catch (err) { _toast(err.message, 'error'); }
-  },
-
-  async addDemoTeam1VsPar() {
-    if (!this.state) return;
-    try {
-      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/demo/team1-vs-par`);
-      this.state = state;
-      this.writeCache(state.round.id, state);
-      this.draw(state);
-      _toast('Team 1 vs-par demo: ColdGin (H 3 received, par) + Kurt / Chase / Brian.', 'success');
-    } catch (err) { _toast(err.message, 'error'); }
-  },
-
   async saveTeamNickname(teamName, nickname) {
     if (!this.state) return;
     try {
@@ -3655,7 +3632,7 @@ const scorecard = {
         <h3>Presses</h3>
         <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>
-        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a fun board like David 29 · Brian 50 · Matt 60, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
+        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>

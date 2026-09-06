@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905t/);
-    assert.match(html, /js\/formats\.js\?v=20260905t/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905t/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905t/);
-    assert.match(src, /ASSET_V:\s*'20260905t'/);
+    assert.match(html, /20260905u/);
+    assert.match(html, /js\/formats\.js\?v=20260905u/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905u/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905u/);
+    assert.match(src, /ASSET_V:\s*'20260905u'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -425,5 +425,18 @@ describe('Wyrm Coil overlay', () => {
     assert.doesNotMatch(coil, /Aristocrat/);
     assert.doesNotMatch(coil, /Light & Wonder|Light and Wonder/);
     assert.doesNotMatch(src, /Dragon Link|Dragon Spin/);
+  });
+
+  it('does not ship demo rounds or demo player buttons', () => {
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.doesNotMatch(dash, /openTeam1VsParDemo|openDemoFoursome/);
+    assert.doesNotMatch(dash, /Open Team 1 vs-par demo|Open Kurt \/ Chase \/ Brian demo/);
+    assert.doesNotMatch(src, /addDemoTeam1VsPar|addDemoFoursome/);
+    assert.doesNotMatch(src, /Open Team 1 vs-par demo/);
+    assert.match(dash, /New round/);
+    assert.match(dash, /Join with code/);
+    assert.match(dash, /Game Rules/);
+    assert.match(routes, /ALLOW_DEMO/);
   });
 });
