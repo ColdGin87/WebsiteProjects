@@ -2,6 +2,14 @@
 
 ## Developer
 
+### Live join code on the scoring page (ASSET_V `20260906f`)
+
+Same PR #4. Hold merge.
+
+The shared join / access code sits at the **top** of hole view and the full card (not Settings / overflow). Large type + one-tap **Copy** (tap the code or Copy). Host and joiners see the same code. Welcome / Join with code now accepts 6–12 characters so the new 8-char codes can be typed. Security locks from this PR stay.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
 ### Scam / hack / backdoor hardening (ASSET_V `20260906e`)
 
 New PR from Main. Hold merge — David must say merge.

@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906e',
+  ASSET_V: '20260906f',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -1799,6 +1799,37 @@ const scorecard = {
     svcApi('updateBadge');
   },
 
+  joinCode(state) {
+    const r = (state || this.state || {}).round || {};
+    return String(r.joinCode || r.join_code || '').trim().toUpperCase();
+  },
+
+  joinCodeBarHtml(state) {
+    const code = this.joinCode(state);
+    if (!code) return '';
+    return `<div class="live-join-bar" id="live-join-bar">
+      <span class="live-join-label">Code</span>
+      <button type="button" class="live-join-code" id="live-join-code" onclick="scorecard.copyJoinCode()" aria-label="Copy join code ${_esc(code)}">${_esc(code)}</button>
+      <button type="button" class="btn btn-sm btn-accent live-join-copy" id="live-join-copy" onclick="scorecard.copyJoinCode()">Copy</button>
+    </div>`;
+  },
+
+  copyJoinCode() {
+    const code = this.joinCode(this.state);
+    if (!code) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(() => _toast('Copied ' + code, 'success')).catch(() => {
+        _formPrompt({
+          title: 'Join code',
+          submitLabel: 'Done',
+          fields: [{ name: 'text', label: 'Code', value: code }],
+        });
+      });
+      return;
+    }
+    this.copy(code);
+  },
+
   toolbar(state, extra) {
     const r = state.round;
     const organizer = this.isOrganizer(state);
@@ -2529,6 +2560,7 @@ const scorecard = {
     const race = this.raceStripText(state);
 
     container.innerHTML = `
+      ${this.joinCodeBarHtml(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
       ${this.eighteenBanner(state)}
@@ -2767,6 +2799,7 @@ const scorecard = {
     const holeToggle = '<button type="button" class="btn btn-sm btn-accent hole-this-hole" onclick="scorecard.setCardMode(\'hole\')">This hole</button>';
 
     container.innerHTML = `
+      ${this.joinCodeBarHtml(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
       ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}

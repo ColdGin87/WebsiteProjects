@@ -46,9 +46,9 @@ const dashboard = {
         </div>
         <div class="card">
           <h3 class="card-title">Have a join code?</h3>
-          <p class="card-subtitle">Sign in first, then enter the 6-character code from your organizer.</p>
+          <p class="card-subtitle">Sign in first, then enter the join code from your organizer.</p>
           <div class="inline-form">
-            <input id="guest-code" class="form-input join-code-input" maxlength="6" placeholder="ABC123" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();dashboard.stashGuestCodeAndSignIn();}">
+            <input id="guest-code" class="form-input join-code-input" maxlength="12" placeholder="ABC234XY" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();dashboard.stashGuestCodeAndSignIn();}">
             <button class="btn btn-primary" onclick="dashboard.stashGuestCodeAndSignIn()">Sign in to join</button>
           </div>
         </div>`;
@@ -76,7 +76,7 @@ const dashboard = {
           <div class="stat-card"><div class="stat-value">${done.length}</div><div class="stat-label">History</div></div>
         </div>
         <h2 class="section-title">Open rounds</h2>
-        ${live.length ? dashboard.roundGrid(live) : '<div class="empty-state"><h3>No open rounds</h3><p>Create a team round or join with a 6-character code.</p></div>'}
+        ${live.length ? dashboard.roundGrid(live) : '<div class="empty-state"><h3>No open rounds</h3><p>Create a team round or join with a code.</p></div>'}
         <h2 class="section-title mt-lg">History</h2>
         ${done.length ? dashboard.roundGrid(done) : '<div class="empty-state"><p>Completed rounds will land here.</p></div>'}
       `;
@@ -146,11 +146,11 @@ const dashboard = {
       submitLabel: 'Next',
       fields: [{
         name: 'code',
-        label: '6-character join code',
-        maxlength: 6,
+        label: 'Join code',
+        maxlength: 12,
         required: true,
         uppercase: true,
-        placeholder: 'ABC123',
+        placeholder: 'ABC234XY',
         alphabet: JOIN_ALPHABET,
       }],
     });
@@ -590,8 +590,8 @@ function _formPrompt({ title, submitLabel, fields }) {
       const codeField = (fields || []).find((f) => f.name === 'code' && f.alphabet);
       if (codeField) {
         const code = values.code || '';
-        if (code.length !== 6 || [...code].some((ch) => !JOIN_ALPHABET.includes(ch))) {
-          errEl.textContent = 'Enter the 6-character code (no 0, O, 1, or I).';
+        if (code.length < 6 || code.length > 12 || [...code].some((ch) => !JOIN_ALPHABET.includes(ch))) {
+          errEl.textContent = 'Enter the join code (no 0, O, 1, or I).';
           return;
         }
       }

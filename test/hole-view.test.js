@@ -68,11 +68,33 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906e/);
-    assert.match(html, /js\/formats\.js\?v=20260906e/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906e/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906e/);
-    assert.match(src, /ASSET_V:\s*'20260906e'/);
+    assert.match(html, /20260906f/);
+    assert.match(html, /js\/formats\.js\?v=20260906f/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906f/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906f/);
+    assert.match(src, /ASSET_V:\s*'20260906f'/);
+  });
+
+  it('shows the shared join code at the top of hole view and full card', () => {
+    const hole = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    const bar = sliceFn('joinCodeBarHtml(state) {', 'toolbar(state, extra)');
+    assert.match(hole, /joinCodeBarHtml/);
+    assert.match(full, /joinCodeBarHtml/);
+    assert.ok(hole.indexOf('joinCodeBarHtml') < hole.indexOf('holeToolbar'), 'join code is above hole toolbar');
+    assert.ok(full.indexOf('joinCodeBarHtml') < full.indexOf('toolbar(state'), 'join code is above full-card toolbar');
+    assert.match(bar, /live-join-bar/);
+    assert.match(bar, /live-join-code/);
+    assert.match(bar, /Copy/);
+    assert.match(bar, /copyJoinCode/);
+    assert.match(src, /copyJoinCode\(\)/);
+    assert.match(css, /\.live-join-code\s*\{[^}]*font-size:\s*1\.35rem/);
+    assert.match(css, /@media \(max-width: 600px\)[\s\S]*\.live-join-code\s*\{[^}]*font-size:\s*1\.25rem/);
+    assert.match(css, /\.live-join-copy\s*\{[^}]*min-height:\s*44px/);
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dash, /maxlength="12"/);
+    assert.match(dash, /code\.length < 6 \|\| code\.length > 12/);
+    assert.doesNotMatch(dash, /6-character join code/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {

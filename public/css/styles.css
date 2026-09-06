@@ -2307,6 +2307,51 @@ img {
   margin-bottom: 12px;
 }
 
+.live-join-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  min-height: 48px;
+  background: #FFF8E1;
+  border: 2px solid var(--primary-dark);
+  border-radius: var(--radius-sm);
+}
+
+.live-join-label {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+.live-join-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  color: #111;
+  cursor: pointer;
+}
+
+.live-join-copy {
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
 .hole-toolbar {
   position: relative;
   flex-wrap: nowrap;
@@ -3472,6 +3517,16 @@ input.score-input[readonly] {
   .round-toolbar {
     margin-bottom: 6px;
     gap: 6px;
+  }
+
+  .live-join-bar {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .live-join-code {
+    font-size: 1.25rem;
+    letter-spacing: 0.1em;
   }
 
   #score-done,
