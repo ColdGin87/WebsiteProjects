@@ -16,7 +16,7 @@ function svcApi(method) {
     const token = localStorage.getItem('goldendale_scorecard_token');
     if (token) headers.Authorization = 'Bearer ' + token;
   } catch { /* ignore */ }
-  const http = method === 'put' ? 'PUT' : (method === 'get' || method === 'getLive') ? 'GET' : 'POST';
+  const http = method === 'put' ? 'PUT' : (method === 'del' || method === 'delete') ? 'DELETE' : (method === 'get' || method === 'getLive') ? 'GET' : 'POST';
   const init = { method: http, headers };
   if (http !== 'GET') init.body = JSON.stringify(args[1] || {});
   return fetch(args[0], init).then(async (res) => {
@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906f',
+  ASSET_V: '20260906g',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -246,6 +246,11 @@ const scorecard = {
     this.paintScoreCell(memberId, holeNumber);
     this.paintPlayerTotals(memberId);
     this.paintNinesBoard();
+    if (this.missingNineCols()) {
+      this.draw(this.state);
+      return;
+    }
+    this.paintNineTotals();
   },
 
   recomputePlayerTotals(member) {
@@ -315,19 +320,31 @@ const scorecard = {
     return r.showOtherScores === true || r.show_other_scores === 1 || r.show_other_scores === true;
   },
 
+  isPrivilegedViewer(state) {
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (user && user.is_admin) return true;
+    return this.isOrganizer(state);
+  },
+
   canSeeMemberScores(state, member) {
+    if (!member) return false;
     if (this.canWriteMember(state, member)) return true;
+    if (this.isPrivilegedViewer(state)) return true;
     return this.isShowOtherScoresOn(state);
   },
 
   canSeeTeamScores(state, team) {
     if (!team) return false;
     if (this.isShowOtherScoresOn(state)) return true;
-    if (this.isOrganizer(state)) return true;
-    const user = typeof auth !== 'undefined' && auth.currentUser;
-    if (user && user.is_admin) return true;
+    if (this.isPrivilegedViewer(state)) return true;
     const me = this.myMember(state);
     return this.sameTeamIds(me && (me.team_id ?? me.teamId), team.id);
+  },
+
+  canManageRosterMember(state, member) {
+    if (!state || !member) return false;
+    if (this.isOrganizer(state)) return true;
+    return this.canWriteMember(state, member);
   },
 
   isVegasOn(state) {
@@ -949,15 +966,25 @@ const scorecard = {
         : this.ninesRunningThrough(g, hn, member.id, state);
       return `<td class="nines-cell" data-nines-${kind}="${member.id}:${hn}">${val == null ? '—' : val}</td>`;
     };
-    const holeRow = (holes || []).map((h) => cell(h.hole_number, 'hole')).join('');
-    const runRow = (holes || []).map((h) => cell(h.hole_number, 'run')).join('');
+    const showTot = this.showTot(state);
+    const holeFn = (h) => cell(h.hole_number, 'hole');
+    const runFn = (h) => cell(h.hole_number, 'run');
     const runOut = showOut ? this.ninesRunningThrough(g, 9, member.id, state) : null;
     const runIn = showIn ? this.ninesRunningThrough(g, 18, member.id, state) : null;
-    const pad = `${showOut ? `<td class="sc-total">${runOut == null ? '' : runOut}</td>` : ''}${showIn ? `<td class="sc-total"></td><td class="sc-total">${runIn == null ? '' : runIn}</td>` : ''}`;
-    const holePad = `${showOut ? '<td></td>' : ''}${showIn ? '<td></td><td></td>' : ''}`;
+    const holeRow = this.joinCardRow(holes, showOut, showIn, holeFn, '<td class="sc-total sc-out"></td>', '<td class="sc-total sc-in"></td>', '<td class="sc-total sc-tot-sticky"></td>', showTot);
+    const runRow = this.joinCardRow(
+      holes,
+      showOut,
+      showIn,
+      runFn,
+      `<td class="sc-total sc-out">${runOut == null ? '' : runOut}</td>`,
+      `<td class="sc-total sc-in"></td>`,
+      `<td class="sc-total sc-tot-sticky">${runIn == null ? '' : runIn}</td>`,
+      showTot
+    );
     const name = _esc(member.display_name || member.name || '');
-    return `<tr class="nines-hole-row nines-player-hole-row" data-nines-hole-member="${member.id}"><td class="row-label">${name} nines</td>${holeRow}${holePad}</tr>
-      <tr class="nines-run-row nines-player-run-row" data-nines-run-member="${member.id}"><td class="row-label">${name} run</td>${runRow}${pad}</tr>`;
+    return `<tr class="nines-hole-row nines-player-hole-row" data-nines-hole-member="${member.id}"><td class="row-label">${name} nines</td>${holeRow}</tr>
+      <tr class="nines-run-row nines-player-run-row" data-nines-run-member="${member.id}"><td class="row-label">${name} run</td>${runRow}</tr>`;
   },
 
   afterHoleScored(state, holeNumber) {
@@ -971,7 +998,36 @@ const scorecard = {
   },
 
   showIn(state) {
+    return this.afterHoleScored(state, 18) || this.afterNineStarted(state, 10, 18);
+  },
+
+  showTot(state) {
     return this.afterHoleScored(state, 18);
+  },
+
+  afterNineStarted(state, start, end) {
+    return ((state && state.members) || []).some((m) =>
+      (m.holes || []).some((h) => h.holeNumber >= start && h.holeNumber <= end && h.gross != null)
+    );
+  },
+
+  frontHoles(holes) {
+    return (holes || []).filter((h) => Number(h.hole_number ?? h.holeNumber) <= 9);
+  },
+
+  backHoles(holes) {
+    return (holes || []).filter((h) => Number(h.hole_number ?? h.holeNumber) >= 10);
+  },
+
+  joinCardRow(holes, showOut, showIn, holeFn, outHtml, inHtml, totHtml, showTot) {
+    const totOn = showTot == null ? showIn : showTot;
+    const front = this.frontHoles(holes).map(holeFn).join('');
+    const back = this.backHoles(holes).map(holeFn).join('');
+    return `${front}${showOut ? outHtml : ''}${back}${showIn ? (inHtml || '') : ''}${totOn ? (totHtml || '') : ''}`;
+  },
+
+  cardExtraCount(state) {
+    return (this.showOut(state) ? 1 : 0) + (this.showIn(state) ? 1 : 0) + (this.showTot(state) ? 1 : 0);
   },
 
   infoTip(key, text) {
@@ -1017,8 +1073,34 @@ const scorecard = {
   },
 
   addPlayerPanel(state) {
-    if (!this.canAddPlayer(state)) return '';
-    return `<div id="add-player-panel" class="add-player-panel">${this.addPlayerPanelInner(state)}</div>`;
+    const add = this.canAddPlayer(state) ? this.addPlayerPanelInner(state) : '';
+    const roster = this.setupRosterHtml(state);
+    if (!add && !roster) return '';
+    return `<div id="add-player-panel" class="add-player-panel">${roster}${add}</div>`;
+  },
+
+  manageableMembers(state) {
+    return ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+  },
+
+  setupRosterHtml(state) {
+    const rows = this.manageableMembers(state);
+    if (!rows.length) return '';
+    return `<div class="setup-roster card" id="setup-roster">
+      <div class="card-title">Team roster</div>
+      <p class="card-subtitle">Remove a player or set Index before scoring. Index only — 0.5 rounding, no course handicap. ${this.isOrganizer(state) ? 'Host can manage the full roster.' : 'Own team only.'}</p>
+      <ul class="setup-roster-list">
+        ${rows.map((m) => {
+          const hcp = m.playing_handicap ?? m.handicap ?? '—';
+          return `<li class="setup-roster-row" data-roster-member="${m.id}">
+            <span class="setup-roster-name">${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</span>
+            <span class="setup-roster-hcp">H ${_esc(hcp)}</span>
+            <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.editMember(${m.id})">HCP</button>
+            <button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>
+          </li>`;
+        }).join('')}
+      </ul>
+    </div>`;
   },
 
   addPlayerPanelInner(state) {
@@ -1533,6 +1615,7 @@ const scorecard = {
     this.paintPressChrome();
     this.paintNinesBoard();
     this.paintVegasBoard();
+    this.paintNineTotals();
   },
 
   paintNinesBoard() {
@@ -1681,6 +1764,12 @@ const scorecard = {
     this.paintNinesBoard();
     this.paintPressChrome();
     this.ensureEighteenBanner();
+    if (this.missingNineCols()) {
+      this.draw(this.state);
+      return;
+    }
+    this.paintNineTotals();
+    this.lockScoreInputs();
   },
 
   ensureEighteenBanner() {
@@ -1713,12 +1802,8 @@ const scorecard = {
 
   canWriteMember(state, member) {
     if (!state || !member) return false;
-    const user = typeof auth !== 'undefined' && auth.currentUser;
-    if (user && user.is_admin) return true;
-    if (this.isOrganizer(state)) return true;
     const me = this.myMember(state);
-    if (this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId)) return true;
-    return false;
+    return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
   },
 
   lockScoreInputs() {
@@ -2453,12 +2538,18 @@ const scorecard = {
     </div>`;
   },
 
-  playerNineLineHtml(state, member) {
+  playerNineLineText(state, member) {
+    if (!member || !this.canSeeMemberScores(state, member)) return '';
     const bits = [];
     if (this.showOut(state) && member.outGross != null) bits.push(`OUT ${member.outGross}/${member.outNet ?? '—'}`);
     if (this.showIn(state) && member.inGross != null) bits.push(`IN ${member.inGross}/${member.inNet ?? '—'}`);
-    if (this.showIn(state) && member.totalGross != null) bits.push(`TOT ${member.totalGross}/${member.totalNet ?? '—'}`);
-    return bits.length ? `<div class="nine-line">${bits.join(' · ')}</div>` : '';
+    if (this.showTot(state) && member.totalGross != null) bits.push(`TOT ${member.totalGross}/${member.totalNet ?? '—'}`);
+    return bits.join(' · ');
+  },
+
+  playerNineLineHtml(state, member) {
+    const text = this.playerNineLineText(state, member);
+    return `<div class="nine-line" data-nine-line="${member.id}">${text}</div>`;
   },
 
   wolfRoleLabel(state, member, holeNumber) {
@@ -2580,6 +2671,7 @@ const scorecard = {
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
           ${this.pressableGames(state).filter((g) => g.key !== 'nassau' && g.key !== 'vegas').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'Vegas Press increments games running (not a new ledger). Wolf / Nines press from this hole to 18. Nassau uses Front / Back / Overall on the live card.')}` : ''}
         </div>
+        ${this.nineTotalsBarHtml(state)}
         ${this.wolfBarHtml(state, holeNumber)}
         ${this.kpPickerHtml(state, holeNumber)}
         ${this.addPlayerPanel(state)}
@@ -2658,13 +2750,18 @@ const scorecard = {
     </div>`;
   },
 
-  oneHoleTeamTotal(state, team, holeNumber) {
-    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+  teamNineLineText(state, team) {
     const seen = this.canSeeTeamScores(state, team);
     const bits = [];
     if (this.showOut(state)) bits.push(`OUT ${seen ? this.fmtTeam(team.out) : '—'}`);
     if (this.showIn(state)) bits.push(`IN ${seen ? this.fmtTeam(team.inn) : '—'}`);
-    if (this.showIn(state)) bits.push(`TOT ${seen ? this.fmtTeam(team.total) : '—'}`);
+    if (this.showTot(state)) bits.push(`TOT ${seen ? this.fmtTeam(team.total) : '—'}`);
+    return bits.join(' · ');
+  },
+
+  oneHoleTeamTotal(state, team, holeNumber) {
+    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    const bits = this.teamNineLineText(state, team);
     const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(this.teamDisplay(team))} hole`;
     return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
       <div class="hole-team-scoreline">
@@ -2674,9 +2771,68 @@ const scorecard = {
       <div class="hole-team-runline vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
         <div class="vs-par-run"><span class="vs-par-label">Running</span> <strong data-team-run="${team.id}:${holeNumber}">${this.teamRunText(state, team, holeNumber)}</strong></div>
       </div>
-      ${bits.length ? `<div class="nine-line">${bits.join(' · ')}</div>` : ''}
+      <div class="nine-line nine-team-line" data-team-nines="${team.id}">${bits}</div>
       ${this.teamBallsHtml(team, holeNumber)}
     </div>`;
+  },
+
+  nineTotalsBarInner(state) {
+    const showOut = this.showOut(state);
+    const showIn = this.showIn(state);
+    const showTot = this.showTot(state);
+    if (!showOut && !showIn && !showTot) return '';
+    const teams = (state.teams || []).filter((t) => this.canSeeTeamScores(state, t));
+    const teamBits = teams.map((t) => {
+      const seen = this.canSeeTeamScores(state, t);
+      const chips = [];
+      if (showOut) chips.push(`<span class="nine-chip nine-out"><span class="nine-chip-label">OUT</span> ${seen ? this.fmtTeam(t.out) : '—'}</span>`);
+      if (showIn) chips.push(`<span class="nine-chip nine-in"><span class="nine-chip-label">IN</span> ${seen ? this.fmtTeam(t.inn) : '—'}</span>`);
+      if (showTot) chips.push(`<span class="nine-chip nine-tot"><span class="nine-chip-label">TOT</span> ${seen ? this.fmtTeam(t.total) : '—'}</span>`);
+      return `<div class="nine-totals-team">${_esc(this.teamDisplay(t))} ${chips.join('')}</div>`;
+    }).join('');
+    const players = this.visibleHoleMembers(state) || [];
+    const playerBits = players.map((m) => {
+      const text = this.playerNineLineText(state, m);
+      return text ? `${_esc(m.display_name)} ${text}` : '';
+    }).filter(Boolean).join(' · ');
+    return `${teamBits}${playerBits ? `<div class="nine-totals-players">${playerBits}</div>` : ''}`;
+  },
+
+  nineTotalsBarHtml(state) {
+    const inner = this.nineTotalsBarInner(state);
+    return `<div class="nine-totals-bar" id="nine-totals-bar"${inner ? '' : ' hidden'}>${inner}</div>`;
+  },
+
+  paintNineTotals() {
+    if (!this.state) return;
+    let el = document.getElementById('nine-totals-bar');
+    const inner = this.nineTotalsBarInner(this.state);
+    if (!el) {
+      const holeView = document.getElementById('hole-view');
+      const card = document.getElementById('scorecard-scroll');
+      const host = holeView || (card && card.parentElement);
+      if (!host) return;
+      host.insertAdjacentHTML(holeView ? 'afterbegin' : 'beforebegin', this.nineTotalsBarHtml(this.state));
+      return;
+    }
+    el.hidden = !inner;
+    el.innerHTML = inner;
+    document.querySelectorAll('[data-nine-line]').forEach((node) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(node.getAttribute('data-nine-line')));
+      node.textContent = member ? this.playerNineLineText(this.state, member) : '';
+    });
+    document.querySelectorAll('[data-team-nines]').forEach((node) => {
+      const team = (this.state.teams || []).find((t) => String(t.id) === String(node.getAttribute('data-team-nines')));
+      node.textContent = team ? this.teamNineLineText(this.state, team) : '';
+    });
+  },
+
+  missingNineCols() {
+    if (!this.state || this.isHoleView()) return false;
+    if (this.showOut(this.state) && !document.querySelector('#full-scorecard [data-out], #full-scorecard [data-team-out]')) return true;
+    if (this.showIn(this.state) && !document.querySelector('#full-scorecard [data-in], #full-scorecard [data-team-in]')) return true;
+    if (this.showTot(this.state) && !document.querySelector('#full-scorecard [data-tot], #full-scorecard [data-team-tot]')) return true;
+    return false;
   },
 
   kpPickerHtml(state, holeNumber) {
@@ -2815,6 +2971,7 @@ const scorecard = {
       </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Scorecard</span></div>
+        ${this.nineTotalsBarHtml(state)}
         <div class="scorecard-container high-contrast" id="scorecard-scroll">
           ${this.scoreTable(state, holes, outHoles, inHoles)}
         </div>
@@ -2827,22 +2984,22 @@ const scorecard = {
   scoreTable(state, holes, outHoles, inHoles) {
     const showOut = this.showOut(state);
     const showIn = this.showIn(state);
+    const showTot = this.showTot(state);
+    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`;
+    const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
+    const outPar = outHoles.reduce((s, h) => s + h.par, 0);
+    const inPar = inHoles.reduce((s, h) => s + h.par, 0);
+    const totPar = holes.reduce((s, h) => s + h.par, 0);
     return `
       <table class="scorecard team-scorecard" id="full-scorecard">
         <thead>
           <tr>
             <th>Hole</th>
-            ${holes.map((h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`).join('')}
-            ${showOut ? '<th>OUT</th>' : ''}
-            ${showIn ? '<th>IN</th>' : ''}
-            ${showIn ? '<th>TOT</th>' : ''}
+            ${this.joinCardRow(holes, showOut, showIn, holeHead, '<th class="sc-out">OUT</th>', '<th class="sc-in">IN</th>', '<th class="sc-tot-sticky">TOT</th>', showTot)}
           </tr>
           <tr class="par-row">
             <th class="row-label">Par / SI</th>
-            ${holes.map((h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`).join('')}
-            ${showOut ? `<th>${outHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
-            ${showIn ? `<th>${inHoles.reduce((s, h) => s + h.par, 0)}</th>` : ''}
-            ${showIn ? `<th>${holes.reduce((s, h) => s + h.par, 0)}</th>` : ''}
+            ${this.joinCardRow(holes, showOut, showIn, parHead, `<th class="sc-out">${outPar}</th>`, `<th class="sc-in">${inPar}</th>`, `<th class="sc-tot-sticky">${totPar}</th>`, showTot)}
           </tr>
         </thead>
         <tbody>
@@ -2865,7 +3022,7 @@ const scorecard = {
           <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.publicUrl || '')}')">Copy public board</button>
         </p>
       </div>
-      ${organizer ? this.settingsBar(state) : '<div class="card"><p>Only the organizer can change teams and guests.</p></div>'}
+        ${organizer ? this.settingsBar(state) : this.joinerRosterSettings(state)}
     `;
     svcApi('updateBadge');
   },
@@ -2945,6 +3102,14 @@ const scorecard = {
     </select>`;
   },
 
+  joinerRosterSettings(state) {
+    return `<div class="card">
+      <div class="card-title">Your team</div>
+      <p class="card-subtitle">Own team only. Set Index (0.5 rounding, no course handicap) or remove a player before scoring locks in.</p>
+      ${this.setupRosterHtml(state)}
+    </div>`;
+  },
+
   settingsBar(state) {
     const r = state.round;
     return `
@@ -2993,7 +3158,10 @@ const scorecard = {
                   <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
                   <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
                   <td>${this.teamSelectHtml(state, m)}</td>
-                  <td><button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button></td>
+                  <td>
+                    <button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button>
+                    <button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>
+                  </td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -3019,7 +3187,7 @@ const scorecard = {
   },
 
   playerRows(state, holes, outHoles, inHoles, showOut, showIn) {
-    const extra = (showOut ? 1 : 0) + (showIn ? 2 : 0);
+    const extra = this.cardExtraCount(state);
     if (this.isWolfOn(state)) {
       const rows = this.wolfRoster(state).map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
       const extras = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
@@ -3041,37 +3209,51 @@ const scorecard = {
 
   onePlayerRow(state, m, holes, showOut, showIn) {
     const seen = this.canSeeMemberScores(state, m);
-    const cells = holes.map((h) => {
+    const holeCell = (h) => {
       const hs = seen ? (m.holes || []).find((x) => x.holeNumber === h.hole_number) : null;
       return this.scoreCellHtml(state, m, h, hs);
-    }).join('');
+    };
+    const showTot = this.showTot(state);
     return `
       <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${m.id}">
         <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
-        ${cells}
-        ${showOut ? `<td class="sc-total" data-out="${m.id}">${seen ? (m.outGross ?? '') : ''} <span class="net-mini">${seen ? (m.outNet ?? '') : ''}</span></td>` : ''}
-        ${showIn ? `<td class="sc-total" data-in="${m.id}">${seen ? (m.inGross ?? '') : ''} <span class="net-mini">${seen ? (m.inNet ?? '') : ''}</span></td>` : ''}
-        ${showIn ? `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${seen ? (m.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (m.totalNet ?? '') : ''}</span></td>` : ''}
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          holeCell,
+          `<td class="sc-total sc-out" data-out="${m.id}">${seen ? (m.outGross ?? '') : ''} <span class="net-mini">${seen ? (m.outNet ?? '') : ''}</span></td>`,
+          `<td class="sc-total sc-in" data-in="${m.id}">${seen ? (m.inGross ?? '') : ''} <span class="net-mini">${seen ? (m.inNet ?? '') : ''}</span></td>`,
+          `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${seen ? (m.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (m.totalNet ?? '') : ''}</span></td>`,
+          showTot
+        )}
       </tr>
       ${this.onePlayerNinesRows(state, m, holes, showOut, showIn)}`;
   },
 
   oneTeamRow(state, team, holes, showOut, showIn) {
     const seen = this.canSeeTeamScores(state, team);
-    return `
-      <tr class="row-team" data-team-row="${team.id}">
-        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
-        ${holes.map((h) => {
-          const hole = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
-          return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
+    const holeCell = (h) => {
+      const hole = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
             onclick="scorecard.revealHoleBalls(${h.hole_number})">
             <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
             <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
           </td>`;
-        }).join('')}
-        ${showOut ? `<td class="sc-total" data-team-out="${team.id}">${seen ? this.fmtTeam(team.out) : '—'}</td>` : ''}
-        ${showIn ? `<td class="sc-total" data-team-in="${team.id}">${seen ? this.fmtTeam(team.inn) : '—'}</td>` : ''}
-        ${showIn ? `<td class="sc-total"><strong data-team-tot="${team.id}">${seen ? this.fmtTeam(team.total) : '—'}</strong></td>` : ''}
+    };
+    return `
+      <tr class="row-team" data-team-row="${team.id}">
+        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          holeCell,
+          `<td class="sc-total sc-out" data-team-out="${team.id}">${seen ? this.fmtTeam(team.out) : '—'}</td>`,
+          `<td class="sc-total sc-in" data-team-in="${team.id}">${seen ? this.fmtTeam(team.inn) : '—'}</td>`,
+          `<td class="sc-total sc-tot-sticky"><strong data-team-tot="${team.id}">${seen ? this.fmtTeam(team.total) : '—'}</strong></td>`,
+          this.showTot(state)
+        )}
       </tr>`;
   },
 
@@ -3082,17 +3264,23 @@ const scorecard = {
     return `
       <tr class="row-team row-vegas" data-vegas-row="${team.id}">
         <td class="row-label">${_esc(this.teamDisplay(team))} Vegas</td>
-        ${holes.map((h) => {
-          const row = this.vegasHoleFor(state, team, h.hole_number);
-          const swing = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
-          return `<td data-vegas-cell="${team.id}:${h.hole_number}" class="team-hole-cell ${row && row.incomplete ? 'incomplete' : ''}">
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          (h) => {
+            const row = this.vegasHoleFor(state, team, h.hole_number);
+            const swing = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+            return `<td data-vegas-cell="${team.id}:${h.hole_number}" class="team-hole-cell ${row && row.incomplete ? 'incomplete' : ''}">
             <span class="team-hole-score" data-vegas-num="${team.id}:${h.hole_number}">${row && row.num != null ? row.num : '—'}</span>
             <span class="vegas-cell-swing" data-vegas-cell-swing="${team.id}:${h.hole_number}">${swing}</span>
           </td>`;
-        }).join('')}
-        ${showOut ? '<td class="sc-total"></td>' : ''}
-        ${showIn ? '<td class="sc-total"></td>' : ''}
-        ${showIn ? `<td class="sc-total"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? this.fmtVegasPts(lastRow.run) : '0'}</strong></td>` : ''}
+          },
+          '<td class="sc-total sc-out"></td>',
+          '<td class="sc-total sc-in"></td>',
+          `<td class="sc-total sc-tot-sticky"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? this.fmtVegasPts(lastRow.run) : '0'}</strong></td>`,
+          this.showTot(state)
+        )}
       </tr>`;
   },
 
@@ -3152,17 +3340,23 @@ const scorecard = {
     return (state.teams || []).map((team) => `
       <tr class="row-team" data-team-row="${team.id}">
         <td class="row-label">${_esc(this.teamDisplay(team))}</td>
-        ${holes.map((h) => {
-          const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
-          return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
+        ${this.joinCardRow(
+          holes,
+          !!outHoles.length,
+          !!inHoles.length,
+          (h) => {
+            const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
+            return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
             onclick="scorecard.revealHoleBalls(${h.hole_number})">
             <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
             <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
           </td>`;
-        }).join('')}
-        ${outHoles.length ? `<td class="sc-total" data-team-out="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.out) : '—'}</td>` : ''}
-        ${inHoles.length ? `<td class="sc-total" data-team-in="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.inn) : '—'}</td>` : ''}
-        <td class="sc-total"><strong data-team-tot="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.total) : '—'}</strong></td>
+          },
+          `<td class="sc-total sc-out" data-team-out="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.out) : '—'}</td>`,
+          `<td class="sc-total sc-in" data-team-in="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.inn) : '—'}</td>`,
+          `<td class="sc-total sc-tot-sticky"><strong data-team-tot="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.total) : '—'}</strong></td>`,
+          true
+        )}
       </tr>`).join('');
   },
 
@@ -3488,7 +3682,12 @@ const scorecard = {
       this.paintBallLine(holeNumber);
       this.paintEndTotals();
       this.paintCurrentHoleChrome();
+      this.paintNineTotals();
       this.lockScoreInputs();
+      return;
+    }
+    if (this.missingNineCols()) {
+      this.draw(this.state);
       return;
     }
     const table = document.getElementById('full-scorecard');
@@ -3512,6 +3711,7 @@ const scorecard = {
     this.paintBallLine(this.currentHole);
     this.paintEndTotals();
     this.paintCurrentHoleChrome();
+    this.paintNineTotals();
     this.lockScoreInputs();
   },
 
@@ -3732,12 +3932,16 @@ const scorecard = {
 
   async editMember(memberId) {
     const member = this.state.members.find((m) => m.id === memberId);
+    if (!this.canManageRosterMember(this.state, member)) {
+      this.showWriteError('You can only edit players on your own team.');
+      return;
+    }
     const values = await _formPrompt({
-      title: 'Playing handicap',
+      title: 'Handicap Index',
       submitLabel: 'Save',
       fields: [{
         name: 'playingHandicap',
-        label: 'Handicap index (rounded at 0.5, then SI strokes)',
+        label: 'Handicap Index (0.5 rounding, then SI strokes — no course handicap)',
         value: member.playing_handicap ?? member.handicap ?? '',
         required: true,
       }],
@@ -3748,6 +3952,22 @@ const scorecard = {
         handicap: values.playingHandicap,
         playingHandicap: values.playingHandicap,
       });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async removeMember(memberId) {
+    const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canManageRosterMember(this.state, member)) {
+      this.showWriteError('You can only remove players from your own team.');
+      return;
+    }
+    const name = member && member.display_name ? member.display_name : 'this player';
+    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Remove ' + name + ' from the roster?')) return;
+    try {
+      const state = await svcApi('del', `/api/rounds/${this.state.round.id}/members/${memberId}`);
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);

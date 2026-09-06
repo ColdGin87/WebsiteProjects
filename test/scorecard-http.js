@@ -610,12 +610,23 @@ async function runSideGamesScenario(base) {
   const eve = state.members.find((m) => m.display_name === 'Eve');
   const fay = state.members.find((m) => m.display_name === 'Fay');
   if (!eve || !fay) fail('side games missing Team 2');
+  const t2 = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Side Two',
+      email: `scorecard.side2.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  await api(base, 'POST', '/api/rounds/join', {
+    token: t2.token,
+    body: { code: created.round.join_code || created.round.joinCode, teamName: 'Team 2' },
+  });
   await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
+    token: t2.token,
     body: { memberId: eve.id, holeNumber: 1, gross: 6 },
   });
   await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
+    token: t2.token,
     body: { memberId: fay.id, holeNumber: 1, gross: 7 },
   });
   const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
@@ -1160,6 +1171,69 @@ async function runHardeningScenario(base) {
   const hole1 = hostLocked && (hostLocked.holes || []).find((h) => h.holeNumber === 1);
   if (hole1 && hole1.gross != null) fail('rejected cross-team score must not persist');
 
+  const hostCross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: joinerMember.id, holeNumber: 1, gross: 5 },
+  });
+  assertEqual(hostCross.status, 403, 'host must not write Team 2 scores');
+  const afterHostCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const joinerLocked = (afterHostCross.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  const joinerHole1 = joinerLocked && (joinerLocked.holes || []).find((h) => h.holeNumber === 1);
+  if (joinerHole1 && joinerHole1.gross != null) fail('rejected host-to-Team-2 score must not persist');
+
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  const joinerGet = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const hiddenHost = (joinerGet.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hiddenHole = hiddenHost && (hiddenHost.holes || []).find((h) => h.holeNumber === 1);
+  if (hiddenHole && hiddenHole.gross != null) fail('GET must redact other-team scores when show-other is OFF');
+  const joinerLive = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: joiner.token });
+  const liveLeak = (joinerLive.scores || []).some((s) => Number(s.memberId) === Number(hostMember.id) && s.gross != null);
+  if (liveLeak) fail('live must redact other-team scores when show-other is OFF');
+  const hostGet = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const hostSeesSelf = (hostGet.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hostHole = hostSeesSelf && (hostSeesSelf.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hostHole && hostHole.gross, 4, 'organizer still sees own team scores');
+
+  const withGuest = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Roster Pal', handicap: 12, playingHandicap: 12 },
+  });
+  const pal = (withGuest.members || []).find((m) => m.display_name === 'Roster Pal');
+  if (!pal) fail('joiner guest for roster manage missing');
+  assertEqual(Number(pal.playing_handicap), 12, 'guest starts at Index 12');
+  const palHole = (pal.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palHole && palHole.strokes, 1, 'Index 12 gets 1 stroke on SI 1');
+
+  const hcpEdit = await api(base, 'PUT', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+    body: { handicap: 24, playingHandicap: 24 },
+  });
+  const palAfter = (hcpEdit.members || []).find((m) => Number(m.id) === Number(pal.id));
+  assertEqual(Number(palAfter && palAfter.playing_handicap), 24, 'joiner can set own-team Index');
+  const palHoleAfter = palAfter && (palAfter.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palHoleAfter && palHoleAfter.strokes, 2, 'Index 24 dots become 2 on SI 1');
+
+  const stealHcp = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/members/${hostMember.id}`, {
+    token: joiner.token,
+    body: { handicap: 30, playingHandicap: 30 },
+  });
+  assertEqual(stealHcp.status, 403, 'joiner cannot edit other-team handicap');
+
+  const stealDel = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/members/${hostMember.id}`, {
+    token: joiner.token,
+  });
+  assertEqual(stealDel.status, 403, 'joiner cannot delete other-team player');
+
+  const removed = await api(base, 'DELETE', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+  });
+  if ((removed.members || []).some((m) => m.display_name === 'Roster Pal')) {
+    fail('joiner own-team remove must drop the player');
+  }
+
   const directory = await api(base, 'GET', '/api/players', { token: joiner.token });
   if (!Array.isArray(directory)) fail('signed-in player list should be an array');
   const other = directory.find((p) => Number(p.id) !== Number(joiner.user && joiner.user.id));
@@ -1172,7 +1246,7 @@ async function runHardeningScenario(base) {
     fail('production must not return magic-link URLs');
   }
 
-  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403');
+  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403, redact, roster HCP/remove');
 }
 
 async function runDemoOffScenario() {

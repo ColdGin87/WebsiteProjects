@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906f/);
-    assert.match(html, /js\/formats\.js\?v=20260906f/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906f/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906f/);
-    assert.match(src, /ASSET_V:\s*'20260906f'/);
+    assert.match(html, /20260906g/);
+    assert.match(html, /js\/formats\.js\?v=20260906g/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906g/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906g/);
+    assert.match(src, /ASSET_V:\s*'20260906g'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -394,7 +394,18 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
     const writeLock = sliceFn('canWriteMember(state, member) {', 'lockScoreInputs()');
     assert.doesNotMatch(writeLock, /isWolfOn/);
+    assert.doesNotMatch(writeLock, /isOrganizer/);
+    assert.doesNotMatch(writeLock, /is_admin/);
     assert.match(writeLock, /sameTeamIds/);
+    assert.match(src, /canManageRosterMember/);
+    assert.match(src, /removeMember\(/);
+    assert.match(src, /setupRosterHtml/);
+    assert.match(src, /nineTotalsBarHtml/);
+    assert.match(src, /joinCardRow/);
+    assert.match(src, />OUT</);
+    assert.match(src, />TOT</);
+    assert.match(css, /\.nine-totals-bar/);
+    assert.match(css, /\.setup-roster-row/);
     assert.match(src, /lockScoreInputs\(\)/);
     assert.match(src, /canSeeMemberScores/);
     assert.match(src, /canSeeTeamScores/);
@@ -407,9 +418,14 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(dash, /name="showOtherScores" checked/);
     const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
     const canScoreAt = routes.indexOf('function canScore');
-    const canScoreFn = routes.slice(canScoreAt, canScoreAt + 700);
+    const canManageAt = routes.indexOf('function canManageMember', canScoreAt);
+    const canScoreFn = routes.slice(canScoreAt, canManageAt > canScoreAt ? canManageAt : canScoreAt + 400);
     assert.match(canScoreFn, /canWriteTeamScore/);
     assert.doesNotMatch(canScoreFn, /wolfGameOn/);
+    assert.doesNotMatch(canScoreFn, /is_admin/);
+    assert.doesNotMatch(canScoreFn, /isOrganizer/);
+    assert.match(routes, /canManageMember/);
+    assert.match(routes, /You can only remove players from your own team/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);

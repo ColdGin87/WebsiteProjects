@@ -2,6 +2,18 @@
 
 ## Developer
 
+### Field P0s: OUT/TOT, dots, write/see lock, roster (ASSET_V `20260906g`)
+
+Same PR #4. Hold merge.
+
+Phone OUT (front 1–9) and TOT (1–18) sit in a large bar on hole view and Full card; OUT is also after hole 9 on the table. Running vs-par stays under team totals. Stroke dots follow Handicap Index (0.5 rounding) vs scorecard SI — no Course Handicap; A/B/C/D lock 1/1/1/2 on hole 1 SI 1.
+
+Write lock is own-team only (no organizer/admin score bypass, including Wolf). Show-other default OFF: joiners get opposing hole scores redacted on GET/live; cross-team POST is 403 and does not persist. Organizer may still see all.
+
+At setup, joiners can Remove / set Index on their own team; host can manage the full roster. Index edits refresh strokes/dots.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
 ### Live join code on the scoring page (ASSET_V `20260906f`)
 
 Same PR #4. Hold merge.
