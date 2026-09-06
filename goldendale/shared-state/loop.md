@@ -12,7 +12,7 @@ Ships with OUT/TOT, Index dots, write-lock / hide other teams, delete player (co
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending this ship.
+Unique host (READY, SHA `710dd3e`, ASSET_V `20260906i`): https://website-projects-16iuhs83p-coldgin87s-projects.vercel.app
 
 ### Field setup: delete player + start HCP (ASSET_V `20260906h`)
 
