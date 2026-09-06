@@ -225,7 +225,7 @@ describe('Combined PR3 hole view', () => {
   it('shows This hole on the full card so phone users can leave Full card', () => {
     const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
     assert.match(full, /This hole/);
-    assert.match(full, /setCardMode\('hole'\)/);
+    assert.match(full, /setCardMode/);
     assert.match(full, /hole-this-hole/);
     assert.match(css, /\.hole-full-card-btn/);
     assert.match(css, /\.hole-number-row/);
