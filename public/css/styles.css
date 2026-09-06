@@ -3605,11 +3605,14 @@ input.score-input[readonly] {
 }
 
 .eighteen-done {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   background: #E8F5E9;
   border: 2px solid var(--primary);
   border-radius: var(--radius-md);
   padding: 14px 16px;
-  margin-bottom: 12px;
+  margin: 8px 0 12px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3619,13 +3622,35 @@ input.score-input[readonly] {
 
 .eighteen-done p {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: #1A1A1A;
 }
 
 .eighteen-done .btn {
   min-height: 44px;
   min-width: 44px;
+}
+
+.eighteen-done .eighteen-go {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+@media (max-width: 600px) {
+  .eighteen-done {
+    padding: 16px;
+  }
+
+  .eighteen-done p {
+    font-size: 1.15rem;
+    width: 100%;
+  }
+
+  .eighteen-done .eighteen-go {
+    width: 100%;
+    font-size: 1.15rem;
+  }
 }
 
 .results-table th,

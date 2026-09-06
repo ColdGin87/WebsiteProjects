@@ -68,11 +68,12 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906h/);
-    assert.match(html, /js\/formats\.js\?v=20260906h/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906h/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906h/);
-    assert.match(src, /ASSET_V:\s*'20260906h'/);
+    assert.match(html, /20260906i/);
+    assert.match(html, /js\/formats\.js\?v=20260906i/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906i/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906i/);
+    assert.match(html, /js\/nineteen\.js\?v=20260906i/);
+    assert.match(src, /ASSET_V:\s*'20260906i'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -81,6 +82,10 @@ describe('Combined PR3 hole view', () => {
     const bar = sliceFn('joinCodeBarHtml(state) {', 'toolbar(state, extra)');
     assert.match(hole, /joinCodeBarHtml/);
     assert.match(full, /joinCodeBarHtml/);
+    assert.ok(hole.indexOf('joinCodeBarHtml') < hole.indexOf('eighteenBanner'), 'join code is above the 19th banner');
+    assert.ok(hole.indexOf('eighteenBanner') < hole.indexOf('holeToolbar'), '19th banner sits at the top of the live card');
+    assert.ok(full.indexOf('joinCodeBarHtml') < full.indexOf('eighteenBanner'), 'join code is above the full-card 19th banner');
+    assert.ok(full.indexOf('eighteenBanner') < full.indexOf('toolbar(state'), '19th banner sits above the full-card toolbar');
     assert.ok(hole.indexOf('joinCodeBarHtml') < hole.indexOf('holeToolbar'), 'join code is above hole toolbar');
     assert.ok(full.indexOf('joinCodeBarHtml') < full.indexOf('toolbar(state'), 'join code is above full-card toolbar');
     assert.match(bar, /live-join-bar/);
@@ -317,6 +322,12 @@ describe('Combined PR3 hole view', () => {
     assert.match(players, /isVegasOn/);
     assert.match(players, /visibleHoleMembers|group\.team &&/);
     assert.match(src, /Go to the 19th hole/);
+    assert.match(src, /canOpenNineteenth/);
+    assert.match(src, /openNineteenth/);
+    assert.match(src, /nineteenthNeedsConfirm/);
+    assert.match(src, /writableRosterComplete|canWriteMember/);
+    assert.doesNotMatch(sliceFn('canOpenNineteenth(state) {', 'nineteenthNeedsConfirm(state)'), /isShowOtherScoresOn/);
+    assert.match(css, /\.eighteen-done\s*\{[^}]*position:\s*sticky/);
     assert.match(src, /drawGameRules/);
     assert.match(src, /drawNineteenth/);
     assert.match(src, /info-tip/);

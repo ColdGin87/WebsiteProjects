@@ -2,6 +2,18 @@
 
 ## Developer
 
+### Field P0 batch + 19th unlock (ASSET_V `20260906i`)
+
+Same PR #4. Hold merge. One unique host when this whole batch is ready.
+
+Ships with OUT/TOT, Index dots, write-lock / hide other teams, delete player (confirm tap, no orphan scores), and start-of-round Index edits.
+
+**19th hole:** `Go to the 19th hole` unlocks when the viewer’s writable roster has all holes in. Incomplete opposing teams the viewer cannot score do not block it. Host / organizer can also open 19th once any team has finished 18 (confirm if other teams still have blanks). Banner sits at the top of the live card (after the join code), sticky and large on ~390px.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending this ship.
+
 ### Field setup: delete player + start HCP (ASSET_V `20260906h`)
 
 Same PR #4. Hold merge. Ships with the three P0s (OUT/TOT, Index dots, write-lock / hide other teams).
@@ -13,7 +25,7 @@ At team setup (live card roster, before / early scoring):
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending this ship.
+Unique host (READY, SHA `5ccc4c1`, ASSET_V `20260906h`): https://website-projects-1ybrqri7f-coldgin87s-projects.vercel.app
 
 ### Field P0s: OUT/TOT, dots, write/see lock, roster (ASSET_V `20260906g`)
 

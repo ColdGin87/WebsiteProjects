@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906h',
+  ASSET_V: '20260906i',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -286,6 +286,8 @@ const scorecard = {
   },
 
   playerComplete(member, holes) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.playerComplete) return api.playerComplete(member, holes);
     return (holes || []).every((h) => {
       const hs = (member.holes || []).find((x) => x.holeNumber === h.hole_number);
       return hs && hs.gross != null;
@@ -293,24 +295,65 @@ const scorecard = {
   },
 
   groupHasEighteen(state) {
+    return this.canOpenNineteenth(state);
+  },
+
+  canOpenNineteenth(state) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.canOpenNineteenth) {
+      return api.canOpenNineteenth(state, this.myMember(state), this.isOrganizer(state));
+    }
     const holes = state.holes || [];
-    const members = (this.isShowOtherScoresOn(state) || this.isOrganizer(state))
-      ? (state.members || []).filter((m) => m.team_id)
-      : this.groupedMembers(state)
-        .filter((g) => g.team && this.canSeeTeamScores(state, g.team))
-        .flatMap((g) => g.members || []);
-    if (!holes.length || !members.length) return false;
-    return members.every((m) => this.playerComplete(m, holes));
+    const writable = (state.members || []).filter((m) => this.canWriteMember(state, m));
+    if (holes.length && writable.length && writable.every((m) => this.playerComplete(m, holes))) return true;
+    if (this.isOrganizer(state)) {
+      return (state.teams || []).some((team) => {
+        const roster = (state.members || []).filter((m) => this.sameTeamIds(m.team_id ?? m.teamId, team.id));
+        return roster.length > 0 && roster.every((m) => this.playerComplete(m, holes));
+      });
+    }
+    return false;
+  },
+
+  nineteenthNeedsConfirm(state) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.nineteenthNeedsConfirm) {
+      return api.nineteenthNeedsConfirm(state, this.isOrganizer(state));
+    }
+    if (!this.isOrganizer(state)) return false;
+    const holes = state.holes || [];
+    return (state.members || []).filter((m) => m.team_id).some((m) => !this.playerComplete(m, holes));
   },
 
   eighteenBanner(state) {
-    if (!this.groupHasEighteen(state)) return '';
+    if (!this.canOpenNineteenth(state)) return '';
+    const holes = (state.holes || []).length || 18;
+    const confirm = this.nineteenthNeedsConfirm(state);
+    const copy = confirm
+      ? `<p><strong>A team has all ${holes} in.</strong> Other teams still have blanks. Open the 19th hole anyway?</p>`
+      : `<p><strong>${holes} holes are in.</strong> Go to the 19th hole.</p>`;
     return `
       <div class="eighteen-done" id="eighteen-done">
-        <p><strong>18 holes are in.</strong> Confirm the card and go to the 19th hole.</p>
-        <button type="button" class="btn btn-accent" onclick="scorecard.showScreen('nineteenth')">Go to the 19th hole</button>
+        ${copy}
+        <button type="button" class="btn btn-accent eighteen-go" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>
         <button type="button" class="btn btn-secondary" onclick="scorecard.showScreen('results')">Round results</button>
       </div>`;
+  },
+
+  async openNineteenth() {
+    if (!this.canOpenNineteenth(this.state)) return;
+    if (this.nineteenthNeedsConfirm(this.state)) {
+      const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+      if (prompt) {
+        const ok = await prompt({
+          title: 'Open the 19th hole? Other teams still have blanks.',
+          submitLabel: 'Go to the 19th hole',
+          fields: [],
+        });
+        if (!ok) return;
+      }
+    }
+    this.showScreen('nineteenth');
   },
 
   isTeamRaceOn(state) {
@@ -1785,11 +1828,20 @@ const scorecard = {
 
   ensureEighteenBanner() {
     if (!this.state || this.screen !== 'play') return;
-    if (!this.groupHasEighteen(this.state)) return;
-    if (document.getElementById('eighteen-done')) return;
-    const bar = document.querySelector('.round-toolbar');
-    if (!bar) return;
-    bar.insertAdjacentHTML('afterend', this.eighteenBanner(this.state));
+    const existing = document.getElementById('eighteen-done');
+    if (!this.canOpenNineteenth(this.state)) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    const html = this.eighteenBanner(this.state);
+    const join = document.querySelector('.live-join-bar');
+    if (join) {
+      join.insertAdjacentHTML('afterend', html);
+      return;
+    }
+    const bar = document.querySelector('.round-toolbar, .hole-toolbar');
+    if (bar) bar.insertAdjacentHTML('beforebegin', html);
   },
 
   isOrganizer(state) {
@@ -2663,9 +2715,9 @@ const scorecard = {
 
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
+      ${this.eighteenBanner(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
-      ${this.eighteenBanner(state)}
       ${this.nassauLiveDockHtml(state, holeNumber)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
@@ -2967,10 +3019,10 @@ const scorecard = {
 
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
+      ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
       ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}
-      ${this.eighteenBanner(state)}
       ${this.addPlayerPanel(state)}
       ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
       <div class="card">
@@ -3088,7 +3140,7 @@ const scorecard = {
         ` : this.matchBlock(state)}
         ${this.sideGamesResultsHtml(state)}
         <div class="welcome-actions mt-md">
-          ${this.groupHasEighteen(state) ? '<button class="btn btn-accent btn-sm" onclick="scorecard.showScreen(\'nineteenth\')">Go to the 19th hole</button>' : ''}
+          ${this.canOpenNineteenth(state) ? '<button class="btn btn-accent btn-sm" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>' : ''}
           <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
           <a class="btn btn-secondary btn-sm" href="/api/rounds/${r.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
           <button class="btn btn-secondary btn-sm" onclick="app.navigate('#lb/${_esc(r.public_token || '')}')">Public board</button>
@@ -4108,7 +4160,7 @@ const scorecard = {
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
-        <p>When all scores are in, tap Go to the 19th hole. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
+        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
         <h3>OUT / IN / TOT</h3>
         <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
