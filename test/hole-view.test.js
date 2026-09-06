@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905m/);
-    assert.match(html, /js\/formats\.js\?v=20260905m/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905m/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905m/);
-    assert.match(src, /ASSET_V:\s*'20260905m'/);
+    assert.match(html, /20260905n/);
+    assert.match(html, /js\/formats\.js\?v=20260905n/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905n/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905n/);
+    assert.match(src, /ASSET_V:\s*'20260905n'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
