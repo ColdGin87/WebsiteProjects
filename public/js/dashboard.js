@@ -287,6 +287,11 @@ const dashboard = {
             Sunday game
             ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Sunday game is the default team vs-par race. 1G+2N or 1G+1N (or another format). OFF hides the Sunday game; side games can still run.') : ''}
           </label>
+          <label class="check-row" id="create-show-other-row">
+            <input type="checkbox" name="showOtherScores">
+            Show other teams’ scores
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-show-other', 'Default OFF. Each team sees only its own scores on the live card. ON shows other teams read-only. Nobody can edit the other team.') : ''}
+          </label>
           <div class="form-group" id="create-game-wrap">
             <label>Sunday game format ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1G+2N. Also 1G+1N, 3G, 3N, 1G+3N, 2G+2N.') : ''}</label>
             <p class="game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
@@ -325,11 +330,13 @@ const dashboard = {
       const gameWrap = document.getElementById('create-game-wrap');
       const dualRow = document.getElementById('create-dual-row');
       const raceRow = document.getElementById('create-team-race-row');
+      const showOtherRow = document.getElementById('create-show-other-row');
       const syncGameUi = () => {
         const teamMode = formatSel.value === 'team_net';
         if (gameWrap) gameWrap.hidden = !teamMode;
         if (dualRow) dualRow.hidden = !teamMode;
         if (raceRow) raceRow.hidden = !teamMode;
+        if (showOtherRow) showOtherRow.hidden = !teamMode;
         if (gameRule && gameSel) gameRule.textContent = dashboard.gameRule(gameSel.value);
       };
       if (gameSel) gameSel.addEventListener('change', syncGameUi);
@@ -361,6 +368,7 @@ const dashboard = {
             netBalls: game.netBalls,
             dualCount: fd.get('dualCount') === 'on',
             teamRace: fd.get('teamRace') === 'on',
+            showOtherScores: fd.get('showOtherScores') === 'on',
             team1Nickname: fd.get('team1Nickname') || '',
             sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
               ? scorecard.readSideGamesForm(fd)

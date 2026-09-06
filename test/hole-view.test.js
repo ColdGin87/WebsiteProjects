@@ -68,18 +68,19 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905u/);
-    assert.match(html, /js\/formats\.js\?v=20260905u/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905u/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905u/);
-    assert.match(src, /ASSET_V:\s*'20260905u'/);
+    assert.match(html, /20260906d/);
+    assert.match(html, /js\/formats\.js\?v=20260906d/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906d/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906d/);
+    assert.match(src, /ASSET_V:\s*'20260906d'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
     const draw = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(draw, /holeToolbar/);
     assert.doesNotMatch(draw, /See dashboard/);
-    assert.doesNotMatch(draw, /Full card/);
+    assert.match(draw, /hole-full-card-btn/);
+    assert.match(draw, /setCardMode\('full'\)/);
     const bar = sliceFn('holeToolbar(state) {', 'bindHoleOverflowDismiss');
     assert.match(bar, />Back</);
     assert.match(bar, /hole-overflow/);
@@ -201,6 +202,35 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
   });
 
+  it('lets a joined non-organizer add players onto their own team', () => {
+    const gate = sliceFn('canAddPlayer(state)', 'myTeamName(state)');
+    assert.match(gate, /isOrganizer/);
+    assert.match(gate, /myMember/);
+    assert.match(src, /canAddPlayer\(state\)/);
+    const panel = sliceFn('addPlayerPanel(state)', 'addPlayerPanelInner(state)');
+    assert.match(panel, /canAddPlayer/);
+    assert.doesNotMatch(panel, /isOrganizer\(state\)\) return ''/);
+    assert.match(src, /myTeamName\(state\)/);
+    const chips = sliceFn('addTeamChipsHtml(selected)', 'addExtraTeam()');
+    assert.match(chips, /isOrganizer/);
+    assert.match(chips, /myTeamName/);
+    const extra = sliceFn('addExtraTeam()', 'snapshotAddPlayer()');
+    assert.match(extra, /isOrganizer\(this\.state\)\) return/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.match(routes, /canAddGuestToTeam/);
+    assert.match(routes, /You can only add players to your own team/);
+    assert.match(routes, /findExistingTeamId/);
+  });
+
+  it('shows This hole on the full card so phone users can leave Full card', () => {
+    const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    assert.match(full, /This hole/);
+    assert.match(full, /setCardMode/);
+    assert.match(full, /hole-this-hole/);
+    assert.match(css, /\.hole-full-card-btn/);
+    assert.match(css, /\.hole-number-row/);
+  });
+
   it('live add-player is name, HCP, and Team 1 / 2 / 3 chips in one flow', () => {
     const panel = sliceFn('addPlayerPanelInner(state)', 'addTeamChipsHtml(selected)');
     assert.match(panel, /live-add-guest-name/);
@@ -248,6 +278,18 @@ describe('Combined PR3 hole view', () => {
     const players = sliceFn('holePlayersHtml(state, holeNumber)', 'holeToolbar(state)');
     assert.match(players, /group\.team/);
     assert.match(players, /oneHoleTeamTotal/);
+    assert.match(src, /teamRunThrough/);
+    assert.match(src, /data-team-run/);
+    assert.match(src, />Running</);
+    const holeTotal = sliceFn('oneHoleTeamTotal(state, team, holeNumber)', 'kpPickerHtml(state, holeNumber)');
+    assert.match(holeTotal, /Running/);
+    assert.match(holeTotal, /teamRunText/);
+    assert.match(holeTotal, /canSeeTeamScores/);
+    const teamRow = sliceFn('oneTeamRow(state, team, holes, showOut, showIn) {', 'oneVegasRow(state, team, holes, showOut, showIn)');
+    assert.match(teamRow, /data-team-run/);
+    assert.match(teamRow, /Running/);
+    assert.match(teamRow, /canSeeTeamScores/);
+    assert.match(teamRow, /data-team-out/);
     assert.match(players, /oneHoleVegasTotal/);
     assert.ok(players.indexOf('oneHoleVegasTotal') < players.indexOf('oneHoleTeamTotal'), 'Vegas is primary under the team');
     assert.match(players, /isVegasOn/);
@@ -328,9 +370,24 @@ describe('Combined PR3 hole view', () => {
     assert.match(holeRow, /focusHoleScore/);
     assert.match(holeRow, /playerNinesLineHtml/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
-    const writeLock = sliceFn('canWriteMember(state, member)', 'onAuthReady()');
-    assert.match(writeLock, /isWolfOn\(state\)\) return true/);
-    assert.doesNotMatch(writeLock, /isWolfOn\(state\) && me/);
+    const writeLock = sliceFn('canWriteMember(state, member) {', 'lockScoreInputs()');
+    assert.doesNotMatch(writeLock, /isWolfOn/);
+    assert.match(writeLock, /sameTeamIds/);
+    assert.match(src, /lockScoreInputs\(\)/);
+    assert.match(src, /canSeeMemberScores/);
+    assert.match(src, /canSeeTeamScores/);
+    assert.match(src, /isShowOtherScoresOn/);
+    assert.match(src, /showOtherScores/);
+    assert.match(src, /Show other teams/);
+    assert.match(src, /is-score-hidden/);
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dash, /name="showOtherScores"/);
+    assert.doesNotMatch(dash, /name="showOtherScores" checked/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    const canScoreAt = routes.indexOf('function canScore');
+    const canScoreFn = routes.slice(canScoreAt, canScoreAt + 700);
+    assert.match(canScoreFn, /canWriteTeamScore/);
+    assert.doesNotMatch(canScoreFn, /wolfGameOn/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);
@@ -339,6 +396,7 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(settings, /Allowance/);
     assert.match(settings, /HCP = Index only/);
     assert.match(settings, /Sunday game/);
+    assert.match(settings, /Show other teams/);
     assert.match(settings, /1G1N|1G\+1N/);
     assert.match(src, /Sunday game · /);
     assert.match(src, /<h3>Sunday game<\/h3>/);
@@ -372,6 +430,8 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /sideGames/);
     assert.match(dash, /create-team-race-row/);
     assert.match(dash, /name="teamRace"/);
+    assert.match(dash, /name="showOtherScores"/);
+    assert.match(dash, /create-show-other-row/);
     assert.match(dash, /sideGamesFieldsInner/);
     assert.match(dash, /team1Nickname/);
     assert.match(dash, /renderJoinPicker/);
@@ -434,6 +494,10 @@ describe('Wyrm Coil overlay', () => {
     assert.doesNotMatch(dash, /Open Team 1 vs-par demo|Open Kurt \/ Chase \/ Brian demo/);
     assert.doesNotMatch(src, /addDemoTeam1VsPar|addDemoFoursome/);
     assert.doesNotMatch(src, /Open Team 1 vs-par demo/);
+    const dbSrc = fs.readFileSync(path.join(ROOT, 'lib/database.js'), 'utf8');
+    assert.match(dbSrc, /wipePracticeScoreDataOnce/);
+    assert.match(dbSrc, /DELETE FROM score_rounds/);
+    assert.match(dbSrc, /field_test_wipe/);
     assert.match(dash, /New round/);
     assert.match(dash, /Join with code/);
     assert.match(dash, /Game Rules/);

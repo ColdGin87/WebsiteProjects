@@ -2,9 +2,39 @@
 
 ## Developer
 
-Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
+### Field test merge + clean slate (ASSET_V `20260906d`)
+
+David authorized merge of PR #3 for today’s field test. First boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260906`), then leaves new Sunday rounds alone. Goldendale course seed and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons.
+
+### Sunday game Running vs-par (ASSET_V `20260906c`)
+
+Same PR #3. Hold merge. Under each hole’s team vs-par total, **Running** is the cumulative vs-par through that hole (−2 then −3 = −5; −2 then +3 = +1). Hole view shows it under the current hole so you don’t need the full card. Full card keeps the hole total plus Running, and OUT / IN / TOT after 9 / 18. Show-other-teams OFF still hides opposing Running. Write lock unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+### Team write lock + hide other teams (ASSET_V `20260906b`)
+
+Same PR #3 (`cursor/goldendale-phone-fixes-e030`). Hold merge.
+
+P0: opposing teams cannot change each other’s scores. Wolf no longer grants a write-all bypass. Client disables other-team inputs after poll/patch/draw. Server `POST /scores` is 403 for cross-team writes. Guest add stays own-team-only.
+
+Sunday game setup toggle **Show other teams’ scores** defaults OFF. Live card (hole + full) shows only the viewer’s team; other teams are blank/hidden. Organizer can turn it ON — then other teams are visible and still read-only. Persists on the round like `teamRace`.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1. Cross-team score write is 403 and does not persist.
+
+### Phone Full card + joiner Add player (ASSET_V `20260906a`)
+
+New PR from Main (`cursor/goldendale-phone-fixes-e030`). Hole view stays the default on ~390px, with a visible **Full card** control next to Hole N (not overflow-only) and **This hole** to flip back. Back + ⋯ still holds Settings / Game Rules.
+
+Join-code: host stays Team 1; joiners pick Team 2+ / Add team. After joining, a member can **Add player** (name + HCP) onto **their own team only**. Server accepts those guest adds and rejects cross-team adds. Own-team score write lock is unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `f4f4c28`, ASSET_V `20260906a`): https://website-projects-f4be1n5yt-coldgin87s-projects.vercel.app
 
 ### Production clean slate (ASSET_V `20260905u`)
+
+Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Clean slate first, then merge is authorized. Do not open a second PR.
 
 Shipped app no longer opens demo foursomes or Team 1 vs-par sample rounds. Demo HTTP routes stay for unit tests behind `ALLOW_DEMO=1`. Production runtime does not preload players or scores. Same PR #2.
 
