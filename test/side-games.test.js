@@ -6,6 +6,7 @@ const {
   scoreVegasHole,
   scoreVegas,
   ninesHolePoints,
+  ninesPointGet,
   ninesRunningThrough,
   scoreNines,
   scoreWolf,
@@ -493,6 +494,29 @@ describe('Nines', () => {
     assert.equal(ninesRunningThrough(nines.holes, 2, 1), 10);
     assert.equal(ninesRunningThrough(nines.holes, 2, 2), 5);
     assert.equal(ninesRunningThrough(nines.holes, 2, 3), 3);
+    assert.equal(ninesPointGet(nines.holes[1].running, '1'), 10);
+    assert.equal(ninesPointGet(nines.holes[1].running, 2), 5);
+    assert.equal(nines.holes[1].running['3'], 3);
+  });
+
+  it('sums 3-3-3 then 5-3-1 into running 8/6/4', () => {
+    const nines = scoreNines({
+      holes: [
+        { holeNumber: 1, par: 4, strokeIndex: 1 },
+        { holeNumber: 2, par: 4, strokeIndex: 2 },
+      ],
+      members: [
+        member(1, 'A', 0, [4, 3]),
+        member(2, 'B', 0, [4, 4]),
+        member(3, 'C', 0, [4, 5]),
+      ],
+      scoring: 'gross',
+      blitz: false,
+    });
+    assert.deepEqual(nines.holes[0].points, { 1: 3, 2: 3, 3: 3 });
+    assert.equal(nines.holes[1].players.find((p) => p.id === 1).run, 8);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 2).run, 6);
+    assert.equal(nines.holes[1].players.find((p) => p.id === 3).run, 4);
   });
 });
 

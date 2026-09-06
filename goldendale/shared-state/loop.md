@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Nines second row is the SUM (ASSET_V `20260905l`)
+
+MUST-FIX: Nines running was still reading as this-hole points. The live card now scores 5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz from the three players’ entered scores and **adds** them. First row = this hole. Second row per player = cumulative through the hole you are on (5-2-2 then 5-3-1 → 10/5/3). Same PR #2. Hold merge.
+
 ### Nines running SUM (ASSET_V `20260905k`)
 
 Nines hole points stay on the first row. The second row per player is the **cumulative** running total through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → 10/5/3), not a reset to that hole’s points. Live card repaints after each save. Exactly 3 players. Same PR #2. Hold merge.

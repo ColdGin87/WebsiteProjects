@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905k',
+  ASSET_V: '20260905l',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -219,12 +219,13 @@ const scorecard = {
     if (patch.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...patch.sideGames };
     if (patch.wolfPicks) this.state.wolfPicks = patch.wolfPicks;
     if (patch.presses) this.state.presses = patch.presses;
+    this._ninesLedger = null;
   },
 
   writeMemberHole(memberId, holeNumber, gross, net, strokes) {
-    const member = (this.state.members || []).find((m) => m.id === memberId);
+    const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
     if (!member) return null;
-    const hole = (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    const hole = (member.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
     if (!hole) return null;
     hole.gross = gross;
     if (strokes != null) hole.strokes = strokes;
@@ -234,11 +235,13 @@ const scorecard = {
 
   applyLocalScore(memberId, holeNumber, gross) {
     if (!this.state) return;
+    this._ninesLedger = null;
     this.writeMemberHole(memberId, holeNumber, gross, null, null);
-    const member = this.state.members.find((m) => m.id === memberId);
+    const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
     if (member) this.recomputePlayerTotals(member);
     this.paintScoreCell(memberId, holeNumber);
     this.paintPlayerTotals(memberId);
+    this.paintNinesBoard();
   },
 
   recomputePlayerTotals(member) {
@@ -628,30 +631,223 @@ const scorecard = {
     }).join(' · ');
   },
 
-  ninesHoleValue(game, holeNumber, playerId) {
-    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
-    if (!row || row.incomplete || !row.points) return null;
-    const val = row.points[playerId] ?? row.points[String(playerId)];
-    return val == null || !Number.isFinite(Number(val)) ? null : Number(val);
+  ninesPointGet(map, playerId) {
+    if (!map || typeof map !== 'object') return null;
+    const keys = [playerId, String(playerId)];
+    const asNum = Number(playerId);
+    if (Number.isFinite(asNum)) keys.push(asNum);
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+      const val = map[key];
+      if (val == null || !Number.isFinite(Number(val))) continue;
+      return Number(val);
+    }
+    return null;
   },
 
-  ninesRunningThrough(game, holeNumber, playerId) {
+  ninesPointMap(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const [key, val] of Object.entries(raw)) {
+      if (val == null || !Number.isFinite(Number(val))) continue;
+      out[String(key)] = Number(val);
+    }
+    return out;
+  },
+
+  ninesHolePointsLive(three, blitz) {
+    const scored = (three || []).filter((p) => p.score != null && Number.isFinite(Number(p.score)));
+    if (scored.length !== 3) return null;
+    const sorted = [...scored].sort((a, b) => Number(a.score) - Number(b.score) || String(a.id).localeCompare(String(b.id)));
+    const [a, b, c] = sorted;
+    const sa = Number(a.score);
+    const sb = Number(b.score);
+    const sc = Number(c.score);
+    const out = {};
+    if (blitz && sa <= sb - 2) {
+      out[a.id] = 9;
+      out[b.id] = 0;
+      out[c.id] = 0;
+      return out;
+    }
+    if (sa === sb && sb === sc) {
+      out[a.id] = 3;
+      out[b.id] = 3;
+      out[c.id] = 3;
+      return out;
+    }
+    if (sa === sb) {
+      out[a.id] = 4;
+      out[b.id] = 4;
+      out[c.id] = 1;
+      return out;
+    }
+    if (sb === sc) {
+      out[a.id] = 5;
+      out[b.id] = 2;
+      out[c.id] = 2;
+      return out;
+    }
+    out[a.id] = 5;
+    out[b.id] = 3;
+    out[c.id] = 1;
+    return out;
+  },
+
+  ninesThree(state) {
+    const members = (state && state.members) || [];
+    const g = this.ninesGame(state);
+    if (g && g.points && g.points.length === 3) {
+      return g.points.map((p) => {
+        const found = members.find((m) => String(m.id) === String(p.id));
+        return found || { id: p.id, display_name: p.name, name: p.name, holes: [] };
+      });
+    }
+    return members.length === 3 ? members : null;
+  },
+
+  ninesLiveScore(member, holeNumber, mode, three, state) {
+    const hs = ((member && member.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (!hs || hs.gross == null || hs.gross === '') return null;
+    const gross = Number(hs.gross);
+    if (!Number.isFinite(gross)) return null;
+    if (mode !== 'net') return gross;
+    const hcpOf = (m) => Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap ?? 0) || 0;
+    const low = Math.min(...(three || []).map(hcpOf));
+    const rel = hcpOf(member) - low;
+    const hole = this.holeMeta(state, holeNumber);
+    const si = Number((hole && (hole.stroke_index ?? hole.strokeIndex)) || hs.strokeIndex || hs.stroke_index) || 1;
+    const base = Math.floor(rel / 18);
+    const rem = rel % 18;
+    const extra = (!(rem === 0 && rel !== 0) && si <= rem) ? 1 : 0;
+    return gross - (base + extra);
+  },
+
+  ninesComputeLedger(state) {
+    const three = this.ninesThree(state);
+    const cfg = ((this.sideConfig(state) || {}).nines) || {};
+    const mode = cfg.scoring === 'gross' ? 'gross' : 'net';
+    const blitz = cfg.blitz !== false;
+    const course = (state && state.holes) || [];
+    const list = course.length
+      ? course.map((h) => Number(h.hole_number ?? h.holeNumber)).filter((n) => Number.isFinite(n))
+      : Array.from({ length: 18 }, (_, i) => i + 1);
+    const serverHoles = ((this.ninesGame(state) || {}).holes) || [];
+    const totals = new Map();
+    if (three) three.forEach((m) => totals.set(String(m.id), 0));
+    const rows = [];
+    for (const hn of list) {
+      let pts = null;
+      if (three) {
+        const keyed = three.map((m) => ({
+          id: m.id,
+          score: this.ninesLiveScore(m, hn, mode, three, state),
+        }));
+        pts = this.ninesHolePointsLive(keyed, blitz);
+      }
+      const serverRow = serverHoles.find((h) => Number(h.holeNumber ?? h.hole_number) === Number(hn));
+      if (!pts && serverRow && !serverRow.incomplete && serverRow.points) pts = serverRow.points;
+      const map = this.ninesPointMap(pts);
+      if (!Object.keys(map).length) {
+        rows.push({
+          holeNumber: hn,
+          incomplete: true,
+          points: null,
+          running: Object.fromEntries(totals),
+        });
+        continue;
+      }
+      const ids = three ? three.map((m) => m.id) : Object.keys(map);
+      for (const id of ids) {
+        const add = this.ninesPointGet(map, id) ?? 0;
+        totals.set(String(id), (totals.get(String(id)) || 0) + add);
+      }
+      rows.push({
+        holeNumber: hn,
+        incomplete: false,
+        points: map,
+        running: Object.fromEntries(totals),
+      });
+    }
+    return { three, holes: rows };
+  },
+
+  ninesLedgerFor(state) {
+    if (!state) return { three: null, holes: [] };
+    if (this._ninesLedger && this._ninesLedgerState === state) return this._ninesLedger;
+    this._ninesLedgerState = state;
+    this._ninesLedger = this.ninesComputeLedger(state);
+    return this._ninesLedger;
+  },
+
+  ninesHoleValue(game, holeNumber, playerId, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    const live = (ledger.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (live && !live.incomplete) {
+      const fromLive = this.ninesPointGet(live.points, playerId);
+      if (fromLive != null) return fromLive;
+    }
+    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (row && row.players) {
+      const found = row.players.find((p) => String(p.id) === String(playerId));
+      if (found && found.hole != null && Number.isFinite(Number(found.hole))) return Number(found.hole);
+    }
+    if (!row || row.incomplete || !row.points) return null;
+    return this.ninesPointGet(row.points, playerId);
+  },
+
+  ninesRunningThrough(game, holeNumber, playerId, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    const cap = Number(holeNumber);
     let sum = 0;
     let seen = false;
-    const cap = Number(holeNumber);
+    for (const h of ledger.holes || []) {
+      const hn = Number(h.holeNumber);
+      if (!Number.isFinite(hn) || (Number.isFinite(cap) && hn > cap)) continue;
+      if (h.incomplete || !h.points) continue;
+      const add = this.ninesPointGet(h.points, playerId);
+      if (add == null) continue;
+      sum += add;
+      seen = true;
+    }
+    if (seen) return sum;
+    const liveRow = (ledger.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (liveRow && liveRow.running) {
+      const fromRun = this.ninesPointGet(liveRow.running, playerId);
+      if (fromRun != null) return fromRun;
+    }
+    let serverSum = 0;
+    let serverSeen = false;
     for (const h of (game && game.holes) || []) {
       const hn = Number(h.holeNumber ?? h.hole_number);
       if (!Number.isFinite(hn) || (Number.isFinite(cap) && hn > cap)) continue;
       if (h.incomplete || !h.points) continue;
-      const add = h.points[playerId] ?? h.points[String(playerId)];
-      if (add == null || !Number.isFinite(Number(add))) continue;
-      sum += Number(add);
-      seen = true;
+      const add = this.ninesPointGet(h.points, playerId);
+      if (add == null) continue;
+      serverSum += add;
+      serverSeen = true;
     }
-    return seen ? sum : null;
+    if (serverSeen) return serverSum;
+    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (row && row.running) {
+      const fromRow = this.ninesPointGet(row.running, playerId);
+      if (fromRow != null) return fromRow;
+    }
+    if (row && row.players) {
+      const found = row.players.find((p) => String(p.id) === String(playerId));
+      if (found && found.run != null && Number.isFinite(Number(found.run))) return Number(found.run);
+    }
+    return null;
   },
 
-  ninesRoster(game) {
+  ninesRoster(game, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    if (ledger.three && ledger.three.length) {
+      return ledger.three.map((m) => ({
+        id: m.id,
+        name: m.display_name || m.name,
+      }));
+    }
     if (game && game.points && game.points.length) return game.points;
     const first = ((game && game.holes) || []).find((h) => h.players && h.players.length);
     return (first && first.players) || [];
@@ -660,16 +856,16 @@ const scorecard = {
   ninesBoardInner(state) {
     const g = this.ninesGame(state);
     if (!g) return this.isNinesOn(state) ? '<div class="nines-hole">Nines —</div>' : '';
-    if (g.incomplete) return '<div class="nines-hole">Nines — need exactly 3 players</div>';
+    if (g.incomplete && !this.ninesThree(state)) return '<div class="nines-hole">Nines — need exactly 3 players</div>';
     const hn = this.currentHole || 1;
-    const row = (g.holes || []).find((h) => Number(h.holeNumber) === Number(hn));
-    const roster = this.ninesRoster(g);
-    const holeLine = row && !row.incomplete
-      ? this.ninesPtsLine(roster.map((p) => ({ name: p.name, hole: this.ninesHoleValue(g, hn, p.id) })), 'hole')
-      : roster.map((p) => `${p.name} —`).join(' · ');
+    const roster = this.ninesRoster(g, state);
+    const holeLine = this.ninesPtsLine(roster.map((p) => ({
+      name: p.name,
+      hole: this.ninesHoleValue(g, hn, p.id, state),
+    })), 'hole');
     const runLine = this.ninesPtsLine(roster.map((p) => ({
       name: p.name,
-      run: this.ninesRunningThrough(g, hn, p.id),
+      run: this.ninesRunningThrough(g, hn, p.id, state),
     })), 'run');
     return `<div class="nines-hole">This hole: ${_esc(holeLine)}</div>
       <div class="nines-run">RUNNING: ${_esc(runLine)}</div>`;
@@ -678,22 +874,29 @@ const scorecard = {
   ninesTableRows(state, holes, showOut, showIn) {
     if (!this.isNinesOn(state)) return '';
     const g = this.ninesGame(state);
-    if (!g || g.incomplete) return '';
-    const players = this.ninesRoster(g);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
+    return (state.members || []).map((m) => this.onePlayerNinesRows(state, m, holes, showOut, showIn)).join('');
+  },
+
+  onePlayerNinesRows(state, member, holes, showOut, showIn) {
+    if (!this.isNinesOn(state) || !member) return '';
+    const g = this.ninesGame(state);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
     const cell = (hn, kind) => {
-      const bits = players.map((p) => {
-        const val = kind === 'hole'
-          ? this.ninesHoleValue(g, hn, p.id)
-          : this.ninesRunningThrough(g, hn, p.id);
-        return `${_esc(p.name)} ${val == null ? '—' : val}`;
-      }).join('<br>');
-      return `<td class="nines-cell" data-nines-${kind}="${hn}">${bits}</td>`;
+      const val = kind === 'hole'
+        ? this.ninesHoleValue(g, hn, member.id, state)
+        : this.ninesRunningThrough(g, hn, member.id, state);
+      return `<td class="nines-cell" data-nines-${kind}="${member.id}:${hn}">${val == null ? '—' : val}</td>`;
     };
-    const holeRow = holes.map((h) => cell(h.hole_number, 'hole')).join('');
-    const runRow = holes.map((h) => cell(h.hole_number, 'run')).join('');
-    const pad = `${showOut ? '<td></td>' : ''}${showIn ? '<td></td><td></td>' : ''}`;
-    return `<tr class="nines-hole-row"><th>Nines</th>${holeRow}${pad}</tr>
-      <tr class="nines-run-row"><th>Nines run</th>${runRow}${pad}</tr>`;
+    const holeRow = (holes || []).map((h) => cell(h.hole_number, 'hole')).join('');
+    const runRow = (holes || []).map((h) => cell(h.hole_number, 'run')).join('');
+    const runOut = showOut ? this.ninesRunningThrough(g, 9, member.id, state) : null;
+    const runIn = showIn ? this.ninesRunningThrough(g, 18, member.id, state) : null;
+    const pad = `${showOut ? `<td class="sc-total">${runOut == null ? '' : runOut}</td>` : ''}${showIn ? `<td class="sc-total"></td><td class="sc-total">${runIn == null ? '' : runIn}</td>` : ''}`;
+    const holePad = `${showOut ? '<td></td>' : ''}${showIn ? '<td></td><td></td>' : ''}`;
+    const name = _esc(member.display_name || member.name || '');
+    return `<tr class="nines-hole-row nines-player-hole-row" data-nines-hole-member="${member.id}"><td class="row-label">${name} nines</td>${holeRow}${holePad}</tr>
+      <tr class="nines-run-row nines-player-run-row" data-nines-run-member="${member.id}"><td class="row-label">${name} run</td>${runRow}${pad}</tr>`;
   },
 
   afterHoleScored(state, holeNumber) {
@@ -1241,23 +1444,31 @@ const scorecard = {
     const table = document.getElementById('full-scorecard');
     if (!table || !this.state) return;
     const holes = this.state.holes || [];
-    const html = this.ninesTableRows(this.state, holes, this.showOut(this.state), this.showIn(this.state));
-    const oldHole = table.querySelector('tr.nines-hole-row');
-    const oldRun = table.querySelector('tr.nines-run-row');
-    if (!html) {
-      if (oldHole) oldHole.remove();
-      if (oldRun) oldRun.remove();
-      return;
-    }
-    const tmp = document.createElement('tbody');
-    tmp.innerHTML = html;
-    const nextHole = tmp.querySelector('tr.nines-hole-row');
-    const nextRun = tmp.querySelector('tr.nines-run-row');
-    const body = table.tBodies[0] || table;
-    if (oldHole && nextHole) oldHole.replaceWith(nextHole);
-    else if (nextHole) body.appendChild(nextHole);
-    if (oldRun && nextRun) oldRun.replaceWith(nextRun);
-    else if (nextRun) body.appendChild(nextRun);
+    const showOut = this.showOut(this.state);
+    const showIn = this.showIn(this.state);
+    (this.state.members || []).forEach((member) => {
+      const html = this.onePlayerNinesRows(this.state, member, holes, showOut, showIn);
+      const oldHole = table.querySelector(`tr[data-nines-hole-member="${member.id}"]`);
+      const oldRun = table.querySelector(`tr[data-nines-run-member="${member.id}"]`);
+      if (!html) {
+        if (oldHole) oldHole.remove();
+        if (oldRun) oldRun.remove();
+        return;
+      }
+      const tmp = document.createElement('tbody');
+      tmp.innerHTML = html;
+      const nextHole = tmp.querySelector('tr.nines-player-hole-row');
+      const nextRun = tmp.querySelector('tr.nines-player-run-row');
+      const player = table.querySelector(`tr.row-player[data-member-row="${member.id}"]`);
+      if (oldHole && nextHole) oldHole.replaceWith(nextHole);
+      else if (nextHole && player) player.insertAdjacentElement('afterend', nextHole);
+      else if (nextHole) (table.tBodies[0] || table).appendChild(nextHole);
+      const holeNow = table.querySelector(`tr[data-nines-hole-member="${member.id}"]`);
+      if (oldRun && nextRun) oldRun.replaceWith(nextRun);
+      else if (nextRun && holeNow) holeNow.insertAdjacentElement('afterend', nextRun);
+      else if (nextRun && player) player.insertAdjacentElement('afterend', nextRun);
+    });
+    table.querySelectorAll('tr.nines-hole-row:not(.nines-player-hole-row), tr.nines-run-row:not(.nines-player-run-row)').forEach((el) => el.remove());
   },
 
   paintNinesPlayerLines() {
@@ -1267,7 +1478,7 @@ const scorecard = {
       const member = (this.state.members || []).find((m) => String(m.id) === String(row.dataset.memberRow));
       if (!member) return;
       const html = this.playerNinesLineHtml(this.state, member, hn);
-      const line = row.querySelector('.nines-player-line');
+      const line = row.querySelector('.nines-player-stack, .nines-player-line');
       if (!html) {
         if (line) line.remove();
         return;
@@ -1359,6 +1570,7 @@ const scorecard = {
       }
     }
     if (slim.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...slim.sideGames };
+    this._ninesLedger = null;
     this.paintTeamHole(slim.holeNumber);
     this.paintRaceStrip();
     this.paintBallLine(slim.holeNumber);
@@ -2054,13 +2266,13 @@ const scorecard = {
   playerNinesLineHtml(state, member, holeNumber) {
     if (!this.isNinesOn(state)) return '';
     const g = this.ninesGame(state);
-    if (!g || g.incomplete) return '';
-    const holePts = this.ninesHoleValue(g, holeNumber, member.id);
-    const runPts = this.ninesRunningThrough(g, holeNumber, member.id);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
+    const holePts = this.ninesHoleValue(g, holeNumber, member.id, state);
+    const runPts = this.ninesRunningThrough(g, holeNumber, member.id, state);
     if (holePts == null && runPts == null) return '';
-    return `<div class="nines-player-line" data-nines-player="${member.id}">
-      <span class="nines-player-hole">hole ${holePts == null ? '—' : holePts}</span>
-      <span class="nines-player-run">run ${runPts == null ? '—' : runPts}</span>
+    return `<div class="nines-player-stack" data-nines-player="${member.id}">
+      <div class="nines-player-hole">hole ${holePts == null ? '—' : holePts}</div>
+      <div class="nines-player-run">run ${runPts == null ? '—' : runPts}</div>
     </div>`;
   },
 
@@ -2432,7 +2644,6 @@ const scorecard = {
         </thead>
         <tbody>
           ${this.playerRows(state, holes, outHoles, inHoles, showOut, showIn)}
-          ${this.ninesTableRows(state, holes, showOut, showIn)}
         </tbody>
       </table>`;
   },
@@ -2637,7 +2848,8 @@ const scorecard = {
         ${showOut ? `<td class="sc-total" data-out="${m.id}">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
         ${showIn ? `<td class="sc-total" data-in="${m.id}">${m.inGross ?? ''} <span class="net-mini">${m.inNet ?? ''}</span></td>` : ''}
         ${showIn ? `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${m.totalGross ?? ''}</strong> <span class="net-mini">${m.totalNet ?? ''}</span></td>` : ''}
-      </tr>`;
+      </tr>
+      ${this.onePlayerNinesRows(state, m, holes, showOut, showIn)}`;
   },
 
   oneTeamRow(state, team, holes, showOut, showIn) {
@@ -3381,7 +3593,7 @@ const scorecard = {
         <h3>Score entry</h3>
         <p>Gross is 1–19. Default advance is <strong>Down</strong> (next player, same hole). Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up.</p>
         <h3>Nines</h3>
-        <p>Exactly 3 individual players. Each hole shows that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0) and a second row that <strong>sums</strong> those points (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3). Net off the low man.</p>
+        <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
         <h3>Presses</h3>
         <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>

@@ -2837,18 +2837,36 @@ img {
   color: #5D4037;
 }
 
-.nines-player-line {
+.nines-player-line,
+.nines-player-stack {
   flex: 1 0 100%;
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 0;
   font-size: 0.8rem;
   font-weight: 800;
   color: #5D4037;
   padding: 0 0 4px;
 }
 
+.nines-player-hole,
+.nines-player-run {
+  display: block;
+  line-height: 1.25;
+}
+
 .nines-player-run {
   font-weight: 800;
+}
+
+.nines-player-hole-row td,
+.nines-player-run-row td {
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.nines-player-run-row td {
+  color: #5D4037;
 }
 
 .vegas-this,

@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905k/);
-    assert.match(html, /js\/formats\.js\?v=20260905k/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905k/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905k/);
-    assert.match(src, /ASSET_V:\s*'20260905k'/);
+    assert.match(html, /20260905l/);
+    assert.match(html, /js\/formats\.js\?v=20260905l/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905l/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905l/);
+    assert.match(src, /ASSET_V:\s*'20260905l'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -159,8 +159,25 @@ describe('Combined PR3 hole view', () => {
     assert.match(ninesInner, /ninesRunningThrough/);
     assert.doesNotMatch(ninesInner, /p\.points/);
     assert.match(ninesInner, /RUNNING:/);
+    assert.match(src, /ninesComputeLedger/);
+    assert.match(src, /ninesHolePointsLive/);
+    assert.match(src, /onePlayerNinesRows/);
+    assert.match(src, /nines-player-stack/);
+    const ninesLine = sliceFn('playerNinesLineHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
+    assert.match(ninesLine, /nines-player-stack/);
+    assert.match(ninesLine, /nines-player-hole/);
+    assert.match(ninesLine, /nines-player-run/);
+    assert.match(ninesLine, /<div class="nines-player-run">/);
+    const localScore = sliceFn('applyLocalScore(memberId, holeNumber, gross)', 'recomputePlayerTotals(member)');
+    assert.match(localScore, /paintNinesBoard/);
+    const playerRow = sliceFn('onePlayerRow(state, m, holes, showOut, showIn)', 'oneTeamRow(state, team, holes, showOut, showIn)');
+    assert.match(playerRow, /onePlayerNinesRows/);
+    const perPlayer = sliceFn('onePlayerNinesRows(state, member, holes, showOut, showIn)', 'afterHoleScored(state, holeNumber)');
+    assert.match(perPlayer, /nines-player-run-row/);
+    assert.match(perPlayer, /ninesRunningThrough/);
     assert.match(css, /\.nassau-press-btn/);
     assert.match(css, /\.nines-board/);
+    assert.match(css, /\.nines-player-stack/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
   });
 
