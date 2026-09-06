@@ -168,11 +168,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(ninesLine, /nines-player-hole/);
     assert.match(ninesLine, /nines-player-run/);
     assert.match(ninesLine, /<div class="nines-player-run">/);
-    const localScore = sliceFn('applyLocalScore(memberId, holeNumber, gross)', 'recomputePlayerTotals(member)');
-    assert.match(localScore, /paintNinesBoard/);
-    const playerRow = sliceFn('onePlayerRow(state, m, holes, showOut, showIn)', 'oneTeamRow(state, team, holes, showOut, showIn)');
+    assert.match(src, /applyLocalScore[\s\S]{0,400}paintNinesBoard/);
+    const playerRow = sliceFn('onePlayerRow(state, m, holes, showOut, showIn) {', 'oneTeamRow(state, team, holes, showOut, showIn) {');
     assert.match(playerRow, /onePlayerNinesRows/);
-    const perPlayer = sliceFn('onePlayerNinesRows(state, member, holes, showOut, showIn)', 'afterHoleScored(state, holeNumber)');
+    const perPlayer = sliceFn('onePlayerNinesRows(state, member, holes, showOut, showIn) {', 'afterHoleScored(state, holeNumber) {');
     assert.match(perPlayer, /nines-player-run-row/);
     assert.match(perPlayer, /ninesRunningThrough/);
     assert.match(css, /\.nassau-press-btn/);
