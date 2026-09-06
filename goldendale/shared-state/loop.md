@@ -2,6 +2,10 @@
 
 ## Developer
 
+### Field test merge + clean slate (ASSET_V `20260906d`)
+
+David authorized merge of PR #3 for today’s field test. First boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260906`), then leaves new Sunday rounds alone. Goldendale course seed and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons.
+
 ### Sunday game Running vs-par (ASSET_V `20260906c`)
 
 Same PR #3. Hold merge. Under each hole’s team vs-par total, **Running** is the cumulative vs-par through that hole (−2 then −3 = −5; −2 then +3 = +1). Hole view shows it under the current hole so you don’t need the full card. Full card keeps the hole total plus Running, and OUT / IN / TOT after 9 / 18. Show-other-teams OFF still hides opposing Running. Write lock unchanged.

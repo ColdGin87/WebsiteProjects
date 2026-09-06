@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906c/);
-    assert.match(html, /js\/formats\.js\?v=20260906c/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906c/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906c/);
-    assert.match(src, /ASSET_V:\s*'20260906c'/);
+    assert.match(html, /20260906d/);
+    assert.match(html, /js\/formats\.js\?v=20260906d/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906d/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906d/);
+    assert.match(src, /ASSET_V:\s*'20260906d'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -494,6 +494,10 @@ describe('Wyrm Coil overlay', () => {
     assert.doesNotMatch(dash, /Open Team 1 vs-par demo|Open Kurt \/ Chase \/ Brian demo/);
     assert.doesNotMatch(src, /addDemoTeam1VsPar|addDemoFoursome/);
     assert.doesNotMatch(src, /Open Team 1 vs-par demo/);
+    const dbSrc = fs.readFileSync(path.join(ROOT, 'lib/database.js'), 'utf8');
+    assert.match(dbSrc, /wipePracticeScoreDataOnce/);
+    assert.match(dbSrc, /DELETE FROM score_rounds/);
+    assert.match(dbSrc, /field_test_wipe/);
     assert.match(dash, /New round/);
     assert.match(dash, /Join with code/);
     assert.match(dash, /Game Rules/);
