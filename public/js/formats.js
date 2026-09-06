@@ -48,7 +48,7 @@ function shortFormatLabel(grossBalls, netBalls) {
   return key.replace(/G(\d)/, 'G+$1');
 }
 
-const api = {
+const teamFormatsApi = {
   TEAM_GAMES,
   gameFromBalls,
   gameFromKey,
@@ -58,8 +58,8 @@ const api = {
 };
 
 if (typeof module === 'object' && module.exports) {
-  module.exports = api;
+  module.exports = teamFormatsApi;
 }
 if (typeof window !== 'undefined') {
-  window.teamFormats = api;
+  window.teamFormats = teamFormatsApi;
 }

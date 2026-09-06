@@ -97,7 +97,7 @@ function formatMoney(value) {
   return n > 0 ? '+$' + shown : '−$' + shown;
 }
 
-const api = {
+const sideGamesApi = {
   SIDE_GAMES,
   defaultSideGames,
   parseSideGames,
@@ -106,8 +106,8 @@ const api = {
 };
 
 if (typeof module === 'object' && module.exports) {
-  module.exports = api;
+  module.exports = sideGamesApi;
 }
 if (typeof window !== 'undefined') {
-  window.sideGames = api;
+  window.sideGames = sideGamesApi;
 }

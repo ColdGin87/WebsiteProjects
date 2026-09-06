@@ -161,6 +161,19 @@ describe('api client login helpers', () => {
     assert.equal(ctx.auth.currentUser.name, 'David');
   });
 
+  it('loads vsPar, formats, sideGames, and api in one page without a duplicate api binding', () => {
+    const ctx = browserContext(async () => jsonResponse({}));
+    loadBrowserScript('vsPar.js', ctx);
+    loadBrowserScript('formats.js', ctx);
+    loadBrowserScript('sideGames.js', ctx);
+    loadBrowserScript('api.js', ctx);
+    assert.equal(typeof ctx.window.vsPar.formatVsPar, 'function');
+    assert.equal(typeof ctx.window.teamFormats.formatLabel, 'function');
+    assert.equal(typeof ctx.window.sideGames.parseSideGames, 'function');
+    assert.equal(typeof ctx.window.api.post, 'function');
+    assert.equal(ctx.window.api, ctx.api);
+  });
+
   it('index.html cache-busts unhashed js and css', () => {
     const html = fs.readFileSync(path.join(ROOT, 'public/index.html'), 'utf8');
     assert.match(html, /js\/api\.js\?v=/);

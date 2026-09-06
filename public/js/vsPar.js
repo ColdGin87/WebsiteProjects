@@ -40,11 +40,11 @@ function strokeDotMarks(strokes) {
   return { plus: false, count: Math.min(3, Math.floor(n)) };
 }
 
-const api = { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks };
+const vsParApi = { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks };
 
 if (typeof module === 'object' && module.exports) {
-  module.exports = api;
+  module.exports = vsParApi;
 }
 if (typeof window !== 'undefined') {
-  window.vsPar = api;
+  window.vsPar = vsParApi;
 }

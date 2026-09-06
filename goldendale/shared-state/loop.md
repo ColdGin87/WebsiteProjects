@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Sunday helpers share one page without a colliding `api` (ASSET_V `20260905t`)
+
+vsPar / formats / sideGames no longer declare a page-global `const api`, so those scripts finish and attach `window.teamFormats` / `window.sideGames` / `window.vsPar`. Wyrm player chips are a full-width grid so Matt / Brian / David all show on 390px. Same PR #2. Hold merge.
+
 ### Wyrm Coil reel window clipped to 3 cells (ASSET_V `20260905s`)
 
 Longer 18-row strips still roll ~3s, but the machine window is 3 cells so gold player chips, This player, and Best stay on a 390px phone. Same PR #2. Hold merge.

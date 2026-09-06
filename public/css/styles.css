@@ -3798,20 +3798,21 @@ input.score-input:disabled {
 .wyrm-fun-spins { font-size: 0.8rem; font-weight: 600; color: #666; }
 
 .wyrm-player-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 6px;
+  width: 100%;
   margin: 0 0 10px;
 }
 
 .wyrm-player-chip {
   min-height: 40px;
-  padding: 6px 12px;
+  min-width: 0;
+  padding: 6px 4px;
   border: 2px solid #e6c36a;
   background: #ffe7a3;
   color: #122018;
-  font-size: 0.95rem;
+  font-size: 0.8rem;
   font-weight: 800;
   border-radius: 8px;
   cursor: pointer;
