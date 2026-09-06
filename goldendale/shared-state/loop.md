@@ -20,6 +20,10 @@ Still open (not a Sunday-game backdoor, leftover tournament surface): unauthenti
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
+Unique host (READY, SHA `f5c1567`, ASSET_V `20260906e`): https://website-projects-ozl2o80be-coldgin87s-projects.vercel.app
+
+Live probe: anonymous score POST 401; demo foursome 404; new join code 8 chars; invalid join 404; magic-link body has no URL; `/api/players` 401 without auth.
+
 ### Field test merge + clean slate (ASSET_V `20260906d`)
 
 David authorized merge of PR #3 for today’s field test. First boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260906`), then leaves new Sunday rounds alone. Goldendale course seed and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons.
