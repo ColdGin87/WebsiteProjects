@@ -348,7 +348,7 @@ describe('Wolf', () => {
       pick: { wolfMemberId: 1, partnerMemberId: null, lone: true, blind: true },
       scoring: 'gross',
     });
-    assert.equal(blind.points, 3);
+    assert.equal(blind.points, 4);
     assert.equal(blind.blind, true);
     const partnered = scoreWolfHole({
       players: members,
@@ -359,7 +359,7 @@ describe('Wolf', () => {
     assert.equal(partnered.points, 1);
   });
 
-  it('pays house points: partnered ±1, lone ±2, blind ±3; tie 0', () => {
+  it('pays house points: partnered ±1, lone ±2, blind ±4; tie 0', () => {
     const hole = { holeNumber: 1, par: 4, strokeIndex: 1 };
     const four = [
       { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 3 }] },
@@ -383,10 +383,10 @@ describe('Wolf', () => {
     assert.equal(loneWin[3], -2);
     assert.equal(loneWin[4], -2);
     const blindWin = pts([{ holeNumber: 1, wolfMemberId: 1, partnerMemberId: null, lone: 1, blind: 1, locked: 1 }]);
-    assert.equal(blindWin[1], 3);
-    assert.equal(blindWin[2], -3);
-    assert.equal(blindWin[3], -3);
-    assert.equal(blindWin[4], -3);
+    assert.equal(blindWin[1], 4);
+    assert.equal(blindWin[2], -4);
+    assert.equal(blindWin[3], -4);
+    assert.equal(blindWin[4], -4);
     const tied = [
       { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 4, net: 4 }] },
       { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
@@ -402,6 +402,39 @@ describe('Wolf', () => {
     assert.equal(tieGame.holes[0].winner, null);
     assert.equal(tieGame.holes[0].points, 0);
     assert.equal((tieGame.points || []).reduce((s, p) => s + p.points, 0), 0);
+  });
+
+  it('uses setup toggle values, not hardcoded 1/2/4', () => {
+    const hole = { holeNumber: 1, par: 4, strokeIndex: 1 };
+    const members = [
+      { id: 1, display_name: 'A', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 3, net: 3 }] },
+      { id: 2, display_name: 'B', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 5, net: 5 }] },
+      { id: 3, display_name: 'C', playing_handicap: 0, holes: [{ holeNumber: 1, gross: 6, net: 6 }] },
+    ];
+    const custom = scoreWolfHole({
+      players: members,
+      hole,
+      pick: { wolfMemberId: 1, partnerMemberId: null, lone: true, blind: true },
+      scoring: 'gross',
+      values: { partnered: 2, lone: 5, blind: 8 },
+    });
+    assert.equal(custom.points, 8);
+    const lone = scoreWolfHole({
+      players: members,
+      hole,
+      pick: { wolfMemberId: 1, partnerMemberId: null, lone: true },
+      scoring: 'gross',
+      values: { partnered: 2, lone: 5, blind: 8 },
+    });
+    assert.equal(lone.points, 5);
+    const pair = scoreWolfHole({
+      players: members,
+      hole,
+      pick: { wolfMemberId: 1, partnerMemberId: 2, lone: false },
+      scoring: 'gross',
+      values: { partnered: 2, lone: 5, blind: 8 },
+    });
+    assert.equal(pair.points, 2);
   });
 });
 
@@ -699,7 +732,8 @@ describe('Side-game config and vs-par lock', () => {
     ['skins', 'vegas', 'nassau', 'wolf', 'nines'].forEach((key) => assert.ok(cfg[key]));
     assert.equal(cfg.wolf.partnered, 1);
     assert.equal(cfg.wolf.lone, 2);
-    assert.equal(cfg.wolf.blind, 3);
+    assert.equal(cfg.wolf.blind, 4);
+    assert.equal(parseSideGames({ wolf: { on: true, blind: 3 } }).wolf.blind, 3);
   });
 
   it('does not change team hole vs-par when side games run', () => {

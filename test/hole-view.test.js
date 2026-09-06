@@ -66,11 +66,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905l/);
-    assert.match(html, /js\/formats\.js\?v=20260905l/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905l/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905l/);
-    assert.match(src, /ASSET_V:\s*'20260905l'/);
+    assert.match(html, /20260905m/);
+    assert.match(html, /js\/formats\.js\?v=20260905m/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905m/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905m/);
+    assert.match(src, /ASSET_V:\s*'20260905m'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -292,6 +292,12 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /shareNineteenth/);
     assert.match(src, /nineteenthSharePng/);
     assert.match(src, /wolfPartnered/);
+    assert.match(src, /wolfLone/);
+    assert.match(src, /wolfBlind/);
+    const wolfVals = sliceFn('wolfPointValues(state)', 'wolfBarHtml(state, holeNumber)');
+    assert.match(wolfVals, /partnered[\s\S]*1/);
+    assert.match(wolfVals, /lone[\s\S]*2/);
+    assert.match(wolfVals, /blind[\s\S]*4/);
     assert.match(css, /\.podium-place/);
     assert.match(css, /\.reveal-card/);
     const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');

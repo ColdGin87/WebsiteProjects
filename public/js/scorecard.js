@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905l',
+  ASSET_V: '20260905m',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -2014,7 +2014,7 @@ const scorecard = {
     return {
       partnered: n(cfg.partnered, 1),
       lone: n(cfg.lone, 2),
-      blind: n(cfg.blind, 3),
+      blind: n(cfg.blind, 4),
     };
   },
 
@@ -2095,7 +2095,7 @@ const scorecard = {
         <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
         <div class="form-group"><label>Partnered ±</label><input class="form-input" name="wolfPartnered" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.partnered != null ? cfg.wolf.partnered : 1}"></div>
         <div class="form-group"><label>Lone ±</label><input class="form-input" name="wolfLone" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.lone != null ? cfg.wolf.lone : 2}"></div>
-        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 3}"></div>
+        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 4}"></div>
       </div>
       <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
       <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
@@ -2144,7 +2144,7 @@ const scorecard = {
         dollarsPerPoint: Number(fd.get('wolfDollars') || 1),
         partnered: Number(fd.get('wolfPartnered') || 1),
         lone: Number(fd.get('wolfLone') || 2),
-        blind: Number(fd.get('wolfBlind') || 3),
+        blind: Number(fd.get('wolfBlind') || 4),
       },
       nines: {
         on: fd.get('ninesOn') === 'on',
@@ -3585,7 +3585,7 @@ const scorecard = {
         <h3>Nassau (NASA)</h3>
         <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
         <h3>Wolf</h3>
-        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles. Defaults: partnered ±1, Lone 2× (±2), Blind Lone 3× (±3). Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
+        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles: Partnered ±, Lone ±, and Blind Lone ±. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>
         <p>Host is Team 1 (optional nickname). A joiner with the code picks Team 2 / 3 / 4… or Add team — they are not auto Team 1. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>

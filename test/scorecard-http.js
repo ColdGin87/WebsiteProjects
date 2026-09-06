@@ -838,9 +838,9 @@ async function runWolfScenario(base) {
   const afterBlind = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
   const wolf2 = afterBlind.sideGames && afterBlind.sideGames.games && afterBlind.sideGames.games.wolf;
   const blindHole = (wolf2.holes || []).find((h) => h.holeNumber === 2);
-  assertEqual(blindHole && blindHole.points, 3, 'blind lone 3×');
+  assertEqual(blindHole && blindHole.points, 4, 'blind lone ±4');
   const blindW1 = (wolf2.points || []).find((p) => Number(p.id) === Number(guests[0].id));
-  assertEqual(blindW1 && blindW1.points, 5, 'lone +2 plus blind +3');
+  assertEqual(blindW1 && blindW1.points, 6, 'lone +2 plus blind +4');
 
   const hole3Gross = [3, 4, 5, 6];
   for (let i = 0; i < guests.length; i++) {
@@ -859,8 +859,8 @@ async function runWolfScenario(base) {
   assertEqual(pairHole && pairHole.points, 1, 'partnered ±1');
   const pairW1 = (wolf3.points || []).find((p) => Number(p.id) === Number(guests[0].id));
   const pairW2 = (wolf3.points || []).find((p) => Number(p.id) === Number(guests[1].id));
-  assertEqual(pairW1 && pairW1.points, 6, 'running +2 +3 +1');
-  assertEqual(pairW2 && pairW2.points, -4, 'field −2 −3 then partner +1');
+  assertEqual(pairW1 && pairW1.points, 7, 'running +2 +4 +1');
+  assertEqual(pairW2 && pairW2.points, -5, 'field −2 −4 then partner +1');
 
   const hole4Gross = [4, 5, 4, 6];
   for (let i = 0; i < guests.length; i++) {
@@ -879,8 +879,8 @@ async function runWolfScenario(base) {
   assertEqual(tieHole && tieHole.winner, null, 'better-ball tie has no winner');
   assertEqual(tieHole && tieHole.points, 0, 'tie 0');
   const tieW1 = (wolf4.points || []).find((p) => Number(p.id) === Number(guests[0].id));
-  assertEqual(tieW1 && tieW1.points, 6, 'tie adds nothing');
-  console.log('PASS Wolf card accepts cross-team gross; lone ±2, blind 3×, partnered ±1, tie 0');
+  assertEqual(tieW1 && tieW1.points, 7, 'tie adds nothing');
+  console.log('PASS Wolf card accepts cross-team gross; lone ±2, blind ±4, partnered ±1, tie 0');
 }
 
 async function runNinesScenario(base) {

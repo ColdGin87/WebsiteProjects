@@ -32,8 +32,8 @@ const SIDE_GAMES = [
     label: 'Wolf',
     defaultOn: false,
     pressable: true,
-    defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1, partnered: 1, lone: 2, blind: 3 },
-    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before Wolf points settle; gross can be entered now. Better ball (gross or net) wins; tie = 0. Point values are setup toggles (defaults partnered ±1, Lone 2× / ±2, Blind Lone 3× / ±3). Win +, lose −, same magnitude. Presses optional, current hole to 18.',
+    defaults: { on: false, scoring: 'gross', dollarsPerPoint: 1, partnered: 1, lone: 2, blind: 4 },
+    rule: '3–5 players typical. Wolf rotates each hole — new Wolf and new sides every hole, not fixed Team 1/2. After each tee, Wolf picks that player or passes. Sides lock before Wolf points settle; gross can be entered now. Better ball (gross or net) wins; tie = 0. Point values are setup toggles (defaults partnered ±1, Lone ±2, Blind Lone ±4). Win +, lose −, same magnitude. Presses optional, current hole to 18.',
   },
   {
     key: 'nines',
@@ -69,7 +69,7 @@ function parseSideGames(raw) {
       };
       out.wolf.partnered = pos(out.wolf.partnered, 1);
       out.wolf.lone = pos(out.wolf.lone, 2);
-      out.wolf.blind = pos(out.wolf.blind, 3);
+      out.wolf.blind = pos(out.wolf.blind, 4);
     }
   }
   const slots = obj.birdieSlots || {};
