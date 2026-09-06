@@ -268,6 +268,7 @@ describe('Goldendale required team hole', () => {
     });
 
     assert.deepEqual(players.map((p) => p.strokes), [1, 1, 1, 2]);
+    // Locked A/B/C/D dots use Index only. Course handicap would be 0/7/14/20 on White/Blue.
     assert.deepEqual(players.map((p) => p.net), [4, 5, 6, 6]);
 
     const team = teamHoleScore(players, { grossBalls: 1, netBalls: 2, dualCount: false, par: 5 });
@@ -280,6 +281,46 @@ describe('Goldendale required team hole', () => {
     assert.equal(team.balls.filter((b) => b.type === 'net').length, 2);
     assert.equal(holeTeamVsPar(team.total), 1, 'team hole total is already vs par');
     assert.equal(formatVsPar(team.total), '+1');
+  });
+});
+
+describe('A/B/C/D fixture stroke dots vs Goldendale SI', () => {
+  const fixture = [
+    { name: 'A', handicap: 4, hole1Dots: 1 },
+    { name: 'B', handicap: 11, hole1Dots: 1 },
+    { name: 'C', handicap: 18, hole1Dots: 1 },
+    { name: 'D', handicap: 24, hole1Dots: 2 },
+  ];
+
+  function expectedStrokes(index, si) {
+    return strokesOnHole(index, si);
+  }
+
+  it('dots follow rounded Index on each Goldendale SI, not course handicap', () => {
+    const tee = { slope: 112, rating: 67.9, par: 72 };
+    fixture.forEach((player) => {
+      const ch = courseHandicap(player.handicap, tee);
+      assert.notEqual(ch, player.handicap, player.name + ' course handicap is not the Index');
+      let differs = false;
+      GOLDENDALE_SI.forEach((si, idx) => {
+        const fromIndex = expectedStrokes(player.handicap, si);
+        const fromCourse = expectedStrokes(ch, si);
+        const marks = strokeDotMarks(fromIndex);
+        if (fromIndex < 0) {
+          assert.equal(marks.plus, true, player.name + ' plus on hole ' + (idx + 1));
+        } else {
+          assert.equal(marks.plus, false);
+          assert.equal(marks.count, Math.min(3, fromIndex), player.name + ' dots hole ' + (idx + 1));
+        }
+        if (fromIndex !== fromCourse) differs = true;
+      });
+      assert.equal(differs, true, player.name + ' must differ from course-handicap dots on at least one SI');
+      assert.equal(expectedStrokes(player.handicap, 1), player.hole1Dots, player.name + ' hole 1 SI 1 dots');
+    });
+    assert.deepEqual(fixture.map((p) => expectedStrokes(p.handicap, 1)), [1, 1, 1, 2]);
+    assert.equal(courseHandicap(4, tee) + 0, 0);
+    assert.equal(strokesOnHole(4, 1), 1);
+    assert.equal(strokesOnHole(0, 1), 0);
   });
 });
 

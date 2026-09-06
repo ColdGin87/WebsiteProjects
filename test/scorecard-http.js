@@ -112,7 +112,7 @@ async function apiStatus(base, method, urlPath, { token, body } = {}) {
   return { status: res.status, body: data };
 }
 
-function startServer(port, dbFile) {
+function startServer(port, dbFile, extraEnv = {}) {
   const child = spawn(process.execPath, ['api/index.js'], {
     cwd: ROOT,
     env: {
@@ -123,6 +123,7 @@ function startServer(port, dbFile) {
       JWT_SECRET: 'scorecard-tester-local-only',
       APP_BASE_URL: 'http://127.0.0.1:' + port,
       ALLOW_DEMO: '1',
+      ...extraEnv,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -609,12 +610,23 @@ async function runSideGamesScenario(base) {
   const eve = state.members.find((m) => m.display_name === 'Eve');
   const fay = state.members.find((m) => m.display_name === 'Fay');
   if (!eve || !fay) fail('side games missing Team 2');
+  const t2 = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Side Two',
+      email: `scorecard.side2.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  await api(base, 'POST', '/api/rounds/join', {
+    token: t2.token,
+    body: { code: created.round.join_code || created.round.joinCode, teamName: 'Team 2' },
+  });
   await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
+    token: t2.token,
     body: { memberId: eve.id, holeNumber: 1, gross: 6 },
   });
   await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
-    token,
+    token: t2.token,
     body: { memberId: fay.id, holeNumber: 1, gross: 7 },
   });
   const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
@@ -1065,6 +1077,274 @@ async function runNinesScenario(base) {
   console.log('PASS Nines hole 5-2-2 then 5-3-1 running 10/5/3');
 }
 
+async function runHardeningScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Lock Host',
+      email: `scorecard.lockhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Hardening Sunday game',
+      format: 'team_net',
+      holes: '18',
+      teamRace: true,
+      showOtherScores: false,
+      grossBalls: 1,
+      netBalls: 2,
+    },
+  });
+  const joinCode = created.round.join_code || created.round.joinCode;
+  if (!joinCode || String(joinCode).length < 8) {
+    fail('new join codes must be at least 8 characters, got ' + joinCode);
+  }
+  const roundId = created.round.id;
+  const hostMember = (created.members || []).find((m) => Number(m.player_id) === Number(host.user && host.user.id));
+  if (!hostMember) fail('host member missing');
+
+  const anonScore = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  assertEqual(anonScore.status, 401, 'anonymous score write rejected');
+  const anonGuest = await apiStatus(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    body: { name: 'Ghost', handicap: 8 },
+  });
+  assertEqual(anonGuest.status, 401, 'anonymous guest add rejected');
+  const anonPress = await apiStatus(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    body: { gameKey: 'vegas', startHole: 1 },
+  });
+  assertEqual(anonPress.status, 401, 'anonymous press rejected');
+  const anonSettings = await apiStatus(base, 'PUT', `/api/rounds/${roundId}`, {
+    body: { showOtherScores: true, teamRace: false, grossBalls: 3, netBalls: 0 },
+  });
+  assertEqual(anonSettings.status, 401, 'anonymous settings write rejected');
+  const anonPlayers = await apiStatus(base, 'GET', '/api/players');
+  assertEqual(anonPlayers.status, 401, 'player directory requires auth');
+
+  const badJoin = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: host.token,
+    body: { code: 'ZZZZZZZZ', teamName: 'Team 2' },
+  });
+  assertEqual(badJoin.status, 404, 'invalid join code rejected');
+  const shortJoin = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: host.token,
+    body: { code: 'AB', teamName: 'Team 2' },
+  });
+  assertEqual(shortJoin.status, 404, 'short join code rejected as not found');
+
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Lock Joiner',
+      email: `scorecard.lockjoin.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: joinCode, addTeam: true },
+  });
+  const joinerMember = (joined.members || []).find((m) => Number(m.player_id) === Number(joiner.user && joiner.user.id));
+  if (!joinerMember) fail('joiner did not join');
+
+  const settingsSteal = await apiStatus(base, 'PUT', `/api/rounds/${roundId}`, {
+    token: joiner.token,
+    body: { showOtherScores: true, teamRace: false, format: 'match_play', grossBalls: 3, netBalls: 0 },
+  });
+  assertEqual(settingsSteal.status, 403, 'joiner cannot change Sunday rules / formats / show-other-teams');
+  const afterSteal = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  assertEqual(!!(afterSteal.round && afterSteal.round.showOtherScores), false, 'show-other-teams stayed OFF');
+  assertEqual(!!afterSteal.round.teamRace, true, 'Sunday game stayed ON');
+  assertEqual(Number(afterSteal.round.gross_balls ?? afterSteal.round.grossBalls), 1, 'format gross balls unchanged');
+  assertEqual(Number(afterSteal.round.net_balls ?? afterSteal.round.netBalls), 2, 'format net balls unchanged');
+
+  const cross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: joiner.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 3 },
+  });
+  assertEqual(cross.status, 403, 'cross-team score write is 403');
+  const afterCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const hostLocked = (afterCross.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hole1 = hostLocked && (hostLocked.holes || []).find((h) => h.holeNumber === 1);
+  if (hole1 && hole1.gross != null) fail('rejected cross-team score must not persist');
+
+  const hostCross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: joinerMember.id, holeNumber: 1, gross: 5 },
+  });
+  assertEqual(hostCross.status, 403, 'host must not write Team 2 scores');
+  const afterHostCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const joinerLocked = (afterHostCross.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  const joinerHole1 = joinerLocked && (joinerLocked.holes || []).find((h) => h.holeNumber === 1);
+  if (joinerHole1 && joinerHole1.gross != null) fail('rejected host-to-Team-2 score must not persist');
+
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  const joinerGet = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const hiddenHost = (joinerGet.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hiddenHole = hiddenHost && (hiddenHost.holes || []).find((h) => h.holeNumber === 1);
+  if (hiddenHole && hiddenHole.gross != null) fail('GET must redact other-team scores when show-other is OFF');
+  const joinerLive = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: joiner.token });
+  const liveLeak = (joinerLive.scores || []).some((s) => Number(s.memberId) === Number(hostMember.id) && s.gross != null);
+  if (liveLeak) fail('live must redact other-team scores when show-other is OFF');
+  const hostGet = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const hostSeesSelf = (hostGet.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hostHole = hostSeesSelf && (hostSeesSelf.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hostHole && hostHole.gross, 4, 'organizer still sees own team scores');
+
+  const withGuest = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Roster Pal', handicap: 12, playingHandicap: 12 },
+  });
+  const pal = (withGuest.members || []).find((m) => m.display_name === 'Roster Pal');
+  if (!pal) fail('joiner guest for roster manage missing');
+  assertEqual(Number(pal.playing_handicap), 12, 'guest starts at Index 12');
+  const palHole = (pal.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palHole && palHole.strokes, 1, 'Index 12 gets 1 stroke on SI 1');
+
+  const hcpEdit = await api(base, 'PUT', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+    body: { handicap: 24, playingHandicap: 24 },
+  });
+  const palAfter = (hcpEdit.members || []).find((m) => Number(m.id) === Number(pal.id));
+  assertEqual(Number(palAfter && palAfter.playing_handicap), 24, 'joiner can set own-team Index');
+  const palHoleAfter = palAfter && (palAfter.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palHoleAfter && palHoleAfter.strokes, 2, 'Index 24 dots become 2 on SI 1');
+
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: joiner.token,
+    body: { memberId: pal.id, holeNumber: 1, gross: 6 },
+  });
+  const palScored = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const palScoredMem = (palScored.members || []).find((m) => Number(m.id) === Number(pal.id));
+  const palScoredHole = palScoredMem && (palScoredMem.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palScoredHole && palScoredHole.gross, 6, 'own-team score before remove');
+  assertEqual(palScoredHole && palScoredHole.strokes, 2, 'scored hole keeps 2 dots at Index 24');
+  assertEqual(palScoredHole && palScoredHole.net, 4, 'Index 24 net is gross minus 2');
+
+  const hcpAfterScore = await api(base, 'PUT', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+    body: { handicap: 12, playingHandicap: 12 },
+  });
+  const palRetuned = (hcpAfterScore.members || []).find((m) => Number(m.id) === Number(pal.id));
+  const palRetunedHole = palRetuned && (palRetuned.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(Number(palRetuned && palRetuned.playing_handicap), 12, 'Index can change after an early score');
+  assertEqual(palRetunedHole && palRetunedHole.strokes, 1, 'dots refresh to 1 after Index 12');
+  assertEqual(palRetunedHole && palRetunedHole.net, 5, 'net refreshes after Index change');
+
+  const stealHcp = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/members/${hostMember.id}`, {
+    token: joiner.token,
+    body: { handicap: 30, playingHandicap: 30 },
+  });
+  assertEqual(stealHcp.status, 403, 'joiner cannot edit other-team handicap');
+
+  const stealDel = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/members/${hostMember.id}`, {
+    token: joiner.token,
+  });
+  assertEqual(stealDel.status, 403, 'joiner cannot delete other-team player');
+
+  const removed = await api(base, 'DELETE', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+  });
+  if ((removed.members || []).some((m) => m.display_name === 'Roster Pal')) {
+    fail('joiner own-team remove must drop the player');
+  }
+  const leftoverPal = (removed.members || []).some((m) => Number(m.id) === Number(pal.id));
+  if (leftoverPal) fail('removed player must not remain on the roster');
+  const leftoverScore = (removed.members || []).some((m) =>
+    (m.holes || []).some((h) => Number(h.holeNumber) === 1 && Number(m.id) === Number(pal.id) && h.gross != null)
+  );
+  if (leftoverScore) fail('removed player must not leave hole scores');
+  const liveAfterDel = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: joiner.token });
+  const orphanLive = (liveAfterDel.scores || []).some((s) => Number(s.memberId) === Number(pal.id));
+  if (orphanLive) fail('live must not keep scores for a deleted player');
+  const team2 = (removed.teams || []).find((t) => Number(t.id) === Number(joinerMember.team_id ?? joinerMember.teamId));
+  const team2h1 = team2 && (team2.holes || []).find((h) => Number(h.holeNumber) === 1);
+  if (team2h1 && team2h1.total != null && (team2h1.balls || []).some((b) => Number(b.id) === Number(pal.id))) {
+    fail('deleted player must not remain in team hole balls');
+  }
+
+  const extra = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Host Can Remove', handicap: 8, playingHandicap: 8 },
+  });
+  const extraPal = (extra.members || []).find((m) => m.display_name === 'Host Can Remove');
+  if (!extraPal) fail('second joiner guest missing');
+  const hostHcp = await api(base, 'PUT', `/api/rounds/${roundId}/members/${extraPal.id}`, {
+    token: host.token,
+    body: { handicap: 18, playingHandicap: 18 },
+  });
+  const extraAfter = (hostHcp.members || []).find((m) => Number(m.id) === Number(extraPal.id));
+  assertEqual(Number(extraAfter && extraAfter.playing_handicap), 18, 'host can set Index on a team they manage');
+  const extraHole = extraAfter && (extraAfter.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(extraHole && extraHole.strokes, 1, 'host Index edit refreshes dots on SI 1');
+  const hostRemoved = await api(base, 'DELETE', `/api/rounds/${roundId}/members/${extraPal.id}`, {
+    token: host.token,
+  });
+  if ((hostRemoved.members || []).some((m) => m.display_name === 'Host Can Remove')) {
+    fail('host must be able to remove a player from a team they manage');
+  }
+
+  const directory = await api(base, 'GET', '/api/players', { token: joiner.token });
+  if (!Array.isArray(directory)) fail('signed-in player list should be an array');
+  const other = directory.find((p) => Number(p.id) !== Number(joiner.user && joiner.user.id));
+  if (other && other.email) fail('non-admin must not see other players’ emails');
+
+  const magic = await api(base, 'POST', '/api/auth/magic-link', {
+    body: { email: `scorecard.lockhost.${stamp}@example.com` },
+  });
+  if (process.env.VERCEL_ENV === 'production' && magic.link) {
+    fail('production must not return magic-link URLs');
+  }
+
+  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403, redact, roster HCP/remove');
+}
+
+async function runDemoOffScenario() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goldendale-demo-off-'));
+  const dbFile = path.join(tmpDir, 'demo-off.db');
+  const port = await getFreePort();
+  const child = startServer(port, dbFile, { ALLOW_DEMO: '0' });
+  const base = 'http://127.0.0.1:' + port;
+  try {
+    await waitForHealth(base);
+    const host = await api(base, 'POST', '/api/auth/register', {
+      body: {
+        name: 'Demo Off Host',
+        email: `scorecard.demooff.${Date.now()}@example.com`,
+        password: 'tester-pass-1',
+      },
+    });
+    const created = await api(base, 'POST', '/api/rounds', {
+      token: host.token,
+      body: { name: 'Demo must stay closed', format: 'team_net', holes: '18' },
+    });
+    const foursome = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/demo/foursome`, {
+      token: host.token,
+    });
+    assertEqual(foursome.status, 404, 'demo foursome off without ALLOW_DEMO');
+    const vsPar = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/demo/team1-vs-par`, {
+      token: host.token,
+    });
+    assertEqual(vsPar.status, 404, 'demo team1-vs-par off without ALLOW_DEMO');
+    console.log('PASS demo HTTP routes 404 when ALLOW_DEMO is off');
+  } finally {
+    child.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 200));
+    if (!child.killed) child.kill('SIGKILL');
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function main() {
   const requested = process.env.SCORECARD_TEST_URL;
   let base = requested ? requested.replace(/\/$/, '') : null;
@@ -1105,6 +1385,8 @@ async function main() {
     await runWolfScenario(base);
     await runNinesScenario(base);
     await runJoinIdentityScenario(base);
+    await runHardeningScenario(base);
+    if (!requested) await runDemoOffScenario();
   } finally {
     if (child) {
       child.kill('SIGTERM');

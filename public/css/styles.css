@@ -2307,6 +2307,51 @@ img {
   margin-bottom: 12px;
 }
 
+.live-join-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  min-height: 48px;
+  background: #FFF8E1;
+  border: 2px solid var(--primary-dark);
+  border-radius: var(--radius-sm);
+}
+
+.live-join-label {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #333;
+}
+
+.live-join-code {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  color: #111;
+  cursor: pointer;
+}
+
+.live-join-copy {
+  flex: 0 0 auto;
+  min-width: 64px;
+  min-height: 44px;
+  font-weight: 800;
+}
+
 .hole-toolbar {
   position: relative;
   flex-wrap: nowrap;
@@ -3397,10 +3442,155 @@ input.score-input[readonly] {
 }
 
 .nine-line {
-  font-size: 0.8rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #1A1A1A;
+  margin-top: 6px;
+}
+
+.nine-totals-bar {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  background: #E8F5E9;
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-md);
+}
+
+.nine-totals-team {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.3;
+  margin-bottom: 6px;
+}
+
+.nine-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid var(--primary-dark);
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+.nine-chip-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  color: #1B5E20;
+}
+
+.nine-chip.nine-tot {
+  background: #1B5E20;
+  color: #fff;
+  border-color: #1B5E20;
+}
+
+.nine-chip.nine-tot .nine-chip-label {
+  color: #C8E6C9;
+}
+
+.nine-totals-players {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.team-scorecard .sc-out,
+.team-scorecard .sc-in,
+.team-scorecard .sc-tot-sticky {
+  background: #E8F5E9 !important;
+  font-weight: 800;
+}
+
+.is-score-hidden .score-input {
+  color: transparent;
+  text-shadow: none;
+}
+
+.is-score-hidden .net-mini,
+.is-score-hidden .stroke-dots {
+  visibility: hidden;
+}
+
+.setup-roster-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.setup-roster-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setup-roster-name {
+  font-weight: 800;
+  min-width: 88px;
+}
+
+.setup-roster-hcp {
+  font-weight: 700;
+}
+
+.setup-roster-index {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+  flex: 1 1 72px;
+}
+
+.setup-roster-index > span {
+  font-size: 0.7rem;
   font-weight: 700;
   color: #333;
-  margin-top: 4px;
+}
+
+.setup-roster-hcp-input {
+  min-height: 44px;
+  width: 5.5rem;
+  max-width: 100%;
+  font-weight: 800;
+}
+
+.setup-roster-set,
+.setup-roster-remove {
+  min-height: 44px;
+}
+
+.setup-roster-remove {
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  .nine-totals-bar {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+  }
+
+  .nine-totals-team {
+    font-size: 1.2rem;
+  }
+
+  .nine-chip {
+    font-size: 1.15rem;
+    min-height: 40px;
+  }
+
+  .nine-line {
+    font-size: 1rem;
+  }
 }
 
 .game-rules h3,
@@ -3415,11 +3605,14 @@ input.score-input[readonly] {
 }
 
 .eighteen-done {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   background: #E8F5E9;
   border: 2px solid var(--primary);
   border-radius: var(--radius-md);
   padding: 14px 16px;
-  margin-bottom: 12px;
+  margin: 8px 0 12px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3429,13 +3622,35 @@ input.score-input[readonly] {
 
 .eighteen-done p {
   margin: 0;
-  font-size: 1rem;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: #1A1A1A;
 }
 
 .eighteen-done .btn {
   min-height: 44px;
   min-width: 44px;
+}
+
+.eighteen-done .eighteen-go {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+@media (max-width: 600px) {
+  .eighteen-done {
+    padding: 16px;
+  }
+
+  .eighteen-done p {
+    font-size: 1.15rem;
+    width: 100%;
+  }
+
+  .eighteen-done .eighteen-go {
+    width: 100%;
+    font-size: 1.15rem;
+  }
 }
 
 .results-table th,
@@ -3472,6 +3687,16 @@ input.score-input[readonly] {
   .round-toolbar {
     margin-bottom: 6px;
     gap: 6px;
+  }
+
+  .live-join-bar {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .live-join-code {
+    font-size: 1.25rem;
+    letter-spacing: 0.1em;
   }
 
   #score-done,
