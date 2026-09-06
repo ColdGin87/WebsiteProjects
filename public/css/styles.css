@@ -3484,9 +3484,10 @@ input.score-input:disabled {
   z-index: 80;
   background: rgba(8, 10, 8, 0.78);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 16px;
+  overflow-y: auto;
+  padding: 12px 12px 24px;
 }
 
 .wyrm-coil-machine {
@@ -3788,25 +3789,27 @@ input.score-input:disabled {
 .wyrm-player-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
   margin: 0 0 10px;
 }
 
 .wyrm-player-chip {
-  min-height: 36px;
-  padding: 4px 10px;
-  border: 1px solid #7a5b24;
-  background: #122018;
-  color: #ffe7a3;
-  font-weight: 700;
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 2px solid #e6c36a;
+  background: #ffe7a3;
+  color: #122018;
+  font-size: 0.95rem;
+  font-weight: 800;
   border-radius: 8px;
   cursor: pointer;
 }
 
 .wyrm-player-chip.is-on {
   background: #e6c36a;
-  color: #122018;
+  color: #08100c;
+  box-shadow: 0 0 0 2px #7cffc4;
 }
 
 .wyrm-fun-board-line {

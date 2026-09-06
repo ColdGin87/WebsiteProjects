@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Wyrm Coil chips + Best from fun board (ASSET_V `20260905r`)
+
+Player chips sit above the reels in gold so they stay readable on a 390px phone. Best seeds from the fun-board high (not 0 after a +0 spin). This player stays that individual’s fun score. Same PR #2. Hold merge.
+
 ### Wyrm Coil per-player fun board (ASSET_V `20260905q`)
 
 Birdie spins are per player: own gross better-than-par + own net better-than-par. Points stay on that player (David 29 · Brian 50 · Matt 60) — not team money. 19th hole shows the fun board. Reels rotate longer (~3s, staggered) before they settle. Nassau Press stays. Same PR #2. Hold merge.

@@ -80,6 +80,17 @@ const wyrmCoil = {
     return prev;
   },
 
+  boardHigh(slots) {
+    return ((slots && slots.players) || []).reduce((max, p) => {
+      const pts = Number(p.points) || 0;
+      return pts > max ? pts : max;
+    }, 0);
+  },
+
+  displayBest(slots) {
+    return this.saveHigh(Math.max(this.running, this.boardHigh(slots)));
+  },
+
   progressKey(roundId) {
     return 'goldendale_wyrm_coil_play_' + String(roundId || '');
   },
@@ -215,7 +226,7 @@ const wyrmCoil = {
     if (!rows.length) return '';
     return `<div class="wyrm-player-chips">${rows.map((p) => {
       const on = String(p.id) === String(this.playerId) ? ' is-on' : '';
-      return `<button type="button" class="wyrm-player-chip${on}" data-wyrm-player="${p.id}">${_esc(p.name)} · ${p.spins}</button>`;
+      return `<button type="button" class="wyrm-player-chip${on}" data-wyrm-player="${p.id}">${_esc(p.name)} ${p.points} · ${p.spins}</button>`;
     }).join('')}</div>`;
   },
 
@@ -224,10 +235,10 @@ const wyrmCoil = {
     const left = this.remaining(slots);
     const spin = this.lastAward || this.currentSpin(slots) || { points: 0, hole: '—', kind: '', name: '' };
     const seed = (this.roundId || 0) * 17 + this.taken * 13 + (spin.points || 0) * 5 + Number(this.playerId || 0);
-    const high = this.saveHigh(this.running);
+    const high = this.displayBest(slots);
     const done = left === 0;
     const player = (slots.players || []).find((p) => String(p.id) === String(this.playerId));
-    const playerPts = player ? player.points : 0;
+    const playerPts = player ? Number(player.points) || 0 : 0;
     let host = document.getElementById('wyrm-coil-overlay');
     if (!host) {
       host = document.createElement('div');
@@ -237,6 +248,7 @@ const wyrmCoil = {
     }
     host.innerHTML = `
       <div class="wyrm-coil-machine" role="dialog" aria-modal="true" aria-labelledby="wyrm-coil-title">
+        ${this.playerChipsHtml(slots)}
         <div class="wyrm-coil-crest" aria-hidden="true">
           <svg viewBox="0 0 80 48" width="80" height="48">
             <path d="M8 32c10-18 22-22 32-10 6 7 10 8 18 4 8-4 14-2 14 6" fill="none" stroke="#e6c36a" stroke-width="3" stroke-linecap="round"/>
@@ -246,12 +258,11 @@ const wyrmCoil = {
         </div>
         <h2 id="wyrm-coil-title">Wyrm Coil</h2>
         <p class="wyrm-coil-tag">Birdie dragon slots · fun only · not team money</p>
-        ${this.playerChipsHtml(slots)}
         <div class="wyrm-screens" aria-hidden="true">${this.reelHtml(seed, this.spinning)}</div>
         <div class="wyrm-coil-stats">
           <div><span>Spins left</span><strong>${left}</strong></div>
           <div><span>This spin</span><strong>${this.lastAward ? '+' + this.lastAward.points : '—'}</strong></div>
-          <div><span>This player</span><strong>${this.running || playerPts}</strong></div>
+          <div><span>This player</span><strong>${playerPts}</strong></div>
           <div><span>Best</span><strong>${high}</strong></div>
         </div>
         <p class="wyrm-fun-board-line">${_esc(this.funBoardText(slots) || 'No birdie scores yet')}</p>
@@ -287,7 +298,7 @@ const wyrmCoil = {
       this.running += Number(award.points) || 0;
       this.taken += 1;
       this.saveProgress();
-      this.saveHigh(this.running);
+      this.displayBest(slots);
       this.render(state);
     }, this.SPIN_MS);
   },
