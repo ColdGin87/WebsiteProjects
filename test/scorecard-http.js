@@ -691,7 +691,7 @@ async function runSideGamesScenario(base) {
     body: { gameKey: 'nassau', segment: 'overall', startHole: 12, endHole: 18 },
   });
   const nassauRows = (overallPress.sideGames && overallPress.sideGames.games && overallPress.sideGames.games.nassauPresses) || [];
-  const back = nassauRows.find((p) => p.segment === 'back');
+  const back = nassauRows.find((p) => p.segment === 'back' && Number(p.startHole) === 12);
   const overall = nassauRows.find((p) => p.segment === 'overall');
   assertEqual(back && back.startHole, 12, 'back press from hole 12');
   assertEqual(back && back.endHole, 18, 'back press dies at 18');

@@ -132,7 +132,7 @@ describe('Combined PR3 hole view', () => {
     const nassauOn = sliceFn('isNassauOn(state)', 'nassauPresses(state)');
     assert.match(nassauOn, /games\.nassau/);
     assert.doesNotMatch(nassauOn, /isOrganizer/);
-    const nassauBtns = sliceFn('nassauPressButtonsHtml(state, holeNumber)', 'async pressNassauFromHole');
+    const nassauBtns = sliceFn('nassauPressButtonsHtml(state, holeNumber, wrapId)', 'async pressNassauFromHole');
     assert.match(nassauBtns, /Press \$\{seg\.label\}/);
     assert.match(nassauBtns, /nassau-press-wrap/);
     assert.doesNotMatch(nassauBtns, /isOrganizer/);
