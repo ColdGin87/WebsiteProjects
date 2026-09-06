@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906a',
+  ASSET_V: '20260906b',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -219,6 +219,10 @@ const scorecard = {
     if (patch.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...patch.sideGames };
     if (patch.wolfPicks) this.state.wolfPicks = patch.wolfPicks;
     if (patch.presses) this.state.presses = patch.presses;
+    if (patch.showOtherScores != null && this.state.round) {
+      this.state.round.showOtherScores = !!patch.showOtherScores;
+      this.state.round.show_other_scores = patch.showOtherScores ? 1 : 0;
+    }
     this._ninesLedger = null;
   },
 
@@ -281,7 +285,11 @@ const scorecard = {
 
   groupHasEighteen(state) {
     const holes = state.holes || [];
-    const members = this.visibleHoleMembers(state);
+    const members = (this.isShowOtherScoresOn(state) || this.isOrganizer(state))
+      ? (state.members || []).filter((m) => m.team_id)
+      : this.groupedMembers(state)
+        .filter((g) => g.team && this.canSeeTeamScores(state, g.team))
+        .flatMap((g) => g.members || []);
     if (!holes.length || !members.length) return false;
     return members.every((m) => this.playerComplete(m, holes));
   },
@@ -300,6 +308,26 @@ const scorecard = {
     const r = (state && state.round) || {};
     if (r.teamRace === false || r.team_race === 0 || r.team_race === false) return false;
     return true;
+  },
+
+  isShowOtherScoresOn(state) {
+    const r = (state && state.round) || {};
+    return r.showOtherScores === true || r.show_other_scores === 1 || r.show_other_scores === true;
+  },
+
+  canSeeMemberScores(state, member) {
+    if (this.canWriteMember(state, member)) return true;
+    return this.isShowOtherScoresOn(state);
+  },
+
+  canSeeTeamScores(state, team) {
+    if (!team) return false;
+    if (this.isShowOtherScoresOn(state)) return true;
+    if (this.isOrganizer(state)) return true;
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (user && user.is_admin) return true;
+    const me = this.myMember(state);
+    return this.sameTeamIds(me && (me.team_id ?? me.teamId), team.id);
   },
 
   isVegasOn(state) {
@@ -971,7 +999,7 @@ const scorecard = {
   visibleHoleMembers(state) {
     if (this.isWolfOn(state)) return this.wolfRoster(state);
     return this.groupedMembers(state)
-      .filter((g) => g.team)
+      .filter((g) => g.team && this.canSeeTeamScores(state, g.team))
       .flatMap((g) => g.members || []);
   },
 
@@ -1333,6 +1361,11 @@ const scorecard = {
   onScoreInput(e) {
     if (this.shouldHoldAddPlayer()) return;
     const input = e.target;
+    const member = this.state && (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+    if (!this.canWriteMember(this.state, member)) {
+      input.value = input.dataset.committed || '';
+      return;
+    }
     const inserted = (e.inputType === 'insertText' || e.inputType === 'insertCompositionText')
       ? (e.data != null ? String(e.data) : '')
       : '';
@@ -1367,6 +1400,11 @@ const scorecard = {
   onScoreBlur(e) {
     if (this.shouldHoldAddPlayer()) return;
     const input = e.target;
+    const locked = this.state && (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+    if (!this.canWriteMember(this.state, locked)) {
+      input.value = input.dataset.committed || '';
+      return;
+    }
     if (this._oneTimer) {
       clearTimeout(this._oneTimer);
       this._oneTimer = null;
@@ -1405,6 +1443,11 @@ const scorecard = {
   commitTyped(input, gross, advance) {
     const memberId = Number(input.dataset.member);
     const holeNumber = Number(input.dataset.hole);
+    const member = this.state && (this.state.members || []).find((m) => Number(m.id) === memberId);
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
     input.dataset.committed = gross == null ? '' : String(gross);
     input.dataset.pending = gross == null ? '' : String(gross);
     if (gross != null) input.value = String(gross);
@@ -1670,8 +1713,6 @@ const scorecard = {
 
   canWriteMember(state, member) {
     if (!state || !member) return false;
-    // Wolf sides are not Team 1/2 — anyone on the live card can type gross now.
-    if (this.isWolfOn(state)) return true;
     const user = typeof auth !== 'undefined' && auth.currentUser;
     if (user && user.is_admin) return true;
     if (this.isOrganizer(state)) return true;
@@ -1680,12 +1721,15 @@ const scorecard = {
     return false;
   },
 
-  onAuthReady() {
-    if (!this.state || this.screen !== 'play') return;
+  lockScoreInputs() {
+    if (!this.state) return;
     document.querySelectorAll('input.score-input[data-member]').forEach((input) => {
       const member = (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
       const writable = this.canWriteMember(this.state, member);
       input.disabled = !writable;
+      input.readOnly = !writable;
+      if (writable) input.removeAttribute('tabindex');
+      else input.tabIndex = -1;
       const cell = input.closest('[data-score-cell]');
       if (cell) cell.classList.toggle('is-readonly', !writable);
       const row = input.closest('.hole-player-row, tr.row-player');
@@ -1693,14 +1737,20 @@ const scorecard = {
     });
   },
 
+  onAuthReady() {
+    if (!this.state || this.screen !== 'play') return;
+    this.lockScoreInputs();
+  },
+
   focusHoleScore(memberId, holeNumber, ev) {
     if (ev && ev.target && ev.target.classList && ev.target.classList.contains('score-input')) return;
+    const member = ((this.state && this.state.members) || []).find((m) => String(m.id) === String(memberId));
+    if (!this.canWriteMember(this.state, member)) return;
     const input = document.querySelector(`input.score-input[data-member="${memberId}"][data-hole="${holeNumber}"]`);
-    if (input && !input.disabled) {
+    if (input && !input.disabled && !input.readOnly) {
       input.focus();
       return;
     }
-    if (input) this.openEditorFromInput(input);
   },
 
   scoreInputDisabled(state, member) {
@@ -1745,6 +1795,7 @@ const scorecard = {
     this.bindHoleBack();
     this.syncAddPlayerChrome();
     this.bindInfoTips();
+    this.lockScoreInputs();
     svcApi('updateBadge');
   },
 
@@ -2290,8 +2341,9 @@ const scorecard = {
       return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
     }
     const teamBits = teams.map((t) => {
-      let bit = `${this.teamDisplay(t)} ${t.total == null ? '—' : this.fmtTeam(t.total)}`;
-      if (leader && leader.total != null && t.total != null && t.id !== leader.id) {
+      const seen = this.canSeeTeamScores(state, t);
+      let bit = `${this.teamDisplay(t)} ${!seen || t.total == null ? '—' : this.fmtTeam(t.total)}`;
+      if (seen && leader && leader.total != null && t.total != null && t.id !== leader.id) {
         bit += ` (${this.fmtTeam(t.total - leader.total)})`;
       }
       return bit;
@@ -2301,20 +2353,22 @@ const scorecard = {
 
   holePlayerRowHtml(state, member, holeNumber) {
     const hole = this.holeMeta(state, holeNumber);
-    const hs = (member.holes || []).find((x) => x.holeNumber === holeNumber);
+    const raw = (member.holes || []).find((x) => x.holeNumber === holeNumber);
+    const seen = this.canSeeMemberScores(state, member);
+    const hs = seen ? raw : null;
     const cls = this.cellClassList(hs, hole.par);
     const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
     const writable = this.canWriteMember(state, member);
-    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
+    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
       <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
-      <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${holeNumber}">
+      <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
           <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
             data-member="${member.id}" data-hole="${holeNumber}"
             data-committed="${hs?.gross ?? ''}" data-pending="${hs?.gross ?? ''}"
-            ${writable ? '' : 'disabled'}
+            ${writable ? '' : 'disabled readonly tabindex="-1"'}
             value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
-          ${this.strokeDotsHtml(hs?.strokes)}
+          ${seen ? this.strokeDotsHtml(raw?.strokes) : ''}
         </div>
         ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
       </div>
@@ -2367,14 +2421,14 @@ const scorecard = {
         const rows = (group.members || []).map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
         return `<section class="hole-team-group">${rows}<div class="hole-team-total"><div class="hole-team-scoreline"><span>${_esc(group.name)}</span></div></div></section>`;
       }).join('');
-      const extra = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
+      const extra = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
         const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
         const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
         return vegasHtml || raceHtml ? `<section class="hole-team-group" data-team-group="${group.team.id}">${vegasHtml}${raceHtml}</section>` : '';
       }).join('');
       return `<div class="hole-players" id="hole-players">${wolfHtml}${extra}</div>`;
     }
-    const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length);
+    const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team));
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
       const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
       const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
@@ -2592,7 +2646,10 @@ const scorecard = {
   },
 
   endTotalsHtml(state) {
-    const teams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
+    const teams = (state.teams || []).map((t) => {
+      const total = this.canSeeTeamScores(state, t) ? this.fmtTeam(t.total) : '—';
+      return `${this.teamDisplay(t)} ${total}`;
+    }).join(' · ');
     return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
   },
 
@@ -2613,6 +2670,9 @@ const scorecard = {
         input.setAttribute('aria-label', (member ? member.display_name : 'Player') + ' hole ' + holeNumber);
         const writable = this.canWriteMember(this.state, member);
         input.disabled = !writable;
+        input.readOnly = !writable;
+        if (writable) input.removeAttribute('tabindex');
+        else input.tabIndex = -1;
         row.classList.toggle('is-readonly', !writable);
       }
     });
@@ -2829,6 +2889,7 @@ const scorecard = {
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
         <label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. The live card shows only your team’s scores. ON shows other teams read-only. Write lock stays — you cannot enter the other team’s scores.')}</label>
         <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
@@ -2892,14 +2953,14 @@ const scorecard = {
     const extra = (showOut ? 1 : 0) + (showIn ? 2 : 0);
     if (this.isWolfOn(state)) {
       const rows = this.wolfRoster(state).map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
-      const extras = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
+      const extras = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
         const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
         const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
         return vegasRow + teamRow;
       }).join('');
       return rows + extras;
     }
-    return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length).map((group) => {
+    return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
       const label = this.teamDisplay(group.team);
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
       const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
@@ -2910,17 +2971,18 @@ const scorecard = {
   },
 
   onePlayerRow(state, m, holes, showOut, showIn) {
+    const seen = this.canSeeMemberScores(state, m);
     const cells = holes.map((h) => {
-      const hs = (m.holes || []).find((x) => x.holeNumber === h.hole_number);
+      const hs = seen ? (m.holes || []).find((x) => x.holeNumber === h.hole_number) : null;
       return this.scoreCellHtml(state, m, h, hs);
     }).join('');
     return `
-      <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}" data-member-row="${m.id}">
+      <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${m.id}">
         <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
         ${cells}
-        ${showOut ? `<td class="sc-total" data-out="${m.id}">${m.outGross ?? ''} <span class="net-mini">${m.outNet ?? ''}</span></td>` : ''}
-        ${showIn ? `<td class="sc-total" data-in="${m.id}">${m.inGross ?? ''} <span class="net-mini">${m.inNet ?? ''}</span></td>` : ''}
-        ${showIn ? `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${m.totalGross ?? ''}</strong> <span class="net-mini">${m.totalNet ?? ''}</span></td>` : ''}
+        ${showOut ? `<td class="sc-total" data-out="${m.id}">${seen ? (m.outGross ?? '') : ''} <span class="net-mini">${seen ? (m.outNet ?? '') : ''}</span></td>` : ''}
+        ${showIn ? `<td class="sc-total" data-in="${m.id}">${seen ? (m.inGross ?? '') : ''} <span class="net-mini">${seen ? (m.inNet ?? '') : ''}</span></td>` : ''}
+        ${showIn ? `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${seen ? (m.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (m.totalNet ?? '') : ''}</span></td>` : ''}
       </tr>
       ${this.onePlayerNinesRows(state, m, holes, showOut, showIn)}`;
   },
@@ -2964,18 +3026,20 @@ const scorecard = {
   },
 
   scoreCellHtml(state, member, hole, hs) {
-    const cls = this.cellClassList(hs, hole.par);
+    const seen = this.canSeeMemberScores(state, member);
+    const shown = seen ? hs : null;
+    const cls = this.cellClassList(shown, hole.par);
     const writable = this.canWriteMember(state, member);
-    return `<td class="${cls}${writable ? '' : ' is-readonly'}" data-score-cell="${member.id}:${hole.hole_number}">
+    return `<td class="${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${hole.hole_number}">
       <div class="gross-box">
         <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
           data-member="${member.id}" data-hole="${hole.hole_number}"
-          data-committed="${hs?.gross ?? ''}" data-pending="${hs?.gross ?? ''}"
-          ${writable ? '' : 'disabled'}
-          value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
-        ${this.strokeDotsHtml(hs?.strokes)}
+          data-committed="${shown?.gross ?? ''}" data-pending="${shown?.gross ?? ''}"
+          ${writable ? '' : 'disabled readonly tabindex="-1"'}
+          value="${shown?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
+        ${seen ? this.strokeDotsHtml(hs?.strokes) : ''}
       </div>
-      ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
+      ${shown?.gross != null ? `<span class="net-mini">${shown.net}</span>` : ''}
     </td>`;
   },
 
@@ -3105,19 +3169,26 @@ const scorecard = {
   paintScoreCell(memberId, holeNumber) {
     if (!this.state) return;
     const member = this.state.members.find((m) => m.id === memberId);
-    const hs = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    const raw = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    const seen = this.canSeeMemberScores(this.state, member);
+    const hs = seen ? raw : null;
     const hole = this.holeMeta(this.state, holeNumber);
     const cells = document.querySelectorAll('[data-score-cell="' + memberId + ':' + holeNumber + '"]');
     cells.forEach((cell) => {
       const input = cell.querySelector('input.score-input');
       const holeRow = cell.classList.contains('hole-player-score');
-      cell.className = (holeRow ? 'hole-player-score ' : '') + this.cellClassList(hs, hole.par);
+      const writable = this.canWriteMember(this.state, member);
+      cell.className = (holeRow ? 'hole-player-score ' : '') + this.cellClassList(hs, hole.par) + (writable ? '' : ' is-readonly') + (seen ? '' : ' is-score-hidden');
       if (input) {
-        const writable = this.canWriteMember(this.state, member);
         input.disabled = !writable;
-        cell.classList.toggle('is-readonly', !writable);
+        input.readOnly = !writable;
+        if (writable) input.removeAttribute('tabindex');
+        else input.tabIndex = -1;
         const row = cell.closest('.hole-player-row, tr.row-player');
-        if (row) row.classList.toggle('is-readonly', !writable);
+        if (row) {
+          row.classList.toggle('is-readonly', !writable);
+          row.classList.toggle('is-score-hidden', !seen);
+        }
         if (document.activeElement !== input) {
           input.value = hs?.gross ?? '';
           input.dataset.committed = hs?.gross ?? '';
@@ -3153,24 +3224,26 @@ const scorecard = {
       ? this.state.members.filter((m) => m.id === memberId)
       : this.state.members;
     for (const member of members) {
+      const seen = this.canSeeMemberScores(this.state, member);
       const out = document.querySelector('[data-out="' + member.id + '"]');
-      if (out) out.innerHTML = `${member.outGross ?? ''} <span class="net-mini">${member.outNet ?? ''}</span>`;
+      if (out) out.innerHTML = `${seen ? (member.outGross ?? '') : ''} <span class="net-mini">${seen ? (member.outNet ?? '') : ''}</span>`;
       const inn = document.querySelector('[data-in="' + member.id + '"]');
-      if (inn) inn.innerHTML = `${member.inGross ?? ''} <span class="net-mini">${member.inNet ?? ''}</span>`;
+      if (inn) inn.innerHTML = `${seen ? (member.inGross ?? '') : ''} <span class="net-mini">${seen ? (member.inNet ?? '') : ''}</span>`;
       const tot = document.querySelector('[data-tot="' + member.id + '"]');
-      if (tot) tot.innerHTML = `<strong>${member.totalGross ?? ''}</strong> <span class="net-mini">${member.totalNet ?? ''}</span>`;
+      if (tot) tot.innerHTML = `<strong>${seen ? (member.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (member.totalNet ?? '') : ''}</span>`;
     }
   },
 
   paintTeamHole(holeNumber) {
     if (!this.state || holeNumber == null) return;
     for (const team of this.state.teams || []) {
+      const seen = this.canSeeTeamScores(this.state, team);
       const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
       document.querySelectorAll('[data-team-hole="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
         el.classList.toggle('incomplete', !!hole?.incomplete);
       });
       document.querySelectorAll('[data-team-hole-score="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
-        el.textContent = this.fmtTeam(hole?.total);
+        el.textContent = seen ? this.fmtTeam(hole?.total) : '—';
       });
       const wrap = document.querySelector('[data-team-total="' + team.id + '"]');
       if (wrap) wrap.classList.toggle('incomplete', !!hole?.incomplete);
@@ -3334,6 +3407,7 @@ const scorecard = {
       this.paintBallLine(holeNumber);
       this.paintEndTotals();
       this.paintCurrentHoleChrome();
+      this.lockScoreInputs();
       return;
     }
     const table = document.getElementById('full-scorecard');
@@ -3357,6 +3431,7 @@ const scorecard = {
     this.paintBallLine(this.currentHole);
     this.paintEndTotals();
     this.paintCurrentHoleChrome();
+    this.lockScoreInputs();
   },
 
   openEditor(roundId, memberId, holeNumber, name, current, par) {
@@ -3655,7 +3730,7 @@ const scorecard = {
         <h3>Join code teams</h3>
         <p>Host is Team 1 (optional nickname). A joiner with the code picks Team 2 / 3 / 4… or Add team — they are not auto Team 1. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>Everyone sees the same live round. You may enter scores only for players on your own team. Other teams are visible read-only. The server rejects cross-team score writes. Wolf is individual — rostered players can enter the Wolf card.</p>
+        <p>You may enter scores only for players on your own team. The server rejects cross-team score writes. <strong>Show other teams’ scores</strong> is a Sunday game setup toggle (default OFF): other teams stay blank on the live card until the organizer turns it ON. When ON, other teams are visible and still read-only.</p>
         <h3>Score entry</h3>
         <p>Gross is 1–19. Default advance is <strong>Down</strong> (next player, same hole). Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up.</p>
         <h3>Nines</h3>

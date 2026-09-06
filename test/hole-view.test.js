@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906a/);
-    assert.match(html, /js\/formats\.js\?v=20260906a/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906a/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906a/);
-    assert.match(src, /ASSET_V:\s*'20260906a'/);
+    assert.match(html, /20260906b/);
+    assert.match(html, /js\/formats\.js\?v=20260906b/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906b/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906b/);
+    assert.match(src, /ASSET_V:\s*'20260906b'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -358,9 +358,24 @@ describe('Combined PR3 hole view', () => {
     assert.match(holeRow, /focusHoleScore/);
     assert.match(holeRow, /playerNinesLineHtml/);
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
-    const writeLock = sliceFn('canWriteMember(state, member)', 'onAuthReady()');
-    assert.match(writeLock, /isWolfOn\(state\)\) return true/);
-    assert.doesNotMatch(writeLock, /isWolfOn\(state\) && me/);
+    const writeLock = sliceFn('canWriteMember(state, member) {', 'lockScoreInputs()');
+    assert.doesNotMatch(writeLock, /isWolfOn/);
+    assert.match(writeLock, /sameTeamIds/);
+    assert.match(src, /lockScoreInputs\(\)/);
+    assert.match(src, /canSeeMemberScores/);
+    assert.match(src, /canSeeTeamScores/);
+    assert.match(src, /isShowOtherScoresOn/);
+    assert.match(src, /showOtherScores/);
+    assert.match(src, /Show other teams/);
+    assert.match(src, /is-score-hidden/);
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dash, /name="showOtherScores"/);
+    assert.doesNotMatch(dash, /name="showOtherScores" checked/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    const canScoreAt = routes.indexOf('function canScore');
+    const canScoreFn = routes.slice(canScoreAt, canScoreAt + 700);
+    assert.match(canScoreFn, /canWriteTeamScore/);
+    assert.doesNotMatch(canScoreFn, /wolfGameOn/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);
@@ -369,6 +384,7 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(settings, /Allowance/);
     assert.match(settings, /HCP = Index only/);
     assert.match(settings, /Sunday game/);
+    assert.match(settings, /Show other teams/);
     assert.match(settings, /1G1N|1G\+1N/);
     assert.match(src, /Sunday game · /);
     assert.match(src, /<h3>Sunday game<\/h3>/);
@@ -402,6 +418,8 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /sideGames/);
     assert.match(dash, /create-team-race-row/);
     assert.match(dash, /name="teamRace"/);
+    assert.match(dash, /name="showOtherScores"/);
+    assert.match(dash, /create-show-other-row/);
     assert.match(dash, /sideGamesFieldsInner/);
     assert.match(dash, /team1Nickname/);
     assert.match(dash, /renderJoinPicker/);

@@ -33,7 +33,7 @@ const {
   coldGinIsStrokesReceived,
 } = require('../lib/seed/demoTeam1VsPar');
 const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
-const { computePlayingHandicap, isTeamRaceOn } = require('../lib/compute/roundState');
+const { computePlayingHandicap, isTeamRaceOn, isShowOtherScoresOn, redactOtherTeamScores } = require('../lib/compute/roundState');
 const { computeFunFacts, segmentLeaders } = require('../lib/compute/funFacts');
 
 describe('playingHandicap', () => {
@@ -73,6 +73,40 @@ describe('team race toggle', () => {
     assert.equal(isTeamRaceOn({ team_race: 1 }), true);
     assert.equal(isTeamRaceOn({ team_race: 0 }), false);
     assert.equal(isTeamRaceOn({ teamRace: false }), false);
+  });
+});
+
+describe('show other teams scores', () => {
+  it('defaults off and turns on only when stored true or 1', () => {
+    assert.equal(isShowOtherScoresOn({}), false);
+    assert.equal(isShowOtherScoresOn({ show_other_scores: 0 }), false);
+    assert.equal(isShowOtherScoresOn({ showOtherScores: false }), false);
+    assert.equal(isShowOtherScoresOn({ show_other_scores: 1 }), true);
+    assert.equal(isShowOtherScoresOn({ showOtherScores: true }), true);
+  });
+
+  it('redacts other-team hole scores when the toggle is off', () => {
+    const state = {
+      round: { show_other_scores: 0 },
+      members: [
+        { id: 1, team_id: 10, holes: [{ holeNumber: 1, gross: 4, net: 3 }], totalGross: 4, totalNet: 3, holesPlayed: 1 },
+        { id: 2, team_id: 20, holes: [{ holeNumber: 1, gross: 5, net: 4 }], totalGross: 5, totalNet: 4, holesPlayed: 1 },
+      ],
+      teams: [
+        { id: 10, total: 1, holes: [{ holeNumber: 1, total: 1, balls: [1] }] },
+        { id: 20, total: 2, holes: [{ holeNumber: 1, total: 2, balls: [2] }] },
+      ],
+      holeResults: [{ holeNumber: 1, teams: [{ teamId: 10, total: 1 }, { teamId: 20, total: 2 }] }],
+      winner: { id: 10, total: 1 },
+    };
+    redactOtherTeamScores(state, { id: 2, team_id: 20 });
+    assert.equal(state.members[0].holes[0].gross, null);
+    assert.equal(state.members[0].totalGross, null);
+    assert.equal(state.members[1].holes[0].gross, 5);
+    assert.equal(state.teams[0].total, null);
+    assert.equal(state.teams[1].total, 2);
+    assert.equal(state.holeResults[0].teams[0].total, null);
+    assert.equal(state.winner.total, null);
   });
 });
 

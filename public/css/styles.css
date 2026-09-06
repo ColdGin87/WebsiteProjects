@@ -3009,11 +3009,18 @@ td.sc-cell-editable.is-readonly {
   opacity: 0.78;
 }
 
+.hole-player-row.is-readonly,
+td.sc-cell-editable.is-readonly {
+  pointer-events: none;
+}
+
 .hole-player-row.is-readonly .score-input,
 td.is-readonly .score-input,
-input.score-input:disabled {
+input.score-input:disabled,
+input.score-input[readonly] {
   background: #ececec;
   color: #444;
+  pointer-events: none;
 }
 
 .hole-player-score .gross-box {

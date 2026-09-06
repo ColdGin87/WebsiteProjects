@@ -2,6 +2,16 @@
 
 ## Developer
 
+### Team write lock + hide other teams (ASSET_V `20260906b`)
+
+Same PR #3 (`cursor/goldendale-phone-fixes-e030`). Hold merge.
+
+P0: opposing teams cannot change each other’s scores. Wolf no longer grants a write-all bypass. Client disables other-team inputs after poll/patch/draw. Server `POST /scores` is 403 for cross-team writes. Guest add stays own-team-only.
+
+Sunday game setup toggle **Show other teams’ scores** defaults OFF. Live card (hole + full) shows only the viewer’s team; other teams are blank/hidden. Organizer can turn it ON — then other teams are visible and still read-only. Persists on the round like `teamRace`.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1. Cross-team score write is 403 and does not persist.
+
 ### Phone Full card + joiner Add player (ASSET_V `20260906a`)
 
 New PR from Main (`cursor/goldendale-phone-fixes-e030`). Hole view stays the default on ~390px, with a visible **Full card** control next to Hole N (not overflow-only) and **This hole** to flip back. Back + ⋯ still holds Settings / Game Rules.

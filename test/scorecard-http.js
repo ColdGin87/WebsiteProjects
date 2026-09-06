@@ -373,9 +373,22 @@ async function runScenario(base) {
   const friendHole = friendSeen && (friendSeen.holes || []).find((h) => h.holeNumber === 2);
   assertEqual(friendHole && friendHole.gross, 4, 'organizer sees friend score');
   const friendSees = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: friend.token });
+  assertEqual(!!friendSees.showOtherScores, false, 'show other teams defaults OFF');
   const teamFromFriend = (friendSees.teams || []).find((t) => t.name === 'Team 1');
   const friendHole1 = (teamFromFriend && teamFromFriend.holes || []).find((h) => h.holeNumber === 1);
-  assertEqual(friendHole1 && friendHole1.total, 1, 'friend sees live team 1 hole 1 vs par');
+  if (friendHole1 && friendHole1.total != null) fail('Team 2 must not see Team 1 scores while toggle is OFF');
+  const playerAFromFriend = (friendSees.scores || []).find((s) => Number(s.memberId) === Number(playerA.id) && Number(s.holeNumber) === 1);
+  if (playerAFromFriend) fail('live patch must omit other-team hole scores when toggle is OFF');
+
+  await api(base, 'PUT', `/api/rounds/${roundId}`, {
+    token,
+    body: { showOtherScores: true },
+  });
+  const friendSeesOn = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: friend.token });
+  assertEqual(!!friendSeesOn.showOtherScores, true, 'toggle ON is visible to joiner');
+  const teamFromFriendOn = (friendSeesOn.teams || []).find((t) => t.name === 'Team 1');
+  const friendHole1On = (teamFromFriendOn && teamFromFriendOn.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(friendHole1On && friendHole1On.total, 1, 'friend sees live team 1 hole 1 vs par when toggle is ON');
 
   const team2State = await api(base, 'POST', `/api/rounds/${roundId}/teams`, {
     token,
@@ -635,6 +648,10 @@ async function runSideGamesScenario(base) {
     token: friend.token,
     body: { code: live.round.join_code || live.round.joinCode, teamName: 'Team 2' },
   });
+  await api(base, 'PUT', `/api/rounds/${roundId}`, {
+    token,
+    body: { showOtherScores: true },
+  });
   const pressed = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
     token: friend.token,
     body: { gameKey: 'vegas', startHole: 1, endHole: 18 },
@@ -812,8 +829,37 @@ async function runJoinIdentityScenario(base) {
     body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
   });
   assertEqual(scoreLock.status, 403, 'joiner must not write Team 1 scores');
+  const afterLock = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
+  const hostLocked = (afterLock.members || []).find((m) => Number(m.player_id) === Number(host.user && host.user.id));
+  const hostHole1 = hostLocked && (hostLocked.holes || []).find((h) => h.holeNumber === 1);
+  if (hostHole1 && hostHole1.gross != null) fail('rejected Team 1 score must not persist');
 
-  console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner Add player own team only');
+  await api(base, 'POST', `/api/rounds/${created.round.id}/scores`, {
+    token: host.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 4 },
+  });
+  const joinerHidden = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: joiner.token });
+  assertEqual(!!(joinerHidden.round && joinerHidden.round.showOtherScores), false, 'new rounds hide other teams by default');
+  const hiddenHost = (joinerHidden.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hiddenHole = hiddenHost && (hiddenHost.holes || []).find((h) => h.holeNumber === 1);
+  if (hiddenHole && hiddenHole.gross != null) fail('joiner must not see Team 1 scores while toggle is OFF');
+
+  await api(base, 'PUT', `/api/rounds/${created.round.id}`, {
+    token: host.token,
+    body: { showOtherScores: true },
+  });
+  const joinerShown = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: joiner.token });
+  assertEqual(!!(joinerShown.round && joinerShown.round.showOtherScores), true, 'organizer can turn other-team scores ON');
+  const shownHost = (joinerShown.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const shownHole = shownHost && (shownHost.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(shownHole && shownHole.gross, 4, 'joiner sees Team 1 scores when toggle is ON');
+  const stillLocked = await apiStatus(base, 'POST', `/api/rounds/${created.round.id}/scores`, {
+    token: joiner.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 6 },
+  });
+  assertEqual(stillLocked.status, 403, 'visible other-team scores stay read-only');
+
+  console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner Add player own team only; other-team scores hidden until toggle');
 }
 
 async function runWolfScenario(base) {
@@ -860,11 +906,20 @@ async function runWolfScenario(base) {
   });
   const team2 = (joined.teams || []).find((t) => t.name === 'Team 2');
   if (!team2) fail('wolf joiner should land on Team 2');
-  const cross = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+  const cross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
     token: joiner.token,
     body: { memberId: guests[0].id, holeNumber: 1, gross: 3 },
   });
-  if (!cross || cross.ok !== true) fail('Team 2 player must enter Team 1 gross on the Wolf card');
+  assertEqual(cross.status, 403, 'Wolf joiner must not write Team 1 scores');
+  const afterCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token });
+  const g0 = (afterCross.members || []).find((m) => Number(m.id) === Number(guests[0].id));
+  const g0h1 = g0 && (g0.holes || []).find((h) => h.holeNumber === 1);
+  if (g0h1 && g0h1.gross != null) fail('rejected Wolf Team 1 score must not persist');
+  const first = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token,
+    body: { memberId: guests[0].id, holeNumber: 1, gross: 3 },
+  });
+  if (!first || first.ok !== true) fail('host must enter Team 1 Wolf gross');
   const grosses = [3, 5, 6, 6];
   for (let i = 1; i < guests.length; i++) {
     const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
@@ -888,11 +943,16 @@ async function runWolfScenario(base) {
 
   const hole2Gross = [4, 6, 7, 8];
   for (let i = 0; i < guests.length; i++) {
-    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    const refused = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
       token: joiner.token,
       body: { memberId: guests[i].id, holeNumber: 2, gross: hole2Gross[i] },
     });
-    if (!posted || posted.ok !== true) fail('Wolf card must accept hole-2 scores from the other team');
+    assertEqual(refused.status, 403, 'Wolf joiner must not write Team 1 hole-2 scores');
+    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token,
+      body: { memberId: guests[i].id, holeNumber: 2, gross: hole2Gross[i] },
+    });
+    if (!posted || posted.ok !== true) fail('host must enter Wolf hole-2 scores');
   }
   await api(base, 'PUT', `/api/rounds/${roundId}/wolf/2`, {
     token,
@@ -943,7 +1003,7 @@ async function runWolfScenario(base) {
   assertEqual(tieHole && tieHole.points, 0, 'tie 0');
   const tieW1 = (wolf4.points || []).find((p) => Number(p.id) === Number(guests[0].id));
   assertEqual(tieW1 && tieW1.points, 7, 'tie adds nothing');
-  console.log('PASS Wolf card accepts cross-team gross; lone ±2, blind ±4, partnered ±1, tie 0');
+  console.log('PASS Wolf card rejects cross-team gross; host scores; lone ±2, blind ±4, partnered ±1, tie 0');
 }
 
 async function runNinesScenario(base) {
