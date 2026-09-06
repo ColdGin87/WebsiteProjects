@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Join-code Team 1 host / joiner Team 2+ (ASSET_V `20260905n`)
+
+Host create is Team 1 with an optional nickname. A join-code user is not auto Team 1: they pick Team 2+ or Add team, optional team nickname and card name. Signed-out welcome code stashes the code, then login/register opens the picker. Live hole groups show Team N · nickname (or Team N) on every device. Same PR #2. Hold merge.
+
 ### Wolf setup toggles ±1 / ±2 / Blind ±4 (ASSET_V `20260905m`)
 
 Wolf point values are setup toggles, not hardcoded. House defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Better ball; tie 0. Score entry on the Wolf live card stays. Same PR #2. Hold merge.

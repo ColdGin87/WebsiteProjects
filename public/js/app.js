@@ -56,6 +56,15 @@ const app = {
     location.hash = hash;
   },
 
+  resumePendingJoin() {
+    let pending = '';
+    try { pending = sessionStorage.getItem('pending_join') || ''; } catch { pending = ''; }
+    if (!pending || !auth.currentUser) return false;
+    try { sessionStorage.removeItem('pending_join'); } catch { /* ignore */ }
+    this.navigate('#join/' + pending);
+    return true;
+  },
+
   async route() {
     const hash = location.hash || '#dashboard';
     const parts = hash.substring(1).split('/');

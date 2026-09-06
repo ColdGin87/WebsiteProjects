@@ -20,6 +20,8 @@ describe('Combined PR3 hole view', () => {
     const fn = sliceFn('holePlayersHtml(state, holeNumber)', 'drawHoleView(state)');
     assert.match(fn, /groupedMembers/);
     assert.match(fn, /hole-team-group/);
+    assert.match(fn, /hole-team-head/);
+    assert.match(fn, /teamDisplay/);
     assert.match(fn, /oneHoleTeamTotal/);
     assert.match(fn, /id="hole-players"/);
     assert.match(src, /hole-player-row/);
@@ -174,6 +176,7 @@ describe('Combined PR3 hole view', () => {
     const perPlayer = sliceFn('onePlayerNinesRows(state, member, holes, showOut, showIn) {', 'afterHoleScored(state, holeNumber) {');
     assert.match(perPlayer, /nines-player-run-row/);
     assert.match(perPlayer, /ninesRunningThrough/);
+    assert.match(css, /\.hole-team-head/);
     assert.match(css, /\.nassau-press-btn/);
     assert.match(css, /\.nines-board/);
     assert.match(css, /\.nines-player-stack/);
@@ -353,8 +356,12 @@ describe('Game select vs-par formats', () => {
     assert.match(dash, /team1Nickname/);
     assert.match(dash, /renderJoinPicker/);
     assert.match(dash, /not auto Team 1/);
+    assert.match(dash, /joinableTeams/);
+    assert.match(dash, /stashGuestCodeAndSignIn/);
+    assert.match(dash, /pending_join/);
     const appSrc = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
     assert.match(appSrc, /join-info/);
+    assert.match(appSrc, /resumePendingJoin/);
     assert.match(src, /Join code teams/);
     assert.match(src, /saveTeamNickname/);
     assert.match(src, /birdieSlotsOn/);

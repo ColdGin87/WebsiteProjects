@@ -2977,6 +2977,13 @@ input.score-input:disabled {
   max-width: 100%;
 }
 
+.hole-team-head {
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 4px 0 2px;
+  color: #1A1A1A;
+}
+
 .hole-team-total {
   display: flex;
   flex-direction: column;

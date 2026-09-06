@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905m',
+  ASSET_V: '20260905n',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -2319,7 +2319,7 @@ const scorecard = {
       const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
       const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
       const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
-      return `<section class="hole-team-group" data-team-group="${group.team.id}">${rows}${vegasHtml}${raceHtml}</section>`;
+      return `<section class="hole-team-group" data-team-group="${group.team.id}"><div class="hole-team-head">${_esc(this.teamDisplay(group.team))}</div>${rows}${vegasHtml}${raceHtml}</section>`;
     }).join('')}</div>`;
   },
 

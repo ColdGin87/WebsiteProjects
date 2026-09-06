@@ -48,8 +48,8 @@ const dashboard = {
           <h3 class="card-title">Have a join code?</h3>
           <p class="card-subtitle">Sign in first, then enter the 6-character code from your organizer.</p>
           <div class="inline-form">
-            <input id="guest-code" class="form-input join-code-input" maxlength="6" placeholder="ABC123" autocomplete="off" style="text-transform:uppercase">
-            <button class="btn btn-primary" onclick="auth.showModal('login')">Sign in to join</button>
+            <input id="guest-code" class="form-input join-code-input" maxlength="6" placeholder="ABC123" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();dashboard.stashGuestCodeAndSignIn();}">
+            <button class="btn btn-primary" onclick="dashboard.stashGuestCodeAndSignIn()">Sign in to join</button>
           </div>
         </div>`;
       return;
@@ -197,24 +197,40 @@ const dashboard = {
     app.navigate('#join/' + String(values.code || '').trim().toUpperCase());
   },
 
+  stashGuestCodeAndSignIn() {
+    const el = document.getElementById('guest-code');
+    const code = String((el && el.value) || '').trim().toUpperCase();
+    if (code.length >= 4) {
+      try { sessionStorage.setItem('pending_join', code); } catch { /* ignore */ }
+    }
+    if (window.auth) auth.showModal('login');
+  },
+
   defaultJoinTeam(info) {
     const next = (info && info.nextTeamName) || 'Team 2';
     return next === 'Team 1' ? 'Team 2' : next;
   },
 
+  joinableTeams(info) {
+    return ((info && info.teams) || []).filter((t) => String(t.name || '').trim() !== 'Team 1');
+  },
+
   renderJoinPicker(code, info) {
     const container = document.getElementById('app');
     const teams = (info && info.teams) || [];
+    const hostTeam = teams.find((t) => t.name === 'Team 1');
+    const joinTeams = this.joinableTeams(info);
     const nextName = (info && info.nextTeamName) || 'Team 2';
     const selected = this.defaultJoinTeam(info);
-    const chips = teams.map((t) => {
+    const hostLabel = hostTeam ? (hostTeam.displayName || hostTeam.name) : 'Team 1';
+    const chips = joinTeams.map((t) => {
       const on = t.name === selected ? ' is-on' : '';
       return `<button type="button" class="add-team-chip${on}" data-join-team="${_esc(t.name)}">${_esc(t.displayName || t.name)} · ${t.memberCount || 0}</button>`;
     }).join('');
     container.innerHTML = `
       <h2 class="section-title">Join ${ _esc((info && info.name) || 'Sunday game') }</h2>
       <form class="card join-picker" id="join-picker-form">
-        <p class="card-subtitle">Code <strong>${_esc(code)}</strong>. Pick Team 2+ or Add team — you are not auto Team 1.</p>
+        <p class="card-subtitle">Code <strong>${_esc(code)}</strong>. Host is ${_esc(hostLabel)}. Pick Team 2+ or Add team — you are not auto Team 1.</p>
         <div class="add-team-picks" role="group" aria-label="Team">
           ${chips}
           <button type="button" class="add-team-more${selected === nextName && !teams.some((t) => t.name === nextName) ? ' is-on' : ''}" id="join-add-team" data-join-team="${_esc(nextName)}">Add team · ${_esc(nextName)}</button>

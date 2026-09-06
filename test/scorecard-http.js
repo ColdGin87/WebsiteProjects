@@ -729,6 +729,11 @@ async function runJoinIdentityScenario(base) {
     body: { code: created.round.join_code || created.round.joinCode },
   });
   assertEqual(refused.status, 400, 'joiner must pick a team');
+  const refusedHost = await apiStatus(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: created.round.join_code || created.round.joinCode, teamName: 'Team 1' },
+  });
+  assertEqual(refusedHost.status, 400, 'joiner cannot take Team 1');
   const joined = await api(base, 'POST', '/api/rounds/join', {
     token: joiner.token,
     body: {

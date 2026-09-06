@@ -270,6 +270,7 @@ const auth = {
       if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
+      if (window.app && typeof window.app.resumePendingJoin === 'function' && window.app.resumePendingJoin()) return;
       if (window.app) window.app.route();
     } catch (err) {
       if (errEl) errEl.textContent = err.message || 'Login failed.';
@@ -291,6 +292,7 @@ const auth = {
       if (client.setToken) client.setToken(data.token);
       this.setUser(data.user);
       this.hideModal();
+      if (window.app && typeof window.app.resumePendingJoin === 'function' && window.app.resumePendingJoin()) return;
       if (window.app) window.app.navigate('#dashboard');
     } catch (err) {
       if (errEl) errEl.textContent = err.message || 'Registration failed.';
