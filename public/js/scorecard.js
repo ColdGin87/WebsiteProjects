@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260905p',
+  ASSET_V: '20260905q',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -2138,7 +2138,7 @@ const scorecard = {
         <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
         <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
       </div>
-      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not money. One spin for each gross or net score better than par (birdie, eagle, albatross). At the 19th hole, Wyrm Coil opens — take those spins, bank points, keep a high score.')}</label>
+      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (David 29 · Brian 50 · Matt 60). 19th hole shows the fun board. Longer reel before it settles.')}</label>
       <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
       <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
         <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
@@ -2236,8 +2236,8 @@ const scorecard = {
       blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
     }
     if (g.birdieSlots && g.birdieSlots.on) {
-      const lead = g.birdieSlots.leader;
-      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil</h3><p>${_esc(lead ? lead.name + ' ' + lead.points + ' pts · ' + g.birdieSlots.spins + ' spins (' + (g.birdieSlots.grossBirdies || 0) + 'G+' + (g.birdieSlots.netBirdies || 0) + 'N birdies)' : 'No birdies yet')}</p></div>`);
+      const board = g.birdieSlots.funBoard || (g.birdieSlots.leader ? g.birdieSlots.leader.name + ' ' + g.birdieSlots.leader.points : '');
+      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil fun board</h3><p>${_esc(board || 'No birdies yet')} · fun only, not team money</p></div>`);
     }
     if (side.stripText) {
       blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
@@ -3655,11 +3655,11 @@ const scorecard = {
         <h3>Presses</h3>
         <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>
-        <p>Fun layer, not money. Default ON. When the card is confirmed on the 19th hole, Wyrm Coil opens. One spin for each <strong>gross or net score better than par</strong> (birdie, eagle, albatross — same hole can count both). Take those spins on the original multi-reel overlay; each spin awards points. Running total and a saved high score. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
+        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a fun board like David 29 · Brian 50 · Matt 60, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
         <h3>Optional KPs</h3>
         <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
         <h3>19th hole</h3>
-        <p>When all scores are in, tap Go to the 19th hole. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The big Spin your birdies door opens Wyrm Coil when you have spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
+        <p>When all scores are in, tap Go to the 19th hole. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
         <h3>OUT / IN / TOT</h3>
         <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
@@ -3823,6 +3823,7 @@ const scorecard = {
           <span>${_esc(this.nineteenthShareText(state))}</span>
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
+        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : ''}
         ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
         <h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}

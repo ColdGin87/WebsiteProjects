@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260905p/);
-    assert.match(html, /js\/formats\.js\?v=20260905p/);
-    assert.match(html, /js\/sideGames\.js\?v=20260905p/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260905p/);
-    assert.match(src, /ASSET_V:\s*'20260905p'/);
+    assert.match(html, /20260905q/);
+    assert.match(html, /js\/formats\.js\?v=20260905q/);
+    assert.match(html, /js\/sideGames\.js\?v=20260905q/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260905q/);
+    assert.match(src, /ASSET_V:\s*'20260905q'/);
   });
 
   it('hole scoring toolbar is Back plus one overflow', () => {
@@ -308,8 +308,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /data-reveal=/);
     assert.match(nineteenth, /sound off/);
     assert.match(nineteenth, /share-strip/);
+    assert.match(nineteenth, /wyrmCoil\.funBoardHtml/);
     assert.match(nineteenth, /wyrmCoil\.bannerHtml/);
-    assert.ok(nineteenth.indexOf('share-strip') < nineteenth.indexOf('wyrmCoil.bannerHtml'), 'spin door sits with the share strip');
+    assert.ok(nineteenth.indexOf('share-strip') < nineteenth.indexOf('wyrmCoil.funBoardHtml'), 'fun board sits with the share strip');
+    assert.ok(nineteenth.indexOf('wyrmCoil.funBoardHtml') < nineteenth.indexOf('wyrmCoil.bannerHtml'), 'fun board sits above the spin door');
     assert.match(src, /shareNineteenth/);
     assert.match(src, /nineteenthSharePng/);
     assert.match(src, /wolfPartnered/);
@@ -396,7 +398,15 @@ describe('Wyrm Coil overlay', () => {
     assert.match(coil, /Birdie dragon slots/);
     assert.match(coil, /takeSpin/);
     assert.match(coil, /HIGH_KEY/);
+    assert.match(coil, /SPIN_MS:\s*3000/);
+    assert.match(coil, /REEL_ROWS:\s*18/);
+    assert.match(coil, /playerLogs/);
+    assert.match(coil, /funBoardHtml/);
+    assert.match(coil, /not team money/);
     assert.match(coil, /wyrm-screens/);
+    assert.match(css, /wyrm-reel-roll/);
+    assert.match(css, /\.wyrm-fun-board/);
+    assert.doesNotMatch(css, /wyrm-reel-blur 0\.7s/);
     assert.match(src, /onNineteenthDrawn/);
     assert.match(css, /\.wyrm-coil-overlay/);
     assert.match(css, /\.wyrm-screens/);

@@ -724,6 +724,37 @@ describe('Birdie slots', () => {
     assert.equal(slots.spins, 1);
     assert.equal(slots.spinLog[0].kind, 'net');
   });
+
+  it('keeps fun points on the player who made the birdie, not a team pot', () => {
+    const holes = [
+      { holeNumber: 1, par: 5 },
+      { holeNumber: 2, par: 4 },
+    ];
+    const members = [
+      member(1, 'David', 0, [4, 4]),
+      member(2, 'Brian', 0, [5, 3]),
+      member(3, 'Matt', 0, [3, 3]),
+    ];
+    const slots = computeBirdieSlots({ on: true, holes, members, roundId: 9 });
+    const david = slots.players.find((p) => p.name === 'David');
+    const brian = slots.players.find((p) => p.name === 'Brian');
+    const matt = slots.players.find((p) => p.name === 'Matt');
+    assert.equal(david.spins, 2);
+    assert.equal(brian.spins, 2);
+    assert.equal(matt.spins, 4);
+    assert.equal(david.points + brian.points + matt.points, slots.points);
+    assert.equal(slots.funBoard, slots.players.filter((p) => p.spins).map((p) => `${p.name} ${p.points}`).join(' · '));
+    assert.match(slots.funBoard, /David \d+/);
+    assert.match(slots.funBoard, /Brian \d+/);
+    assert.match(slots.funBoard, /Matt \d+/);
+    assert.match(slots.strip, /^Wyrm Coil /);
+    assert.doesNotMatch(slots.strip, /team pot|team money/i);
+    const logDavid = slots.spinLog.filter((s) => s.name === 'David');
+    const logMatt = slots.spinLog.filter((s) => s.name === 'Matt');
+    assert.equal(logDavid.reduce((n, s) => n + s.points, 0), david.points);
+    assert.equal(logMatt.reduce((n, s) => n + s.points, 0), matt.points);
+    assert.ok(matt.spins > david.spins);
+  });
 });
 
 describe('Side-game config and vs-par lock', () => {

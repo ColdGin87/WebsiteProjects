@@ -1,7 +1,8 @@
 /**
  * Wyrm Coil — original birdie dragon slots overlay.
  * Casino-dragon mood only. Original name, art, and pay. Not a copy of any
- * cabinet. Fun layer. Toggle still applies. N spins = better than par.
+ * cabinet. Fun layer. Toggle still applies. Each player spins their own
+ * gross + net better-than-par. Points stay on that player — not team money.
  */
 const WYRM_ICONS = [
   { key: 'coil', mark: '◎', label: 'Coil' },
@@ -12,8 +13,18 @@ const WYRM_ICONS = [
   { key: 'cloud', mark: '☁', label: 'Cloud' },
 ];
 
+function _esc(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 const wyrmCoil = {
   HIGH_KEY: 'goldendale_wyrm_coil_high',
+  SPIN_MS: 3000,
+  REEL_ROWS: 18,
   open: false,
   spinning: false,
   taken: 0,
@@ -21,10 +32,35 @@ const wyrmCoil = {
   lastAward: null,
   autoOpenedFor: null,
   roundId: null,
+  playerId: null,
 
   slotsFrom(state) {
     const games = state && state.sideGames && state.sideGames.games;
-    return (games && games.birdieSlots) || { on: false, spins: 0, spinLog: [] };
+    return (games && games.birdieSlots) || { on: false, spins: 0, spinLog: [], players: [] };
+  },
+
+  funBoardText(slots) {
+    if (slots && slots.funBoard) return slots.funBoard;
+    const rows = ((slots && slots.players) || []).filter((p) => (p.spins || p.points));
+    return rows.map((p) => `${p.name} ${p.points}`).join(' · ');
+  },
+
+  funBoardHtml(state) {
+    const slots = this.slotsFrom(state);
+    if (!slots.on) return '';
+    const rows = (slots.players || []).filter((p) => (Number(p.spins) || 0) > 0);
+    const board = rows.length
+      ? `<ol class="wyrm-fun-list">${rows.map((p) => {
+        const g = Number(p.grossBirdies) || 0;
+        const n = Number(p.netBirdies) || 0;
+        return `<li><span class="wyrm-fun-name">${_esc(p.name)}</span> <strong>${p.points}</strong> <span class="wyrm-fun-spins">${p.spins} spin${p.spins === 1 ? '' : 's'} (${g}G+${n}N)</span></li>`;
+      }).join('')}</ol>`
+      : '<p class="wyrm-fun-empty">No better-than-par scores yet.</p>';
+    return `<section class="wyrm-fun-board" id="wyrm-fun-board">
+      <h3>Wyrm Coil fun board</h3>
+      <p>Fun only · not team money. Each player’s spins = their own gross + net better than par. Points stay on that player.</p>
+      ${board}
+    </section>`;
   },
 
   highScore() {
@@ -48,12 +84,17 @@ const wyrmCoil = {
     return 'goldendale_wyrm_coil_play_' + String(roundId || '');
   },
 
-  loadProgress(roundId) {
+  loadProgress(roundId, playerId) {
     try {
       const raw = sessionStorage.getItem(this.progressKey(roundId));
       if (!raw) return { taken: 0, running: 0 };
       const data = JSON.parse(raw);
-      return { taken: Number(data.taken) || 0, running: Number(data.running) || 0 };
+      const byPlayer = data && data.byPlayer;
+      if (byPlayer && playerId != null) {
+        const row = byPlayer[String(playerId)];
+        if (row) return { taken: Number(row.taken) || 0, running: Number(row.running) || 0 };
+      }
+      return { taken: 0, running: 0 };
     } catch {
       return { taken: 0, running: 0 };
     }
@@ -61,10 +102,14 @@ const wyrmCoil = {
 
   saveProgress() {
     try {
-      sessionStorage.setItem(this.progressKey(this.roundId), JSON.stringify({
-        taken: this.taken,
-        running: this.running,
-      }));
+      const key = this.progressKey(this.roundId);
+      let data = { byPlayer: {} };
+      try { data = JSON.parse(sessionStorage.getItem(key) || '') || data; } catch { /* ignore */ }
+      if (!data.byPlayer || typeof data.byPlayer !== 'object') data.byPlayer = {};
+      if (this.playerId != null) {
+        data.byPlayer[String(this.playerId)] = { taken: this.taken, running: this.running };
+      }
+      sessionStorage.setItem(key, JSON.stringify(data));
     } catch { /* ignore */ }
   },
 
@@ -74,14 +119,26 @@ const wyrmCoil = {
   },
 
   reelHtml(seed, spinning) {
+    const rows = this.REEL_ROWS;
     return [0, 1, 2].map((reel) => {
-      const cells = [0, 1, 2].map((row) => {
+      const cells = Array.from({ length: rows }, (_, row) => {
         const icon = this.iconAt(seed, reel, row);
-        const pay = row === 1 ? ' is-pay' : '';
+        const pay = row === rows - 2 ? ' is-pay' : '';
         return `<div class="wyrm-cell wyrm-${icon.key}${pay}" title="${icon.label}"><span>${icon.mark}</span><em>${icon.label}</em></div>`;
       }).join('');
       return `<div class="wyrm-reel${spinning ? ' is-spinning' : ''}" data-reel="${reel}"><div class="wyrm-reel-strip">${cells}</div></div>`;
     }).join('');
+  },
+
+  playerLogs(slots, playerId) {
+    return (slots.spinLog || []).filter((s) => String(s.memberId) === String(playerId));
+  },
+
+  defaultPlayerId(slots, state) {
+    const me = typeof scorecard !== 'undefined' && scorecard.myMember ? scorecard.myMember(state) : null;
+    if (me && this.playerLogs(slots, me.id).length) return me.id;
+    const first = (slots.players || []).find((p) => p.spins);
+    return first ? first.id : null;
   },
 
   bannerHtml(state) {
@@ -95,7 +152,7 @@ const wyrmCoil = {
       : 'Wyrm Coil · no better-than-par scores';
     return `<div class="wyrm-coil-banner wyrm-spin-door" id="wyrm-coil-banner">
       <h3>Spin your birdies</h3>
-      <p>Wyrm Coil · fun only. ${g} gross + ${net} net better than par.</p>
+      <p>Wyrm Coil · fun only · not team money. ${g} gross + ${net} net better than par, counted on the player who made them.</p>
       <button type="button" class="btn btn-accent wyrm-spin-door-btn" id="wyrm-coil-open" ${n ? '' : 'disabled'}>${label}</button>
     </div>`;
   },
@@ -117,7 +174,8 @@ const wyrmCoil = {
     const slots = this.slotsFrom(state);
     if (!slots.on) return;
     this.roundId = state.round && state.round.id;
-    const saved = this.loadProgress(this.roundId);
+    this.playerId = this.defaultPlayerId(slots, state);
+    const saved = this.loadProgress(this.roundId, this.playerId);
     this.taken = saved.taken;
     this.running = saved.running;
     this.lastAward = null;
@@ -134,21 +192,42 @@ const wyrmCoil = {
   },
 
   remaining(slots) {
-    return Math.max(0, (Number(slots.spins) || 0) - this.taken);
+    return Math.max(0, this.playerLogs(slots, this.playerId).length - this.taken);
   },
 
   currentSpin(slots) {
-    const log = slots.spinLog || [];
+    const log = this.playerLogs(slots, this.playerId);
     return log[this.taken] || null;
+  },
+
+  selectPlayer(state, playerId) {
+    if (this.spinning) return;
+    this.playerId = playerId;
+    const saved = this.loadProgress(this.roundId, playerId);
+    this.taken = saved.taken;
+    this.running = saved.running;
+    this.lastAward = null;
+    this.render(state);
+  },
+
+  playerChipsHtml(slots) {
+    const rows = (slots.players || []).filter((p) => p.spins);
+    if (!rows.length) return '';
+    return `<div class="wyrm-player-chips">${rows.map((p) => {
+      const on = String(p.id) === String(this.playerId) ? ' is-on' : '';
+      return `<button type="button" class="wyrm-player-chip${on}" data-wyrm-player="${p.id}">${_esc(p.name)} · ${p.spins}</button>`;
+    }).join('')}</div>`;
   },
 
   render(state) {
     const slots = this.slotsFrom(state);
     const left = this.remaining(slots);
     const spin = this.lastAward || this.currentSpin(slots) || { points: 0, hole: '—', kind: '', name: '' };
-    const seed = (this.roundId || 0) * 17 + this.taken * 13 + (spin.points || 0) * 5;
+    const seed = (this.roundId || 0) * 17 + this.taken * 13 + (spin.points || 0) * 5 + Number(this.playerId || 0);
     const high = this.saveHigh(this.running);
     const done = left === 0;
+    const player = (slots.players || []).find((p) => String(p.id) === String(this.playerId));
+    const playerPts = player ? player.points : 0;
     let host = document.getElementById('wyrm-coil-overlay');
     if (!host) {
       host = document.createElement('div');
@@ -166,17 +245,21 @@ const wyrmCoil = {
           </svg>
         </div>
         <h2 id="wyrm-coil-title">Wyrm Coil</h2>
-        <p class="wyrm-coil-tag">Birdie dragon slots · fun only · not a settle</p>
+        <p class="wyrm-coil-tag">Birdie dragon slots · fun only · not team money</p>
+        ${this.playerChipsHtml(slots)}
         <div class="wyrm-screens" aria-hidden="true">${this.reelHtml(seed, this.spinning)}</div>
         <div class="wyrm-coil-stats">
           <div><span>Spins left</span><strong>${left}</strong></div>
           <div><span>This spin</span><strong>${this.lastAward ? '+' + this.lastAward.points : '—'}</strong></div>
-          <div><span>Running</span><strong>${this.running}</strong></div>
+          <div><span>This player</span><strong>${this.running || playerPts}</strong></div>
           <div><span>Best</span><strong>${high}</strong></div>
         </div>
+        <p class="wyrm-fun-board-line">${_esc(this.funBoardText(slots) || 'No birdie scores yet')}</p>
         <p class="wyrm-coil-note">${done
-          ? (slots.spins ? 'Coil rest. You took every birdie spin from this card.' : 'No gross or net birdies — the coil stays dark.')
-          : `${spin.name || 'A birdie'} · hole ${spin.hole} · ${spin.kind || ''} birdie`}</p>
+          ? (this.playerLogs(slots, this.playerId).length
+            ? 'Coil rest. ' + (spin.name || 'This player') + ' took every one of their birdie spins.'
+            : 'No gross or net birdies for this player — the coil stays dark.')
+          : `${_esc(spin.name || 'A birdie')} · hole ${spin.hole} · ${spin.kind || ''} birdie`}</p>
         <div class="wyrm-coil-actions">
           <button type="button" class="btn btn-accent" id="wyrm-coil-spin" ${done || this.spinning ? 'disabled' : ''}>${done ? 'Done' : 'Spin'}</button>
           <button type="button" class="btn btn-secondary" id="wyrm-coil-close">Close</button>
@@ -185,6 +268,9 @@ const wyrmCoil = {
     document.getElementById('wyrm-coil-close').onclick = () => this.hide();
     const spinBtn = document.getElementById('wyrm-coil-spin');
     if (spinBtn) spinBtn.onclick = () => this.takeSpin(state);
+    host.querySelectorAll('[data-wyrm-player]').forEach((btn) => {
+      btn.onclick = () => this.selectPlayer(state, btn.getAttribute('data-wyrm-player'));
+    });
     host.onclick = (e) => { if (e.target === host) this.hide(); };
   },
 
@@ -203,7 +289,7 @@ const wyrmCoil = {
       this.saveProgress();
       this.saveHigh(this.running);
       this.render(state);
-    }, 720);
+    }, this.SPIN_MS);
   },
 };
 

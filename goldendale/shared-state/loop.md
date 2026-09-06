@@ -4,6 +4,10 @@
 
 Shipped David’s full queued batch on PR #2 (`cursor/goldendale-loop-list-40cd`). Same PR. Hold merge. Do not open a second PR.
 
+### Wyrm Coil per-player fun board (ASSET_V `20260905q`)
+
+Birdie spins are per player: own gross better-than-par + own net better-than-par. Points stay on that player (David 29 · Brian 50 · Matt 60) — not team money. 19th hole shows the fun board. Reels rotate longer (~3s, staggered) before they settle. Nassau Press stays. Same PR #2. Hold merge.
+
 ### Nassau Press pinned under the header (ASSET_V `20260905p`)
 
 MUST-FIX: David still saw no Nassau Press. The sticky dock sat at `top: 0` / `z-index: 45` and slid under the 60px site header. Press Front / Back / Overall now live in the hole toolbar and the full-card chrome (yellow/red). That bar sticks at 60px so it stays while scores scroll. The live dock is no longer trapped inside the full-card box. RUNNING for Front, Back, Overall, and each press stays. Same PR #2. Hold merge.

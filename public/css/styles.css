@@ -3542,12 +3542,22 @@ input.score-input:disabled {
 }
 
 .wyrm-reel.is-spinning .wyrm-reel-strip {
-  animation: wyrm-reel-blur 0.7s ease-out;
+  animation: wyrm-reel-roll 2.4s cubic-bezier(0.12, 0.72, 0.22, 1) both;
 }
 
-@keyframes wyrm-reel-blur {
-  0% { transform: translateY(-40%); filter: blur(3px); }
-  80% { transform: translateY(6%); filter: blur(1px); }
+.wyrm-reel.is-spinning[data-reel="1"] .wyrm-reel-strip {
+  animation-duration: 2.7s;
+}
+
+.wyrm-reel.is-spinning[data-reel="2"] .wyrm-reel-strip {
+  animation-duration: 3s;
+}
+
+@keyframes wyrm-reel-roll {
+  0% { transform: translateY(-78%); filter: blur(4px); }
+  42% { transform: translateY(10%); filter: blur(2px); }
+  68% { transform: translateY(-8%); filter: blur(1px); }
+  86% { transform: translateY(3%); filter: blur(0.4px); }
   100% { transform: translateY(0); filter: blur(0); }
 }
 
@@ -3734,4 +3744,74 @@ input.score-input:disabled {
   min-height: 64px;
   font-size: 1.15rem;
   font-weight: 800;
+}
+
+.wyrm-fun-board {
+  margin: 16px 0;
+  padding: 14px;
+  border: 2px solid #1B5E20;
+  background: #FFF8E1;
+  border-radius: var(--radius-sm);
+}
+
+.wyrm-fun-board h3 {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+}
+
+.wyrm-fun-board > p {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+}
+
+.wyrm-fun-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wyrm-fun-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #E0E0D8;
+  font-weight: 700;
+}
+
+.wyrm-fun-list li:first-child { border-top: 0; }
+.wyrm-fun-name { min-width: 5rem; }
+.wyrm-fun-list strong { font-size: 1.25rem; color: #1B5E20; }
+.wyrm-fun-spins { font-size: 0.8rem; font-weight: 600; color: #666; }
+
+.wyrm-player-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 0 0 10px;
+}
+
+.wyrm-player-chip {
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid #7a5b24;
+  background: #122018;
+  color: #ffe7a3;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.wyrm-player-chip.is-on {
+  background: #e6c36a;
+  color: #122018;
+}
+
+.wyrm-fun-board-line {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ffe7a3;
 }
