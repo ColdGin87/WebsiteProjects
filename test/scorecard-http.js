@@ -1216,6 +1216,27 @@ async function runHardeningScenario(base) {
   const palHoleAfter = palAfter && (palAfter.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(palHoleAfter && palHoleAfter.strokes, 2, 'Index 24 dots become 2 on SI 1');
 
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: joiner.token,
+    body: { memberId: pal.id, holeNumber: 1, gross: 6 },
+  });
+  const palScored = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
+  const palScoredMem = (palScored.members || []).find((m) => Number(m.id) === Number(pal.id));
+  const palScoredHole = palScoredMem && (palScoredMem.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(palScoredHole && palScoredHole.gross, 6, 'own-team score before remove');
+  assertEqual(palScoredHole && palScoredHole.strokes, 2, 'scored hole keeps 2 dots at Index 24');
+  assertEqual(palScoredHole && palScoredHole.net, 4, 'Index 24 net is gross minus 2');
+
+  const hcpAfterScore = await api(base, 'PUT', `/api/rounds/${roundId}/members/${pal.id}`, {
+    token: joiner.token,
+    body: { handicap: 12, playingHandicap: 12 },
+  });
+  const palRetuned = (hcpAfterScore.members || []).find((m) => Number(m.id) === Number(pal.id));
+  const palRetunedHole = palRetuned && (palRetuned.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(Number(palRetuned && palRetuned.playing_handicap), 12, 'Index can change after an early score');
+  assertEqual(palRetunedHole && palRetunedHole.strokes, 1, 'dots refresh to 1 after Index 12');
+  assertEqual(palRetunedHole && palRetunedHole.net, 5, 'net refreshes after Index change');
+
   const stealHcp = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/members/${hostMember.id}`, {
     token: joiner.token,
     body: { handicap: 30, playingHandicap: 30 },
@@ -1232,6 +1253,41 @@ async function runHardeningScenario(base) {
   });
   if ((removed.members || []).some((m) => m.display_name === 'Roster Pal')) {
     fail('joiner own-team remove must drop the player');
+  }
+  const leftoverPal = (removed.members || []).some((m) => Number(m.id) === Number(pal.id));
+  if (leftoverPal) fail('removed player must not remain on the roster');
+  const leftoverScore = (removed.members || []).some((m) =>
+    (m.holes || []).some((h) => Number(h.holeNumber) === 1 && Number(m.id) === Number(pal.id) && h.gross != null)
+  );
+  if (leftoverScore) fail('removed player must not leave hole scores');
+  const liveAfterDel = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: joiner.token });
+  const orphanLive = (liveAfterDel.scores || []).some((s) => Number(s.memberId) === Number(pal.id));
+  if (orphanLive) fail('live must not keep scores for a deleted player');
+  const team2 = (removed.teams || []).find((t) => Number(t.id) === Number(joinerMember.team_id ?? joinerMember.teamId));
+  const team2h1 = team2 && (team2.holes || []).find((h) => Number(h.holeNumber) === 1);
+  if (team2h1 && team2h1.total != null && (team2h1.balls || []).some((b) => Number(b.id) === Number(pal.id))) {
+    fail('deleted player must not remain in team hole balls');
+  }
+
+  const extra = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Host Can Remove', handicap: 8, playingHandicap: 8 },
+  });
+  const extraPal = (extra.members || []).find((m) => m.display_name === 'Host Can Remove');
+  if (!extraPal) fail('second joiner guest missing');
+  const hostHcp = await api(base, 'PUT', `/api/rounds/${roundId}/members/${extraPal.id}`, {
+    token: host.token,
+    body: { handicap: 18, playingHandicap: 18 },
+  });
+  const extraAfter = (hostHcp.members || []).find((m) => Number(m.id) === Number(extraPal.id));
+  assertEqual(Number(extraAfter && extraAfter.playing_handicap), 18, 'host can set Index on a team they manage');
+  const extraHole = extraAfter && (extraAfter.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(extraHole && extraHole.strokes, 1, 'host Index edit refreshes dots on SI 1');
+  const hostRemoved = await api(base, 'DELETE', `/api/rounds/${roundId}/members/${extraPal.id}`, {
+    token: host.token,
+  });
+  if ((hostRemoved.members || []).some((m) => m.display_name === 'Host Can Remove')) {
+    fail('host must be able to remove a player from a team they manage');
   }
 
   const directory = await api(base, 'GET', '/api/players', { token: joiner.token });

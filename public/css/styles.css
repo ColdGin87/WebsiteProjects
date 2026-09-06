@@ -3542,6 +3542,32 @@ input.score-input[readonly] {
   font-weight: 700;
 }
 
+.setup-roster-index {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+  flex: 1 1 72px;
+}
+
+.setup-roster-index > span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.setup-roster-hcp-input {
+  min-height: 44px;
+  width: 5.5rem;
+  max-width: 100%;
+  font-weight: 800;
+}
+
+.setup-roster-set,
+.setup-roster-remove {
+  min-height: 44px;
+}
+
 .setup-roster-remove {
   margin-left: auto;
 }

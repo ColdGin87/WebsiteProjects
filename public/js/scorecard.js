@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906g',
+  ASSET_V: '20260906h',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -169,7 +169,11 @@ const scorecard = {
     const next = patch.memberTotals || [];
     const cur = (this.state && this.state.members) || [];
     if (next.length !== cur.length) return true;
-    return next.some((t) => !cur.some((m) => m.id === t.id));
+    return next.some((t) => {
+      const m = cur.find((x) => Number(x.id) === Number(t.id));
+      if (!m) return true;
+      return Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap);
+    });
   },
 
   applyLivePatch(patch) {
@@ -1088,14 +1092,19 @@ const scorecard = {
     if (!rows.length) return '';
     return `<div class="setup-roster card" id="setup-roster">
       <div class="card-title">Team roster</div>
-      <p class="card-subtitle">Remove a player or set Index before scoring. Index only — 0.5 rounding, no course handicap. ${this.isOrganizer(state) ? 'Host can manage the full roster.' : 'Own team only.'}</p>
+      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. ${this.isOrganizer(state) ? 'Host / organizer can manage teams they run.' : 'Own team only.'}</p>
       <ul class="setup-roster-list">
         ${rows.map((m) => {
-          const hcp = m.playing_handicap ?? m.handicap ?? '—';
+          const hcp = m.playing_handicap ?? m.handicap ?? '';
           return `<li class="setup-roster-row" data-roster-member="${m.id}">
             <span class="setup-roster-name">${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</span>
-            <span class="setup-roster-hcp">H ${_esc(hcp)}</span>
-            <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.editMember(${m.id})">HCP</button>
+            <label class="setup-roster-index">
+              <span>Index</span>
+              <input class="form-input setup-roster-hcp-input" inputmode="decimal" autocomplete="off"
+                value="${_esc(hcp)}" data-roster-hcp="${m.id}"
+                aria-label="Handicap Index for ${_esc(m.display_name)}">
+            </label>
+            <button type="button" class="btn btn-sm btn-accent setup-roster-set" onclick="scorecard.saveRosterHcp(${m.id})">Set</button>
             <button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>
           </li>`;
         }).join('')}
@@ -1207,6 +1216,8 @@ const scorecard = {
     if (this.addPlayerOpen) return true;
     const card = document.getElementById('add-player-card');
     if (card && card.contains(document.activeElement)) return true;
+    const roster = document.getElementById('setup-roster');
+    if (roster && roster.contains(document.activeElement)) return true;
     const name = document.getElementById('live-add-guest-name');
     return !!(name && String(name.value || '').trim());
   },
@@ -3930,6 +3941,30 @@ const scorecard = {
     } catch (err) { _toast(err.message, 'error'); }
   },
 
+  async saveRosterHcp(memberId) {
+    const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canManageRosterMember(this.state, member)) {
+      this.showWriteError('You can only edit players on your own team.');
+      return;
+    }
+    const input = document.querySelector('[data-roster-hcp="' + memberId + '"]');
+    const value = input ? String(input.value || '').trim() : '';
+    if (!value) {
+      _toast('Enter a Handicap Index.', 'error');
+      return;
+    }
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
+        handicap: value,
+        playingHandicap: value,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+      this.refreshStrokeDots();
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
   async editMember(memberId) {
     const member = this.state.members.find((m) => m.id === memberId);
     if (!this.canManageRosterMember(this.state, member)) {
@@ -3955,7 +3990,37 @@ const scorecard = {
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
+      this.refreshStrokeDots();
     } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  refreshStrokeDots() {
+    if (!this.state) return;
+    const holeNumber = this.currentHole || this.pickCurrentHole(this.state);
+    for (const member of this.state.members || []) {
+      this.paintScoreCell(member.id, holeNumber);
+      for (const hole of member.holes || []) {
+        if (Number(hole.holeNumber) !== Number(holeNumber)) {
+          this.paintScoreCell(member.id, hole.holeNumber);
+        }
+      }
+    }
+  },
+
+  async confirmRemoveMember(name) {
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Remove ' + name + '? Their hole scores will be deleted. Tap Remove to confirm.',
+        submitLabel: 'Remove',
+        fields: [],
+      });
+      return !!ok;
+    }
+    if (typeof window !== 'undefined' && window.confirm) {
+      return window.confirm('Remove ' + name + ' from the roster? Their scores will be deleted.');
+    }
+    return false;
   },
 
   async removeMember(memberId) {
@@ -3965,7 +4030,7 @@ const scorecard = {
       return;
     }
     const name = member && member.display_name ? member.display_name : 'this player';
-    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Remove ' + name + ' from the roster?')) return;
+    if (!await this.confirmRemoveMember(name)) return;
     try {
       const state = await svcApi('del', `/api/rounds/${this.state.round.id}/members/${memberId}`);
       this.state = state;

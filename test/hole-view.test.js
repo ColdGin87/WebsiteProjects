@@ -68,11 +68,11 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906g/);
-    assert.match(html, /js\/formats\.js\?v=20260906g/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906g/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906g/);
-    assert.match(src, /ASSET_V:\s*'20260906g'/);
+    assert.match(html, /20260906h/);
+    assert.match(html, /js\/formats\.js\?v=20260906h/);
+    assert.match(html, /js\/sideGames\.js\?v=20260906h/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260906h/);
+    assert.match(src, /ASSET_V:\s*'20260906h'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -399,13 +399,21 @@ describe('Combined PR3 hole view', () => {
     assert.match(writeLock, /sameTeamIds/);
     assert.match(src, /canManageRosterMember/);
     assert.match(src, /removeMember\(/);
+    assert.match(src, /confirmRemoveMember/);
+    assert.match(src, /saveRosterHcp/);
+    assert.match(src, /refreshStrokeDots/);
+    assert.match(src, /setup-roster-hcp-input/);
     assert.match(src, /setupRosterHtml/);
+    assert.match(src, /playing_handicap/);
+    const rosterChange = sliceFn('rosterChanged(patch) {', 'applyLivePatch(patch)');
+    assert.match(rosterChange, /playing_handicap/);
     assert.match(src, /nineTotalsBarHtml/);
     assert.match(src, /joinCardRow/);
     assert.match(src, />OUT</);
     assert.match(src, />TOT</);
     assert.match(css, /\.nine-totals-bar/);
     assert.match(css, /\.setup-roster-row/);
+    assert.match(css, /\.setup-roster-hcp-input/);
     assert.match(src, /lockScoreInputs\(\)/);
     assert.match(src, /canSeeMemberScores/);
     assert.match(src, /canSeeTeamScores/);
@@ -426,6 +434,7 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(canScoreFn, /isOrganizer/);
     assert.match(routes, /canManageMember/);
     assert.match(routes, /You can only remove players from your own team/);
+    assert.match(routes, /DELETE FROM score_holes WHERE member_id = \? AND round_id/);
     assert.match(src, /playerNineLineHtml/);
     assert.match(src, /showOut/);
     assert.match(src, /showIn/);

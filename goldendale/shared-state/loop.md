@@ -2,6 +2,19 @@
 
 ## Developer
 
+### Field setup: delete player + start HCP (ASSET_V `20260906h`)
+
+Same PR #4. Hold merge. Ships with the three P0s (OUT/TOT, Index dots, write-lock / hide other teams).
+
+At team setup (live card roster, before / early scoring):
+
+- **Remove** is own-team only for joiners. Host / organizer can remove from teams they run. Confirm tap in the app modal so it is not accidental. `score_holes` for that player are deleted with the member (no leftover scores on GET/live or team balls).
+- **Index** is editable on each manageable row. Joiners: own team. Host / organizer: teams they run. Index only, 0.5 rounding — no Course Handicap. Save redraws stroke dots (live poll treats an Index change as a roster change).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending this ship.
+
 ### Field P0s: OUT/TOT, dots, write/see lock, roster (ASSET_V `20260906g`)
 
 Same PR #4. Hold merge.
