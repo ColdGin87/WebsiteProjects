@@ -163,7 +163,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /ninesHolePointsLive/);
     assert.match(src, /onePlayerNinesRows/);
     assert.match(src, /nines-player-stack/);
-    const ninesLine = sliceFn('playerNinesLineHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
+    const ninesLine = sliceFn('playerNinesLineHtml(state, member, holeNumber) {', 'playerNineLineHtml(state, member) {');
     assert.match(ninesLine, /nines-player-stack/);
     assert.match(ninesLine, /nines-player-hole/);
     assert.match(ninesLine, /nines-player-run/);
