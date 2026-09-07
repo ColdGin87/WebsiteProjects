@@ -740,7 +740,62 @@ async function runSideGamesScenario(base) {
   const stillOverall = (overallPress.holeResults || []).find((h) => h.holeNumber === 1);
   const stillOverallTeam = (stillOverall.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillOverallTeam && stillOverallTeam.total, 1, 'nassau presses must not change hole-1 vs-par');
-  console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press');
+
+  const emptyUndo = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, {
+    token: `missing.${stamp}`,
+  });
+  assertEqual(emptyUndo.status === 401 || emptyUndo.status === 403, true, 'bad token cannot undo a press');
+
+  const outsider = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Press Outsider',
+      email: `scorecard.pressout.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const outsiderUndo = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, {
+    token: outsider.token,
+  });
+  assertEqual(outsiderUndo.status, 403, 'outsider cannot undo a press');
+
+  const beforeUndo = ((overallPress.sideGames && overallPress.sideGames.games && overallPress.sideGames.games.nassauPresses) || []).length;
+  const afterOverall = await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token: friend.token });
+  const afterOverallRows = (afterOverall.sideGames && afterOverall.sideGames.games && afterOverall.sideGames.games.nassauPresses) || [];
+  assertEqual(afterOverallRows.length, beforeUndo - 1, 'undo pops only the newest Nassau press');
+  if (afterOverallRows.some((p) => p.segment === 'overall' && Number(p.startHole) === 12)) {
+    fail('newest Overall press must be the one removed');
+  }
+  if (!afterOverallRows.some((p) => p.segment === 'back' && Number(p.startHole) === 12)) {
+    fail('older Back press must stay after undo');
+  }
+  const afterVegas = afterOverall.sideGames && afterOverall.sideGames.games && afterOverall.sideGames.games.vegas;
+  assertEqual(afterVegas && afterVegas.holes[0] && afterVegas.holes[0].games, 2, 'Vegas games stay at 2 until the Vegas press is undone');
+
+  const afterBack = await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token });
+  const afterBackRows = (afterBack.sideGames && afterBack.sideGames.games && afterBack.sideGames.games.nassauPresses) || [];
+  if (afterBackRows.some((p) => p.segment === 'back' && Number(p.startHole) === 12)) {
+    fail('second undo must pop the hole-12 Back press');
+  }
+  const afterEarlyBack = await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token: friend.token });
+  const afterFrontOnly = ((afterEarlyBack.sideGames && afterEarlyBack.sideGames.games && afterEarlyBack.sideGames.games.nassauPresses) || [])
+    .filter((p) => p.segment === 'front');
+  assertEqual(afterFrontOnly.length >= 1, true, 'Front press remains after undoing newer Back presses');
+  await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token: friend.token });
+  const afterNassauGone = await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token: friend.token });
+  const nassauLeft = (afterNassauGone.sideGames && afterNassauGone.sideGames.games && afterNassauGone.sideGames.games.nassauPresses) || [];
+  assertEqual(nassauLeft.length, 0, 'all Nassau presses can be undone');
+  const undoneVegas = afterNassauGone.sideGames && afterNassauGone.sideGames.games && afterNassauGone.sideGames.games.vegas;
+  assertEqual(undoneVegas && undoneVegas.holes[0] && undoneVegas.holes[0].games, 1, 'undo last Vegas press returns games running to 1');
+  if ((afterNassauGone.presses || []).some((p) => (p.game_key || p.gameKey) === 'vegas')) {
+    fail('Vegas press row must be gone after stack pop');
+  }
+  const noneLeft = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token: friend.token });
+  assertEqual(noneLeft.status, 400, 'empty stack undo is 400');
+  if (!/no press to undo/i.test((noneLeft.body && noneLeft.body.error) || '')) {
+    fail('empty undo should name no press');
+  }
+
+  console.log('PASS side games skins+vegas+nassau; hole 1 still +1; either side can press; undo last press pops stack');
 }
 
 async function runJoinIdentityScenario(base) {
@@ -1277,6 +1332,8 @@ async function runHardeningScenario(base) {
     body: { gameKey: 'vegas', startHole: 1 },
   });
   assertEqual(anonPress.status, 401, 'anonymous press rejected');
+  const anonUndo = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/presses/last`);
+  assertEqual(anonUndo.status, 401, 'anonymous press undo rejected');
   const anonSettings = await apiStatus(base, 'PUT', `/api/rounds/${roundId}`, {
     body: { showOtherScores: true, teamRace: false, grossBalls: 3, netBalls: 0 },
   });

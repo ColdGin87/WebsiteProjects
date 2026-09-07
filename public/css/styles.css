@@ -2844,6 +2844,33 @@ img {
   opacity: 0.95;
 }
 
+.undo-last-press-wrap {
+  margin-top: 8px;
+}
+
+.undo-last-press-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 2px solid #455A64;
+  border-radius: 10px;
+  background: #ECEFF1;
+  color: #263238;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.undo-last-press-hint {
+  font-size: 0.8rem;
+  font-weight: 700;
+  opacity: 0.85;
+}
+
 .vegas-press-block {
   margin-top: 6px;
 }

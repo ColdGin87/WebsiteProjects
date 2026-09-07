@@ -45,7 +45,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907j',
+  ASSET_V: '20260907k',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -582,7 +582,74 @@ const scorecard = {
         <span class="vegas-press-badge">${n}</span>
         <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
       </button>
+      ${this.undoLastPressHtml(state)}
     </div>`;
+  },
+
+  latestPress(state) {
+    const list = ((state && state.presses) || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+    return list.length ? list[list.length - 1] : null;
+  },
+
+  pressUndoLabel(press) {
+    if (!press) return 'Press';
+    const key = String(press.game_key || press.gameKey || '');
+    if (key === 'vegas') return 'Vegas';
+    if (key === 'nassau') {
+      const seg = String(press.segment || '');
+      if (seg === 'front') return 'Nassau Front';
+      if (seg === 'back') return 'Nassau Back';
+      return 'Nassau Overall';
+    }
+    if (key === 'wolf') return 'Wolf';
+    if (key === 'nines') return 'Nines';
+    return 'Press';
+  },
+
+  undoLastPressHtml(state) {
+    const last = this.latestPress(state);
+    if (!last) return '';
+    const label = this.pressUndoLabel(last);
+    return `<div class="undo-last-press-wrap">
+      <button type="button" class="undo-last-press-btn" onclick="scorecard.undoLastPress()" aria-label="Undo last press ${label}">
+        Undo last press<span class="undo-last-press-hint">${_esc(label)}</span>
+      </button>
+    </div>`;
+  },
+
+  async confirmUndoPress(label) {
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Undo last press (' + label + ')? Only the newest press is removed.',
+        submitLabel: 'Undo',
+        fields: [],
+      });
+      return !!ok;
+    }
+    if (typeof window !== 'undefined' && window.confirm) {
+      return window.confirm('Undo last press (' + label + ')?');
+    }
+    return false;
+  },
+
+  async undoLastPress() {
+    if (!this.state || !this.state.round) return;
+    const last = this.latestPress(this.state);
+    if (!last) {
+      _toast('No press to undo.', 'error');
+      return;
+    }
+    if (!await this.confirmUndoPress(this.pressUndoLabel(last))) return;
+    try {
+      const state = await svcApi('del', `/api/rounds/${this.state.round.id}/presses/last`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      if (this.screen === 'play') this.paintPressChrome();
+      else this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
   },
 
   flagOn(value) {
@@ -744,6 +811,7 @@ const scorecard = {
         const disabled = seg.enabled === false ? ' disabled' : '';
         return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
       }).join('')}</div>
+      ${wrapId === 'nassau-press-wrap-toolbar' && !this.isVegasOn(state) ? this.undoLastPressHtml(state) : ''}
     </div>`;
   },
 
@@ -3042,6 +3110,7 @@ const scorecard = {
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
           ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
+          ${this.latestPress(state) ? '<button type="button" onclick="scorecard.undoLastPress()">Undo last press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
@@ -4535,7 +4604,7 @@ const scorecard = {
         <h3>Nines</h3>
         <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
         <h3>Presses</h3>
-        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press.</p>
+        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press. <strong>Undo last press</strong> sits under the Vegas Press control and under Nassau Press (toolbar). It pops only the newest press after a confirm — Vegas badge or Nassau Front / Back / Overall. Anyone who can press can undo.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>
         <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
         <h3>Optional KPs</h3>

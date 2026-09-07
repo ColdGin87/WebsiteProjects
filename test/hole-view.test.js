@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907j/);
-    assert.match(html, /js\/formats\.js\?v=20260907j/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907j/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907j/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907j/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907j/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907j/);
-    assert.match(src, /ASSET_V:\s*'20260907j'/);
+    assert.match(html, /20260907k/);
+    assert.match(html, /js\/formats\.js\?v=20260907k/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907k/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907k/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907k/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907k/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907k/);
+    assert.match(src, /ASSET_V:\s*'20260907k'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -147,11 +147,17 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /pressVegasFromHole/);
     assert.match(src, /vegasPresses/);
     assert.match(src, /vegasGamesRunning/);
-    const vegasPress = sliceFn('vegasPressButtonHtml(state, holeNumber)', 'flagOn(value)');
+    const vegasPress = sliceFn('vegasPressButtonHtml(state, holeNumber)', 'latestPress(state)');
     assert.match(vegasPress, /vegas-press-badge/);
     assert.match(vegasPress, /games running/);
+    assert.match(vegasPress, /undoLastPressHtml/);
     assert.doesNotMatch(vegasPress, />P</);
     assert.doesNotMatch(src, /vegas-press-row/);
+    assert.match(src, /undoLastPress\(/);
+    assert.match(src, /Undo last press/);
+    assert.match(src, /presses\/last/);
+    assert.match(src, /confirmUndoPress/);
+    assert.match(css, /\.undo-last-press-btn/);
     const holeDrawVegas = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
     assert.match(holeDrawVegas, /vegasPressButtonHtml/);
     assert.doesNotMatch(holeDrawVegas, /child wager/);
@@ -471,6 +477,9 @@ describe('Combined PR3 hole view', () => {
     assert.match(routes, /parseJoinRole/);
     assert.match(routes, /follow-view/);
     assert.match(routes, /Follow along is read-only/);
+    assert.match(routes, /presses\/last/);
+    assert.match(routes, /No press to undo/);
+    assert.match(routes, /function canPress/);
     const canScoreAt = routes.indexOf('function canScore');
     const canManageAt = routes.indexOf('function canManageMember', canScoreAt);
     const canScoreFn = routes.slice(canScoreAt, canManageAt > canScoreAt ? canManageAt : canScoreAt + 400);
