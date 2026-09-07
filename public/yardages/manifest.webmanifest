@@ -3,33 +3,33 @@
   "name": "ColdGin’s Yardages",
   "short_name": "Yardages",
   "description": "Personal club-distance chart — Full and ¾ carry and total.",
-  "start_url": "./",
-  "scope": "./",
+  "start_url": "/yardages/",
+  "scope": "/yardages/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0b2f12",
   "theme_color": "#0b2f12",
   "icons": [
     {
-      "src": "icon-192.png",
+      "src": "/yardages/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-512.png",
+      "src": "/yardages/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "icon-192.png",
+      "src": "/yardages/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "icon-512.png",
+      "src": "/yardages/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

@@ -125,7 +125,9 @@ describe('ColdGin yardages static contract', () => {
     assert.match(html, /rel="manifest"/);
     assert.equal(manifest.name, 'ColdGin’s Yardages');
     assert.equal(manifest.display, 'standalone');
-    assert.equal(manifest.start_url, './');
+    assert.equal(manifest.start_url, '/yardages/');
+    assert.equal(manifest.scope, '/yardages/');
+    assert.match(html, /href="\/yardages\/manifest\.webmanifest"/);
     assert.ok(fs.existsSync(path.join(ROOT, 'public/yardages/apple-touch-icon.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'public/yardages/icon-192.png')));
     assert.ok(fs.existsSync(path.join(ROOT, 'public/yardages/icon-512.png')));
@@ -210,5 +212,11 @@ describe('ColdGin yardages HTTP does not collide with the scorecard', () => {
 
     assert.equal(icon.status, 200);
     assert.match(icon.headers.get('content-type') || '', /image\/png/);
+
+    const bare = await fetch(base + '/yardages', { redirect: 'manual' });
+    assert.ok(bare.status === 200 || (bare.status >= 301 && bare.status <= 308));
+    if (bare.status >= 301 && bare.status <= 308) {
+      assert.match(bare.headers.get('location') || '', /\/yardages\/?$/);
+    }
   });
 });

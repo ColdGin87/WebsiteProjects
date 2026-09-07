@@ -1,7 +1,9 @@
 {
+  "redirects": [
+    { "source": "/yardages", "destination": "/yardages/", "permanent": true }
+  ],
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" },
-    { "source": "/yardages", "destination": "/yardages/index.html" }
+    { "source": "/api/(.*)", "destination": "/api/index.js" }
   ],
   "headers": [
     {
