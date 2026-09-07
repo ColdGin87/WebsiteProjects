@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907k/);
-    assert.match(html, /js\/formats\.js\?v=20260907k/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907k/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907k/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907k/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907k/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907k/);
-    assert.match(src, /ASSET_V:\s*'20260907k'/);
+    assert.match(html, /20260907l/);
+    assert.match(html, /js\/formats\.js\?v=20260907l/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907l/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907l/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907l/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907l/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907l/);
+    assert.match(src, /ASSET_V:\s*'20260907l'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -151,8 +151,14 @@ describe('Combined PR3 hole view', () => {
     assert.match(vegasPress, /vegas-press-badge/);
     assert.match(vegasPress, /games running/);
     assert.match(vegasPress, /undoLastPressHtml/);
+    assert.match(vegasPress, /pressEditButtonHtml/);
+    assert.match(vegasPress, /pressEditPanelHtml/);
     assert.doesNotMatch(vegasPress, />P</);
     assert.doesNotMatch(src, /vegas-press-row/);
+    assert.match(src, /press-edit-btn/);
+    assert.match(src, /togglePressEdit/);
+    assert.match(src, /Edit presses/);
+    assert.match(css, /\.press-edit-btn/);
     assert.match(src, /undoLastPress\(/);
     assert.match(src, /Undo last press/);
     assert.match(src, /presses\/last/);
@@ -235,6 +241,25 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.nines-board/);
     assert.match(css, /\.nines-player-stack/);
     assert.doesNotMatch(src, /data-vegas-num[\s\S]{0,80}fmtTeam/);
+  });
+
+  it('marks gross birdie/eagle/bogey on the live card, not Standard', () => {
+    const mark = sliceFn('scoreMarkKind(gross, par, standard)', 'cellClassList(hs, par)');
+    assert.match(mark, /vs-eagle/);
+    assert.match(mark, /vs-birdie/);
+    assert.match(mark, /vs-bogey/);
+    assert.match(mark, /vs-double/);
+    const cell = sliceFn('cellClassList(hs, par)', 'paintScoreCell(memberId, holeNumber)');
+    assert.match(cell, /hs\?\.gross/);
+    assert.match(cell, /isStandardScorecard/);
+    assert.match(cell, /has-score-mark/);
+    assert.match(cell, /mark-/);
+    assert.match(css, /\.has-score-mark\.mark-birdie/);
+    assert.match(css, /\.has-score-mark\.mark-eagle/);
+    assert.match(css, /\.has-score-mark\.mark-bogey/);
+    assert.match(css, /\.has-score-mark\.mark-double/);
+    assert.match(css, /border-radius:\s*50%/);
+    assert.match(src, /double square/);
   });
 
   it('lets a joined non-organizer add players onto their own team', () => {

@@ -43,9 +43,10 @@ const scorecard = {
   _preserveAddDraft: false,
   fillSpin: null,
   stepperOpen: false,
+  pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907k',
+  ASSET_V: '20260907l',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -577,12 +578,16 @@ const scorecard = {
     if (!this.isVegasOn(state)) return '';
     const n = this.vegasGamesRunning(state, holeNumber);
     return `<div class="vegas-press-wrap" id="vegas-press-wrap">
-      <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game.">
-        <span class="vegas-press-label">Press</span>
-        <span class="vegas-press-badge">${n}</span>
-        <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
-      </button>
+      <div class="vegas-press-bar">
+        <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game.">
+          <span class="vegas-press-label">Press</span>
+          <span class="vegas-press-badge">${n}</span>
+          <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
+        </button>
+        ${this.pressEditButtonHtml()}
+      </div>
       ${this.undoLastPressHtml(state)}
+      ${this.pressEditPanelHtml(state)}
     </div>`;
   },
 
@@ -615,6 +620,71 @@ const scorecard = {
         Undo last press<span class="undo-last-press-hint">${_esc(label)}</span>
       </button>
     </div>`;
+  },
+
+  canManagePresses(state) {
+    if (!state || this.isStandardScorecard(state)) return false;
+    return this.isVegasOn(state) || this.isNassauOn(state)
+      || this.isWolfOn(state) || this.isNinesOn(state);
+  },
+
+  pressEditButtonHtml() {
+    const open = !!this.pressEditOpen;
+    return `<button type="button" class="press-edit-btn${open ? ' is-open' : ''}" onclick="scorecard.togglePressEdit()" aria-expanded="${open ? 'true' : 'false'}" aria-controls="press-edit-panel">
+      Edit
+    </button>`;
+  },
+
+  pressEditSummary(state) {
+    const bits = [];
+    if (this.isVegasOn(state)) {
+      bits.push(`Vegas ${this.vegasGamesRunning(state, this.currentHole || 1)} games running`);
+    }
+    if (this.isNassauOn(state)) {
+      const parts = this.nassauSegmentsForHole(this.currentHole || 1).map((seg) => {
+        const c = this.nassauPressCount(state, seg.key);
+        return `${seg.label}${c ? ` ×${c}` : ''}`;
+      });
+      bits.push('Nassau ' + parts.join(' · '));
+    }
+    const last = this.latestPress(state);
+    if (last) bits.push('Newest ' + this.pressUndoLabel(last));
+    return bits.join(' · ') || 'No presses yet';
+  },
+
+  pressEditAddButtonsHtml(state) {
+    const hn = this.currentHole || 1;
+    const btns = [];
+    if (this.isVegasOn(state)) {
+      btns.push(`<button type="button" class="press-edit-add" onclick="scorecard.pressVegasFromHole(${hn})">Add Vegas press</button>`);
+    }
+    if (this.isNassauOn(state)) {
+      this.nassauSegmentsForHole(hn).forEach((seg) => {
+        const disabled = seg.enabled === false ? ' disabled' : '';
+        btns.push(`<button type="button" class="press-edit-add" data-nassau-press="${seg.key}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')">Add Nassau ${_esc(seg.label)}</button>`);
+      });
+    }
+    if (this.pressableGames(state).some((g) => g.key === 'wolf' || g.key === 'nines')) {
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.confirmPress()">Add Wolf / Nines press</button>');
+    }
+    return btns.join('');
+  },
+
+  pressEditPanelHtml(state) {
+    if (!this.pressEditOpen || !this.canManagePresses(state)) return '';
+    return `<div class="press-edit-panel" id="press-edit-panel">
+      <div class="press-edit-heading">Edit presses</div>
+      <p class="press-edit-summary">${_esc(this.pressEditSummary(state))}</p>
+      <div class="press-edit-adds">${this.pressEditAddButtonsHtml(state)}</div>
+      ${this.undoLastPressHtml(state) || '<p class="press-edit-empty">Nothing to undo.</p>'}
+    </div>`;
+  },
+
+  togglePressEdit() {
+    this.pressEditOpen = !this.pressEditOpen;
+    if (!this.state) return;
+    if (this.screen === 'play') this.paintPressChrome();
+    else this.draw(this.state);
   },
 
   async confirmUndoPress(label) {
@@ -804,6 +874,7 @@ const scorecard = {
   nassauPressButtonsHtml(state, holeNumber, wrapId) {
     if (!this.isNassauOn(state)) return '';
     const hn = Number(holeNumber) || this.currentHole || 1;
+    const manage = wrapId === 'nassau-press-wrap-toolbar' && !this.isVegasOn(state);
     return `<div class="nassau-press-wrap" id="${wrapId || 'nassau-press-wrap'}">
       <div class="nassau-press-heading">Nassau Press</div>
       <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
@@ -811,7 +882,9 @@ const scorecard = {
         const disabled = seg.enabled === false ? ' disabled' : '';
         return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
       }).join('')}</div>
-      ${wrapId === 'nassau-press-wrap-toolbar' && !this.isVegasOn(state) ? this.undoLastPressHtml(state) : ''}
+      ${manage ? `<div class="vegas-press-bar nassau-press-manage">${this.pressEditButtonHtml()}</div>` : ''}
+      ${manage ? this.undoLastPressHtml(state) : ''}
+      ${manage ? this.pressEditPanelHtml(state) : ''}
     </div>`;
   },
 
@@ -3110,6 +3183,7 @@ const scorecard = {
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
           ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
+          ${this.canManagePresses(state) ? '<button type="button" onclick="scorecard.togglePressEdit()">Edit presses</button>' : ''}
           ${this.latestPress(state) ? '<button type="button" onclick="scorecard.undoLastPress()">Undo last press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
@@ -3925,7 +3999,8 @@ const scorecard = {
 
   vsParClass(gross, par) {
     if (gross == null || par == null) return '';
-    const d = gross - par;
+    const d = Number(gross) - Number(par);
+    if (!Number.isFinite(d)) return '';
     if (d <= -2) return 'vs-eagle';
     if (d === -1) return 'vs-birdie';
     if (d === 0) return 'vs-par';
@@ -3933,10 +4008,22 @@ const scorecard = {
     return 'vs-double';
   },
 
+  scoreMarkKind(gross, par, standard) {
+    if (standard) return '';
+    const vs = this.vsParClass(gross, par);
+    if (vs === 'vs-eagle') return 'eagle';
+    if (vs === 'vs-birdie') return 'birdie';
+    if (vs === 'vs-bogey') return 'bogey';
+    if (vs === 'vs-double') return 'double';
+    return '';
+  },
+
   cellClassList(hs, par) {
     const cls = ['sc-cell-editable'];
     const vs = this.vsParClass(hs?.gross, par);
     if (vs) cls.push(vs);
+    const mark = this.scoreMarkKind(hs?.gross, par, this.isStandardScorecard(this.state));
+    if (mark) cls.push('has-score-mark', 'mark-' + mark);
     const dots = Math.max(0, hs?.strokes || 0);
     if (dots) cls.push('dots-' + Math.min(dots, 3));
     if ((hs?.strokes || 0) < 0) cls.push('dots-plus');
@@ -4604,7 +4691,9 @@ const scorecard = {
         <h3>Nines</h3>
         <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
         <h3>Presses</h3>
-        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press. <strong>Undo last press</strong> sits under the Vegas Press control and under Nassau Press (toolbar). It pops only the newest press after a confirm — Vegas badge or Nassau Front / Back / Overall. Anyone who can press can undo.</p>
+        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press. <strong>Edit</strong> sits beside Vegas Press (or under Nassau Press when Vegas is off) and opens Add / Undo on the live card. <strong>Undo last press</strong> stays under Press and inside Edit. It pops only the newest press after a confirm — Vegas badge or Nassau Front / Back / Overall. Anyone who can press can undo.</p>
+        <h3>Score marks</h3>
+        <p>On the Sunday / side-game live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
         <h3>Birdie dragon slots (Wyrm Coil)</h3>
         <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
         <h3>Optional KPs</h3>
