@@ -12,7 +12,7 @@ Ships with the field P0 batch (OUT/TOT, Index dots, write-lock / hide, delete pl
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending this ship.
+Unique host (READY, SHA `ff4042f`, ASSET_V `20260907a`): https://website-projects-rbd4me4v9-coldgin87s-projects.vercel.app
 
 ### Field P0 batch + 19th unlock (ASSET_V `20260906i`)
 
