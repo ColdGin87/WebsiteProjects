@@ -14,7 +14,7 @@ When 18 is in and a team is still short, the 19th banner offers the spin first p
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending READY unique project URL.
+Unique host (READY, SHA `6a349dc`, ASSET_V `20260907f`): https://website-projects-fmrsgxnme-coldgin87s-projects.vercel.app
 
 ### Paper scorecard SI + yards (ASSET_V `20260907e`)
 
