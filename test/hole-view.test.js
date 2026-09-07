@@ -68,13 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907e/);
-    assert.match(html, /js\/formats\.js\?v=20260907e/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907e/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907e/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907e/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907e/);
-    assert.match(src, /ASSET_V:\s*'20260907e'/);
+    assert.match(html, /20260907f/);
+    assert.match(html, /js\/formats\.js\?v=20260907f/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907f/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907f/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907f/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907f/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907f/);
+    assert.match(src, /ASSET_V:\s*'20260907f'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -260,7 +261,7 @@ describe('Combined PR3 hole view', () => {
   });
 
   it('live add-player is name, HCP, and Team 1 / 2 / 3 chips in one flow', () => {
-    const panel = sliceFn('addPlayerPanelInner(state)', 'addTeamChipsHtml(selected)');
+    const panel = sliceFn('addPlayerPanelInner(state) {', 'addTeamNames(state)');
     assert.match(panel, /live-add-guest-name/);
     assert.match(panel, /live-add-guest-hcp/);
     assert.match(panel, /addTeamChipsHtml/);
@@ -323,6 +324,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(players, /isVegasOn/);
     assert.match(players, /visibleHoleMembers|group\.team &&/);
     assert.match(src, /Go to the 19th hole/);
+    assert.match(src, /Skip → 19th/);
+    assert.match(src, /openFillSpin/);
+    assert.match(src, /shouldOfferFillBeforeNineteenth/);
+    assert.match(src, /got-beer-btn/);
     assert.match(src, /canOpenNineteenth/);
     assert.match(src, /openNineteenth/);
     assert.match(src, /nineteenthNeedsConfirm/);

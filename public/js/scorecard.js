@@ -41,10 +41,11 @@ const scorecard = {
   addPlayerDraft: { name: '', handicap: '', teamName: 'Team 1' },
   addPlayerSuppressUntil: 0,
   _preserveAddDraft: false,
+  fillSpin: null,
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907e',
+  ASSET_V: '20260907f',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -329,23 +330,65 @@ const scorecard = {
     return (state.members || []).filter((m) => m.team_id).some((m) => !this.playerComplete(m, holes));
   },
 
+  shouldOfferFillBeforeNineteenth(state) {
+    if (!this.isOrganizer(state) || !this.canOpenNineteenth(state)) return false;
+    const api = this.fillSpinApi();
+    return !!(api.hasShortTeam && api.hasShortTeam(state));
+  },
+
+  isGotBeerOn(state) {
+    const api = this.fillSpinApi();
+    if (api.isGotBeerOn) return api.isGotBeerOn({ round: state && state.round });
+    return false;
+  },
+
+  gotBeerHtml() {
+    if (!this.isGotBeerOn(this.state)) return '';
+    return `<button type="button" class="btn btn-secondary got-beer-btn" id="got-beer-btn" onclick="scorecard.gotBeer()">Got beer?</button>`;
+  },
+
+  gotBeer() {
+    if (!this.isGotBeerOn(this.state)) return;
+    _toast('Got beer? Always. First round’s on the 19th.', 'success');
+  },
+
+  toggleGotBeer(on) {
+    try {
+      localStorage.setItem('goldendale_got_beer', on ? '1' : '0');
+    } catch { /* ignore */ }
+    this.draw(this.state);
+  },
+
   eighteenBanner(state) {
     if (!this.canOpenNineteenth(state)) return '';
     const holes = (state.holes || []).length || 18;
     const confirm = this.nineteenthNeedsConfirm(state);
-    const copy = confirm
-      ? `<p><strong>A team has all ${holes} in.</strong> Other teams still have blanks. Open the 19th hole anyway?</p>`
-      : `<p><strong>${holes} holes are in.</strong> Go to the 19th hole.</p>`;
+    const offerFill = this.shouldOfferFillBeforeNineteenth(state);
+    const copy = offerFill
+      ? `<p><strong>A team is still short.</strong> Spin to fill it, or skip straight to the 19th.</p>`
+      : confirm
+        ? `<p><strong>A team has all ${holes} in.</strong> Other teams still have blanks. Open the 19th hole anyway?</p>`
+        : `<p><strong>${holes} holes are in.</strong> Go to the 19th hole.</p>`;
+    const go = offerFill
+      ? `<button type="button" class="btn btn-accent eighteen-go" id="eighteen-fill-spin" onclick="scorecard.openFillSpin({fromNineteenth:true})">Fill a short team (spin)</button>
+         <button type="button" class="btn btn-accent" id="eighteen-skip-19th" onclick="scorecard.openNineteenth({skipFill:true})">Skip → 19th</button>`
+      : `<button type="button" class="btn btn-accent eighteen-go" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>`;
     return `
       <div class="eighteen-done" id="eighteen-done">
         ${copy}
-        <button type="button" class="btn btn-accent eighteen-go" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>
+        ${go}
         <button type="button" class="btn btn-secondary" onclick="scorecard.showScreen('results')">Round results</button>
+        ${this.gotBeerHtml()}
       </div>`;
   },
 
-  async openNineteenth() {
+  async openNineteenth(opts) {
+    const skipFill = !!(opts && opts.skipFill);
     if (!this.canOpenNineteenth(this.state)) return;
+    if (!skipFill && this.shouldOfferFillBeforeNineteenth(this.state)) {
+      this.openFillSpin({ fromNineteenth: true });
+      return;
+    }
     if (this.nineteenthNeedsConfirm(this.state)) {
       const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
       if (prompt) {
@@ -1148,8 +1191,214 @@ const scorecard = {
   addPlayerPanel(state) {
     const add = this.canAddPlayer(state) ? this.addPlayerPanelInner(state) : '';
     const roster = this.setupRosterHtml(state);
-    if (!add && !roster) return '';
-    return `<div id="add-player-panel" class="add-player-panel">${roster}${add}</div>`;
+    const spin = this.fillSpinButtonHtml(state);
+    if (!add && !roster && !spin) return '';
+    return `<div id="add-player-panel" class="add-player-panel">${roster}${spin}${add}</div>`;
+  },
+
+  fillSpinButtonHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    return `<div class="card fill-spin-launch" id="fill-spin-launch">
+      <div class="card-title">Fill a short team</div>
+      <p class="card-subtitle">Odd-person leftover? Exclude names, spin, then Accept to put the winner on the short team.</p>
+      <button type="button" class="btn btn-accent" id="fill-spin-open" onclick="scorecard.openFillSpin()">Fill a short team (spin)</button>
+    </div>`;
+  },
+
+  fillSpinApi() {
+    return (typeof window !== 'undefined' && window.teamFillSpin) || {};
+  },
+
+  fillSpinTeamId(state) {
+    const api = this.fillSpinApi();
+    const name = this.fillSpin && this.fillSpin.teamName;
+    const teams = (api.sortedTeams && api.sortedTeams(state)) || state.teams || [];
+    const picked = teams.find((t) => t.name === name);
+    if (picked) return picked.id;
+    const short = api.defaultShortTeam ? api.defaultShortTeam(state) : teams[0];
+    return short && short.id;
+  },
+
+  fillSpinItems(state) {
+    const api = this.fillSpinApi();
+    const teamId = this.fillSpinTeamId(state);
+    const members = (api.fillCandidates ? api.fillCandidates(state, teamId) : []).map((m) => ({
+      memberId: m.id,
+      name: m.display_name,
+      team: api.teamOfMember ? api.teamOfMember(state, m) : null,
+      extra: false,
+    }));
+    const extras = ((this.fillSpin && this.fillSpin.extraNames) || []).map((name) => ({
+      name,
+      extra: true,
+    }));
+    return members.concat(extras);
+  },
+
+  openFillSpin(opts) {
+    if (!this.isOrganizer(this.state)) return;
+    const api = this.fillSpinApi();
+    const short = api.defaultShortTeam ? api.defaultShortTeam(this.state) : ((this.state.teams || [])[0] || null);
+    this.fillSpin = {
+      teamName: short && short.name,
+      excluded: new Set(),
+      extraNames: [],
+      winner: null,
+      spinning: false,
+      fromNineteenth: !!(opts && opts.fromNineteenth),
+    };
+    this.drawFillSpin();
+  },
+
+  closeFillSpin() {
+    this.fillSpin = null;
+    const el = document.getElementById('fill-spin-overlay');
+    if (el) el.remove();
+  },
+
+  drawFillSpin() {
+    if (!this.fillSpin) return;
+    const state = this.state;
+    const api = this.fillSpinApi();
+    const teams = (api.sortedTeams && api.sortedTeams(state)) || state.teams || [];
+    if (!this.fillSpin.teamName && teams[0]) this.fillSpin.teamName = teams[0].name;
+    const target = teams.find((t) => t.name === this.fillSpin.teamName) || teams[0];
+    const count = target && api.scoringCountOnTeam ? api.scoringCountOnTeam(state, target.id) : 0;
+    const need = Math.max(0, (api.TEAM_FILL_SIZE || 4) - count);
+    const items = this.fillSpinItems(state);
+    const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const winner = this.fillSpin.winner;
+    let host = document.getElementById('fill-spin-overlay');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'fill-spin-overlay';
+      document.body.appendChild(host);
+    }
+    host.className = 'fill-spin-overlay';
+    const teamOpts = teams.map((t) => {
+      const n = api.scoringCountOnTeam ? api.scoringCountOnTeam(state, t.id) : 0;
+      const sel = target && Number(t.id) === Number(target.id) ? ' selected' : '';
+      return `<option value="${_esc(t.name)}"${sel}>${_esc(api.teamDisplay ? api.teamDisplay(t) : t.name)} · ${n}</option>`;
+    }).join('');
+    const rows = items.map((item) => {
+      const key = api.candidateKey ? api.candidateKey(item) : item.name;
+      const on = !this.fillSpin.excluded.has(key);
+      const where = item.extra ? 'new name' : (item.team ? (api.teamDisplay ? api.teamDisplay(item.team) : item.team.name) : 'unassigned');
+      return `<label class="fill-spin-cand">
+        <input type="checkbox" data-fill-key="${_esc(key)}" ${on ? 'checked' : ''} ${this.fillSpin.spinning ? 'disabled' : ''}>
+        <span>${_esc(item.name)}</span>
+        <em>${_esc(where)}</em>
+      </label>`;
+    }).join('') || '<p class="fill-spin-empty">No leftover names. Add a name or pick another team.</p>';
+    const reel = (included.length ? included : [{ name: '—' }]).map((item) => `<div class="fill-spin-cell">${_esc(item.name)}</div>`).join('');
+    host.innerHTML = `
+      <div class="fill-spin-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-spin-title">
+        <h2 id="fill-spin-title">Fill a short team</h2>
+        <p class="fill-spin-sub">Unchecked names stay off the wheel. Spin is random. Accept is what adds them.</p>
+        <label class="tiny-label">Target team
+          <select class="form-input" id="fill-spin-team" ${this.fillSpin.spinning ? 'disabled' : ''}>${teamOpts}</select>
+        </label>
+        <p class="fill-spin-need">${target ? _esc((api.teamDisplay && api.teamDisplay(target)) || target.name) : 'Team'} has ${count}${need ? ` · needs ${need} more for a 4-man side` : ' · pick who joins anyway'}</p>
+        <div class="fill-spin-cands">${rows}</div>
+        <form class="fill-spin-add" id="fill-spin-add">
+          <input class="form-input" id="fill-spin-name" placeholder="Add a name to the wheel" autocomplete="off" ${this.fillSpin.spinning ? 'disabled' : ''}>
+          <button class="btn btn-sm btn-secondary" type="submit" ${this.fillSpin.spinning ? 'disabled' : ''}>Add</button>
+        </form>
+        <div class="fill-spin-wheel" aria-live="polite">
+          <div class="fill-spin-window${this.fillSpin.spinning ? ' is-spinning' : ''}">
+            <div class="fill-spin-reel">${reel}${reel}</div>
+          </div>
+        </div>
+        ${winner ? `<p class="fill-spin-winner">Winner: <strong>${_esc(winner.name)}</strong></p>` : ''}
+        <div class="fill-spin-actions">
+          <button type="button" class="btn btn-accent" id="fill-spin-go" ${this.fillSpin.spinning || !included.length ? 'disabled' : ''}>${winner ? 'Spin again' : 'Spin'}</button>
+          <button type="button" class="btn btn-accent" id="fill-spin-accept" ${winner && !this.fillSpin.spinning ? '' : 'disabled'}>Accept</button>
+          ${this.fillSpin.fromNineteenth ? '<button type="button" class="btn btn-accent" id="fill-spin-skip-19th">Skip → 19th</button>' : ''}
+          <button type="button" class="btn btn-secondary" id="fill-spin-cancel">Cancel</button>
+        </div>
+      </div>`;
+    const teamEl = document.getElementById('fill-spin-team');
+    if (teamEl) {
+      teamEl.onchange = () => {
+        this.fillSpin.teamName = teamEl.value;
+        this.fillSpin.winner = null;
+        this.drawFillSpin();
+      };
+    }
+    host.querySelectorAll('[data-fill-key]').forEach((box) => {
+      box.onchange = () => {
+        const key = box.getAttribute('data-fill-key');
+        if (box.checked) this.fillSpin.excluded.delete(key);
+        else this.fillSpin.excluded.add(key);
+        this.fillSpin.winner = null;
+        this.drawFillSpin();
+      };
+    });
+    const addForm = document.getElementById('fill-spin-add');
+    if (addForm) {
+      addForm.onsubmit = (ev) => {
+        ev.preventDefault();
+        const raw = ((document.getElementById('fill-spin-name') || {}).value || '').trim();
+        if (!raw) return;
+        if (!this.fillSpin.extraNames.includes(raw)) this.fillSpin.extraNames.push(raw);
+        this.fillSpin.winner = null;
+        this.drawFillSpin();
+      };
+    }
+    const go = document.getElementById('fill-spin-go');
+    if (go) go.onclick = () => this.runFillSpin();
+    const accept = document.getElementById('fill-spin-accept');
+    if (accept) accept.onclick = () => this.acceptFillSpin();
+    const skip = document.getElementById('fill-spin-skip-19th');
+    if (skip) skip.onclick = () => this.skipFillSpinToNineteenth();
+    const cancel = document.getElementById('fill-spin-cancel');
+    if (cancel) cancel.onclick = () => this.closeFillSpin();
+  },
+
+  skipFillSpinToNineteenth() {
+    this.closeFillSpin();
+    this.openNineteenth({ skipFill: true });
+  },
+
+  runFillSpin() {
+    if (!this.fillSpin || this.fillSpin.spinning) return;
+    const api = this.fillSpinApi();
+    const items = this.fillSpinItems(this.state);
+    const winner = api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null;
+    if (!winner) {
+      _toast('Include at least one name', 'error');
+      return;
+    }
+    this.fillSpin.spinning = true;
+    this.fillSpin.winner = null;
+    this.drawFillSpin();
+    window.setTimeout(() => {
+      if (!this.fillSpin) return;
+      this.fillSpin.spinning = false;
+      this.fillSpin.winner = winner;
+      this.drawFillSpin();
+    }, 1100);
+  },
+
+  async acceptFillSpin() {
+    if (!this.fillSpin || !this.fillSpin.winner || this.fillSpin.spinning) return;
+    const winner = this.fillSpin.winner;
+    const teamName = this.fillSpin.teamName;
+    try {
+      const body = { teamName };
+      if (winner.memberId != null) body.memberId = winner.memberId;
+      else body.name = winner.name;
+      const fromNineteenth = !!(this.fillSpin && this.fillSpin.fromNineteenth);
+      const next = await svcApi('post', `/api/rounds/${this.state.round.id}/team-fill`, body);
+      this.state = next;
+      this.writeCache(next.round.id, next);
+      this.closeFillSpin();
+      this.draw(next);
+      _toast((winner.name || 'Winner') + ' is on ' + teamName, 'success');
+      if (fromNineteenth) this.openNineteenth({ skipFill: true });
+    } catch (err) {
+      _toast(err.message || 'Could not add the winner', 'error');
+    }
   },
 
   manageableMembers(state) {
@@ -3282,6 +3531,7 @@ const scorecard = {
         </label>` : ''}
         <label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>
         <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. The live card shows only your team’s scores. ON shows other teams read-only. Write lock stays — you cannot enter the other team’s scores.')}</label>
+        <label class="tiny-label"><input type="checkbox" ${this.isGotBeerOn(state) ? 'checked' : ''} onchange="scorecard.toggleGotBeer(this.checked)"> Joke: Got beer? ${this.infoTip('got-beer', 'Off by default. Fun only — no scoring. Enable here, or add ?gotBeer=1. Leave off for field/prod.')}</label>
         <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
@@ -3289,6 +3539,7 @@ const scorecard = {
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
         <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3, or Add team for 4+). Auto-balance is only a helper.</p>
+        ${this.fillSpinButtonHtml(state)}
         <button type="button" class="btn btn-sm btn-secondary" id="settings-add-team" onclick="scorecard.addExtraTeamFromSettings()">Add team</button>
         <div class="team-nick-list">
           ${(state.teams || []).map((t) => `
@@ -4421,6 +4672,7 @@ const scorecard = {
         </div>
         ${typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : ''}
         ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
+        ${this.gotBeerHtml()}
         <h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
         ${this.sideGamesResultsHtml(state)}

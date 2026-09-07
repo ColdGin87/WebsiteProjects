@@ -1464,6 +1464,91 @@ async function runHardeningScenario(base) {
   console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403, redact, roster HCP/remove');
 }
 
+async function runTeamFillScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Fill Host',
+      email: `scorecard.fillhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Fill spin Sunday',
+      format: 'team_net',
+      holes: '18',
+      team1Nickname: 'Birds',
+    },
+  });
+  const roundId = created.round.id;
+  const joinCode = created.round.join_code || created.round.joinCode;
+  for (const name of ['A1', 'A2', 'A3']) {
+    await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 10, teamName: 'Team 1' },
+    });
+  }
+  for (const name of ['B1', 'B2', 'B3']) {
+    await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 12, teamName: 'Team 2' },
+    });
+  }
+  const leftoverState = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: host.token,
+    body: { name: 'Odd Pat', handicap: 8, teamName: 'Team 1' },
+  });
+  const pat = (leftoverState.members || []).find((m) => m.display_name === 'Odd Pat');
+  if (!pat) fail('leftover Odd Pat missing');
+
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Fill Joiner',
+      email: `scorecard.filljoin.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: { code: joinCode, teamName: 'Team 2', role: 'player' },
+  });
+  const blocked = await apiStatus(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
+    token: joiner.token,
+    body: { teamName: 'Team 2', memberId: pat.id },
+  });
+  assertEqual(blocked.status, 403, 'joiner cannot accept team fill');
+  const afterBlock = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const patStill = (afterBlock.members || []).find((m) => Number(m.id) === Number(pat.id));
+  const t1 = (afterBlock.teams || []).find((t) => t.name === 'Team 1');
+  assertEqual(Number(patStill.team_id ?? patStill.teamId), Number(t1.id), 'rejected fill must not move the player');
+
+  const filled = await api(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
+    token: host.token,
+    body: { teamName: 'Team 2', memberId: pat.id },
+  });
+  const patAfter = (filled.members || []).find((m) => Number(m.id) === Number(pat.id));
+  const t2 = (filled.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(Number(patAfter && (patAfter.team_id ?? patAfter.teamId)), Number(t2 && t2.id), 'Accept moves leftover onto the short team');
+
+  const createdName = await api(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
+    token: host.token,
+    body: { teamName: 'Team 2', name: 'Wheel Guest' },
+  });
+  const guest = (createdName.members || []).find((m) => m.display_name === 'Wheel Guest');
+  if (!guest) fail('Accept of a new name must create a guest');
+  assertEqual(Number(guest.team_id ?? guest.teamId), Number(t2.id), 'new name lands on the short team');
+
+  const already = await apiStatus(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
+    token: host.token,
+    body: { teamName: 'Team 2', memberId: pat.id },
+  });
+  assertEqual(already.status, 400, 'already on target team is 400');
+
+  console.log('PASS team-fill spin Accept moves leftover; joiner 403; new name guest');
+}
+
 async function runDemoOffScenario() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goldendale-demo-off-'));
   const dbFile = path.join(tmpDir, 'demo-off.db');
@@ -1545,6 +1630,7 @@ async function main() {
     await runNinesScenario(base);
     await runJoinIdentityScenario(base);
     await runFollowerScenario(base);
+    await runTeamFillScenario(base);
     await runHardeningScenario(base);
     if (!requested) await runDemoOffScenario();
   } finally {
