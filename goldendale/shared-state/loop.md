@@ -12,7 +12,7 @@ Host-only **Fill a short team (spin)** on the live Team roster card and Settings
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending READY unique project URL.
+Unique host (READY, SHA `1a8e489`, ASSET_V `20260907g`): https://website-projects-oyxx59swu-coldgin87s-projects.vercel.app
 
 ### Paper scorecard SI + yards (ASSET_V `20260907e`)
 
