@@ -23,6 +23,8 @@ npm start
 
 Open [http://localhost:3000](http://localhost:3000).
 
+**ColdGin’s Yardages** (personal club-distance chart, no login) is a separate static page at [http://localhost:3000/yardages/](http://localhost:3000/yardages/). On iPhone Safari: open that URL → Share → Add to Home Screen. Values autosave in the phone’s browser storage.
+
 With no `TURSO_DATABASE_URL`, the app creates `data/goldendale.db`. The first registered account is the course admin.
 
 ## Vercel + Turso

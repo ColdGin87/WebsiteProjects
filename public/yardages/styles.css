@@ -1,0 +1,244 @@
+:root {
+  --green: #145a1c;
+  --green-dark: #0b2f12;
+  --green-ink: #10210e;
+  --gold: #c9a227;
+  --gold-deep: #8d7010;
+  --paper: #efe6d0;
+  --card: #fffdf6;
+  --input: #ffffff;
+  --line: #2a3d24;
+  --muted: #2f3d2a;
+  --danger: #8f1d1d;
+  --shadow: 0 2px 8px rgba(16, 33, 14, 0.14);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --tap: 48px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper);
+  color: var(--green-ink);
+  font-family: var(--font);
+}
+
+body {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.app {
+  width: min(100%, 430px);
+  margin: 0 auto;
+  padding: 0 12px 28px;
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: 0 -12px;
+  padding: 14px 12px 12px;
+  background: var(--green-dark);
+  color: #f7f1de;
+  box-shadow: 0 2px 10px rgba(8, 30, 10, 0.35);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.42rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 800;
+}
+
+.sub {
+  margin: 6px 0 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  color: #f0d56a;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.updated {
+  font-size: 0.88rem;
+  font-weight: 650;
+  color: #efe6d0;
+  line-height: 1.3;
+}
+
+.club {
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 8px 12px;
+  margin-bottom: 10px;
+  box-shadow: var(--shadow);
+}
+
+.club-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.club-name {
+  font-size: 1.18rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.swing {
+  border: 2px solid #d8cfb4;
+  border-radius: 10px;
+  padding: 8px;
+  background: #fffaf0;
+}
+
+.swing-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.field label {
+  font-size: 0.86rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+input[type="number"] {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 8px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--input);
+  color: var(--green-ink);
+  font-size: 1.28rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="number"]:focus {
+  outline: 3px solid var(--gold);
+  border-color: var(--green);
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.btn {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.btn:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: #f0d56a;
+  border-color: #f0d56a;
+}
+
+.btn-reset {
+  background: #fff6e8;
+  color: var(--danger);
+  border-color: #c9a27a;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+}
+
+.note {
+  margin: 4px 4px 14px;
+  font-size: 0.95rem;
+  font-weight: 650;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.status {
+  min-height: 1.2em;
+  margin: 0 4px 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--green);
+}
+
+@media (min-width: 390px) {
+  .legend {
+    font-size: 0.74rem;
+  }
+}

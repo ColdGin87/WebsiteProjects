@@ -1,6 +1,7 @@
 {
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.js" }
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/yardages", "destination": "/yardages/index.html" }
   ],
   "headers": [
     {
@@ -22,6 +23,14 @@
     {
       "source": "/js/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=60, stale-while-revalidate=86400" }]
+    },
+    {
+      "source": "/yardages",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
+    },
+    {
+      "source": "/yardages/(.*)",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }]
     }
   ]
 }
