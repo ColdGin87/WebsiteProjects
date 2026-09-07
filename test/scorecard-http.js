@@ -179,6 +179,11 @@ async function runScenario(base) {
   if (!hole1) fail('hole 1 missing from Goldendale seed');
   assertEqual(hole1.par, 5, 'hole 1 par');
   assertEqual(hole1.stroke_index, 1, 'hole 1 SI');
+  const hole3 = (created.holes || []).find((h) => h.hole_number === 3);
+  if (!hole3) fail('hole 3 missing from Goldendale seed');
+  assertEqual(hole3.par, 4, 'hole 3 par');
+  assertEqual(hole3.stroke_index, 13, 'hole 3 SI is paper-card 13, not old seed 9');
+  assertEqual(hole3.yards, 287, 'hole 3 White/Blue yards');
 
   const roundId = created.round.id;
   let state = created;

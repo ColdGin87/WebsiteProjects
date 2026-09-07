@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907d/);
-    assert.match(html, /js\/formats\.js\?v=20260907d/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907d/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907d/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907d/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907d/);
-    assert.match(src, /ASSET_V:\s*'20260907d'/);
+    assert.match(html, /20260907e/);
+    assert.match(html, /js\/formats\.js\?v=20260907e/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907e/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907e/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907e/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907e/);
+    assert.match(src, /ASSET_V:\s*'20260907e'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {

@@ -2,11 +2,11 @@
 
 ## Developer
 
-### Paper scorecard SI + yards (ASSET_V `20260907d`)
+### Paper scorecard SI + yards (ASSET_V `20260907e`)
 
 Same PR #4. Hold merge.
 
-David’s paper card is authoritative. Seeded Goldendale `stroke_index` and White/Blue + Red/Gold yards now match the card. Boot seed **updates** live `course_holes` / `hole_yardages` (not insert-only), so existing Turso rows get the dots fix.
+David’s paper card is authoritative. Seeded Goldendale `stroke_index` and White/Blue + Red/Gold yards now match the card. Boot seed **force-updates** live `course_holes` / `hole_yardages` (UPDATE by hole number, then upsert) so a stale prod hole 3 SI 9 cannot survive.
 
 SI changes vs old seed: 3 9→13, 8 13→11, 9 11→9, 12 10→14, 17 14→12, 18 12→10. Hole 1 stays SI 1. Par 72 unchanged.
 
@@ -14,7 +14,7 @@ White/Blue TOT 5645 (OUT 2809 / IN 2836). Red/Gold TOT 5052 (OUT 2533 / IN 2519)
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host (READY, SHA `74ff11d`, ASSET_V `20260907d`): https://website-projects-dbgu7bfva-coldgin87s-projects.vercel.app
+Unique host: pending READY unique project URL for ASSET_V `20260907e`.
 
 ### Follow along / Scorekeeper + personal board (ASSET_V `20260907c`)
 
