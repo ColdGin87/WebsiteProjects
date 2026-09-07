@@ -2,6 +2,18 @@
 
 ## Developer
 
+### Down score advance wrap (ASSET_V `20260907a`)
+
+Same PR #4. Hold merge.
+
+When advance is **Down**, after the last writable player on a hole commits a score, focus moves to player 1 on the next hole (P1→P2→P3→P4→ next hole P1). It does not stall on the last row. Across is unchanged (same player, next hole). Own-team write lock: Down never jumps to an opposing roster.
+
+Ships with the field P0 batch (OUT/TOT, Index dots, write-lock / hide, delete player, Index edit, 19th unlock).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending this ship.
+
 ### Field P0 batch + 19th unlock (ASSET_V `20260906i`)
 
 Same PR #4. Hold merge. One unique host when this whole batch is ready.

@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260906i',
+  ASSET_V: '20260907a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -1618,34 +1618,53 @@ const scorecard = {
     </div>`;
   },
 
-  focusNextHole(memberId, holeNumber) {
-    const across = this.loadScoreAdvance() === 'across';
-    if (!across) {
-      const rows = this.isHoleView()
-        ? Array.from(document.querySelectorAll('#hole-players .hole-player-row'))
-        : Array.from(document.querySelectorAll('tr.row-player'));
-      const idx = rows.findIndex((row) => Number(row.dataset.memberRow) === memberId);
-      const next = rows[idx + 1];
-      if (!next) return;
-      const el = next.querySelector(`input.score-input[data-hole="${holeNumber}"]`);
-      if (el) {
-        el.focus();
-        el.select();
-      }
-      return;
-    }
+  writableAdvanceOrder() {
+    return (this.visibleHoleMembers(this.state) || [])
+      .filter((m) => this.canWriteMember(this.state, m))
+      .map((m) => m.id);
+  },
+
+  nextAdvanceTarget(memberId, holeNumber) {
+    const api = typeof window !== 'undefined' ? window.scoreAdvance : null;
     const holes = (this.state && this.state.holes) || [];
-    const idx = holes.findIndex((h) => h.hole_number === holeNumber);
-    const next = holes[idx + 1];
-    if (!next) return;
-    this.currentHole = next.hole_number;
-    if (this.isHoleView()) {
-      this.retargetHoleView(this.currentHole);
-      for (const member of this.state.members || []) this.paintScoreCell(member.id, this.currentHole);
+    if (this.loadScoreAdvance() === 'across') {
+      if (api && api.nextAcrossTarget) return api.nextAcrossTarget({ holes, memberId, holeNumber });
+      const idx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
+      const next = holes[idx + 1];
+      return next ? { memberId, holeNumber: next.hole_number } : null;
     }
-    this.paintCurrentHoleChrome();
-    const el = document.querySelector(`input.score-input[data-member="${memberId}"][data-hole="${next.hole_number}"]`);
-    if (el) {
+    if (api && api.nextDownTarget) {
+      return api.nextDownTarget({
+        members: this.state && this.state.members,
+        me: this.myMember(this.state),
+        orderIds: this.writableAdvanceOrder(),
+        holes,
+        memberId,
+        holeNumber,
+      });
+    }
+    const roster = (this.state && this.state.members || []).filter((m) => this.canWriteMember(this.state, m));
+    const idx = roster.findIndex((m) => Number(m.id) === Number(memberId));
+    if (roster[idx + 1]) return { memberId: roster[idx + 1].id, holeNumber };
+    const hIdx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
+    const next = holes[hIdx + 1];
+    return next && roster[0] ? { memberId: roster[0].id, holeNumber: next.hole_number } : null;
+  },
+
+  focusNextHole(memberId, holeNumber) {
+    const target = this.nextAdvanceTarget(memberId, holeNumber);
+    if (!target) return;
+    this.focusCell = { memberId: target.memberId, holeNumber: target.holeNumber };
+    if (Number(target.holeNumber) !== Number(holeNumber)) {
+      this.currentHole = target.holeNumber;
+      if (this.isHoleView()) {
+        this.retargetHoleView(this.currentHole);
+        for (const member of this.state.members || []) this.paintScoreCell(member.id, this.currentHole);
+      }
+      this.paintCurrentHoleChrome();
+    }
+    const el = document.querySelector(`input.score-input[data-member="${target.memberId}"][data-hole="${target.holeNumber}"]`);
+    if (el && !el.disabled) {
       el.focus();
       el.select();
     }
@@ -4150,7 +4169,7 @@ const scorecard = {
         <h3>Live card write lock</h3>
         <p>You may enter scores only for players on your own team. The server rejects cross-team score writes. <strong>Show other teams’ scores</strong> is a Sunday game setup toggle (default OFF): other teams stay blank on the live card until the organizer turns it ON. When ON, other teams are visible and still read-only.</p>
         <h3>Score entry</h3>
-        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next player, same hole). Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up.</p>
+        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Down never jumps to an opposing team.</p>
         <h3>Nines</h3>
         <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
         <h3>Presses</h3>

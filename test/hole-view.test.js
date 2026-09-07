@@ -68,12 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260906i/);
-    assert.match(html, /js\/formats\.js\?v=20260906i/);
-    assert.match(html, /js\/sideGames\.js\?v=20260906i/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260906i/);
-    assert.match(html, /js\/nineteen\.js\?v=20260906i/);
-    assert.match(src, /ASSET_V:\s*'20260906i'/);
+    assert.match(html, /20260907a/);
+    assert.match(html, /js\/formats\.js\?v=20260907a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907a/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907a/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907a/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907a/);
+    assert.match(src, /ASSET_V:\s*'20260907a'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -344,6 +345,12 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /you can still enter gross/i);
     assert.match(src, /setScoreAdvance/);
     assert.match(src, /score-advance/);
+    assert.match(src, /nextDownTarget|nextAdvanceTarget/);
+    assert.match(src, /writableAdvanceOrder/);
+    const down = sliceFn('focusNextHole(memberId, holeNumber) {', 'paintCurrentHoleChrome()');
+    assert.match(down, /nextAdvanceTarget/);
+    assert.match(down, /retargetHoleView/);
+    assert.doesNotMatch(down, /if \(!next\) return;/);
     assert.match(src, /Gross must be 1–19/);
     assert.match(src, /readGrossTyping/);
     assert.match(src, /dataset\.pending/);
