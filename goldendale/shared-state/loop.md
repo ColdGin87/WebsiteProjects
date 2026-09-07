@@ -12,7 +12,7 @@ Now one round + one join code. After team pick (including Team 1), choose **Scor
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending this ship.
+Unique host (READY, SHA `4e2d1ff`, ASSET_V `20260907b`): https://website-projects-gxrs5f4a5-coldgin87s-projects.vercel.app
 
 ### Down score advance wrap (ASSET_V `20260907a`)
 
