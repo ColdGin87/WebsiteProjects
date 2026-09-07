@@ -14,7 +14,7 @@ Followers have a personal See / Hide other teams toggle (`follow_show_other` on 
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending this ship.
+Unique host (READY, SHA `5701123`, ASSET_V `20260907c`): https://website-projects-6eiahkbak-coldgin87s-projects.vercel.app
 
 ### Down score advance wrap (ASSET_V `20260907a`)
 
