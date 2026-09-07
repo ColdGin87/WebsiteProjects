@@ -228,13 +228,13 @@ describe('strokesOnHole 9-hole', () => {
   const front = [
     { holeNumber: 1, strokeIndex: 1 },
     { holeNumber: 2, strokeIndex: 5 },
-    { holeNumber: 3, strokeIndex: 9 },
+    { holeNumber: 3, strokeIndex: 13 },
     { holeNumber: 4, strokeIndex: 17 },
     { holeNumber: 5, strokeIndex: 3 },
     { holeNumber: 6, strokeIndex: 7 },
     { holeNumber: 7, strokeIndex: 15 },
-    { holeNumber: 8, strokeIndex: 13 },
-    { holeNumber: 9, strokeIndex: 11 },
+    { holeNumber: 8, strokeIndex: 11 },
+    { holeNumber: 9, strokeIndex: 9 },
   ];
 
   it('uses round(H/2) against that nine\'s SI ranks', () => {
@@ -250,8 +250,8 @@ describe('strokesOnHole 9-hole', () => {
       );
     }
 
-    // H 9 → 9-hole 5 → five hardest: 1,5,2,6,3
-    const hardFive = new Set([1, 5, 2, 6, 3]);
+    // H 9 → 9-hole 5 → five hardest: 1,5,2,6,9 (card SI 1,3,5,7,9)
+    const hardFive = new Set([1, 5, 2, 6, 9]);
     for (const hole of front) {
       const strokes = strokesOnHole(9, hole.strokeIndex, {
         holes: 'front9',
@@ -538,7 +538,7 @@ describe('demo foursome Kurt / Chase / Brian', () => {
       let strokeSum = 0;
       let netSum = 0;
       player.holes.forEach((gross, idx) => {
-        const si = [1, 5, 9, 17, 3, 7, 15, 13, 11, 2, 6, 10, 18, 4, 8, 16, 14, 12][idx];
+        const si = GOLDENDALE_SI[idx];
         const strokes = strokesOnHole(player.playingHandicap, si);
         strokeSum += strokes;
         netSum += netScore(gross, strokes);
@@ -651,15 +651,18 @@ describe('appBaseUrl', () => {
   });
 });
 
-describe('Goldendale seed yardages', () => {
-  it('keeps official White/Blue total', () => {
-    assert.equal(WHITE_TOTAL, 5683);
-    assert.equal(WHITE_HOLES.length, 18);
-  });
+describe('Goldendale paper scorecard seed', () => {
+  const CARD_SI = [1, 5, 13, 17, 3, 7, 15, 11, 9, 2, 6, 14, 18, 4, 8, 16, 12, 10];
+  const CARD_WHITE = [496, 365, 287, 104, 338, 465, 307, 284, 163, 500, 360, 280, 87, 352, 480, 306, 295, 176];
+  const CARD_RED = [378, 365, 287, 94, 331, 393, 307, 225, 153, 378, 360, 280, 87, 331, 393, 306, 225, 159];
 
-  it('estimates Red/Gold hole yards to the published 5066 total', () => {
-    const yards = estimateRedYards();
-    assert.equal(yards.length, 18);
-    assert.equal(yards.reduce((s, y) => s + y, 0), RED_TOTAL);
+  it('matches the paper card SI, White/Blue yards, and Red/Gold yards', () => {
+    assert.deepEqual(WHITE_HOLES.map((h) => h.si), CARD_SI);
+    assert.deepEqual(WHITE_HOLES.map((h) => h.yards), CARD_WHITE);
+    assert.deepEqual(estimateRedYards(), CARD_RED);
+    assert.equal(WHITE_TOTAL, 5645);
+    assert.equal(RED_TOTAL, 5052);
+    assert.equal(WHITE_HOLES.reduce((s, h) => s + h.par, 0), 72);
+    assert.deepEqual([...CARD_SI].sort((a, b) => a - b), Array.from({ length: 18 }, (_, i) => i + 1));
   });
 });
