@@ -1330,15 +1330,15 @@ async function runHardeningScenario(base) {
   const hole1 = hostLocked && (hostLocked.holes || []).find((h) => h.holeNumber === 1);
   if (hole1 && hole1.gross != null) fail('rejected cross-team score must not persist');
 
-  const hostCross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+  const hostCross = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
     token: host.token,
     body: { memberId: joinerMember.id, holeNumber: 1, gross: 5 },
   });
-  assertEqual(hostCross.status, 403, 'host must not write Team 2 scores');
+  if (!hostCross || hostCross.ok !== true) fail('host must write Team 2 scores on one phone');
   const afterHostCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: joiner.token });
   const joinerLocked = (afterHostCross.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
   const joinerHole1 = joinerLocked && (joinerLocked.holes || []).find((h) => h.holeNumber === 1);
-  if (joinerHole1 && joinerHole1.gross != null) fail('rejected host-to-Team-2 score must not persist');
+  assertEqual(joinerHole1 && joinerHole1.gross, 5, 'host Team 2 score persists for the joiner');
 
   await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
     token: host.token,
@@ -1461,7 +1461,7 @@ async function runHardeningScenario(base) {
     fail('production must not return magic-link URLs');
   }
 
-  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, cross-team 403, redact, roster HCP/remove');
+  console.log('PASS hardening: auth on mutations, 8-char join codes, invalid join 404, joiner settings 403, joiner cross-team 403, host writes all teams, redact, roster HCP/remove');
 }
 
 async function runTeamFillScenario(base) {
@@ -1640,6 +1640,130 @@ async function runStandardScorecardScenario(base) {
   console.log('PASS standard scorecard: dots + no gambling calcs');
 }
 
+async function runVegasHostBothTeamsScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Vegas Host',
+      email: `scorecard.vegashost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'One-phone Vegas',
+      format: 'team_net',
+      holes: '18',
+      teamRace: true,
+      showOtherScores: false,
+      sideGames: { vegas: { on: true, scoring: 'gross', dollarsPerPoint: 1 } },
+    },
+  });
+  const roundId = created.round.id;
+  const joinCode = created.round.join_code || created.round.joinCode;
+  let state = created;
+  for (const name of ['V1', 'V2']) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 0, teamName: 'Team 1' },
+    });
+  }
+  for (const name of ['V3', 'V4']) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 0, teamName: 'Team 2' },
+    });
+  }
+  const v1 = state.members.find((m) => m.display_name === 'V1');
+  const v2 = state.members.find((m) => m.display_name === 'V2');
+  const v3 = state.members.find((m) => m.display_name === 'V3');
+  const v4 = state.members.find((m) => m.display_name === 'V4');
+  if (!v1 || !v2 || !v3 || !v4) fail('vegas host roster missing');
+
+  for (const [member, gross] of [[v1, 5], [v2, 6], [v3, 6], [v4, 7]]) {
+    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token: host.token,
+      body: { memberId: member.id, holeNumber: 1, gross },
+    });
+    if (!posted || posted.ok !== true) fail('host must enter both Vegas teams on hole 1');
+  }
+  for (const [member, gross] of [[v1, 5], [v2, 6], [v3, 5], [v4, 6]]) {
+    const posted = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token: host.token,
+      body: { memberId: member.id, holeNumber: 2, gross },
+    });
+    if (!posted || posted.ok !== true) fail('host must enter both Vegas teams on hole 2');
+  }
+
+  const live = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const vegas = live.sideGames && live.sideGames.games && live.sideGames.games.vegas;
+  if (!vegas || !vegas.holes || !vegas.holes[0]) fail('vegas missing after host scored both teams');
+  assertEqual(vegas.holes[0].numA, 56, 'host-entered Team 1 pair is 5+6=56');
+  assertEqual(vegas.holes[0].numB, 67, 'host-entered Team 2 pair is 6+7=67');
+  const hostSeesV3 = (live.members || []).find((m) => Number(m.id) === Number(v3.id));
+  const hostV3h1 = hostSeesV3 && (hostSeesV3.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hostV3h1 && hostV3h1.gross, 6, 'host still sees Team 2 scores while hide-other is ON');
+
+  const keeper = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Vegas Keeper',
+      email: `scorecard.vegaskeep.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: keeper.token,
+    body: { code: joinCode, teamName: 'Team 2', role: 'player' },
+  });
+  const keeperMe = (joined.members || []).find((m) => Number(m.player_id) === Number(keeper.user && keeper.user.id));
+  if (!keeperMe) fail('Team 2 scorekeeper did not join');
+
+  const keeperOwn = await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: keeper.token,
+    body: { memberId: v3.id, holeNumber: 3, gross: 4 },
+  });
+  if (!keeperOwn || keeperOwn.ok !== true) fail('Team 2 scorekeeper must write Team 2');
+  const keeperCross = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: keeper.token,
+    body: { memberId: v1.id, holeNumber: 3, gross: 3 },
+  });
+  assertEqual(keeperCross.status, 403, 'Team 2 scorekeeper cannot write Team 1');
+  const afterCross = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const v1h3 = ((afterCross.members || []).find((m) => Number(m.id) === Number(v1.id)).holes || [])
+    .find((h) => h.holeNumber === 3);
+  if (v1h3 && v1h3.gross != null) fail('rejected Team 2 scorekeeper write to Team 1 must not persist');
+
+  const hidden = await api(base, 'GET', `/api/rounds/${roundId}`, { token: keeper.token });
+  const hiddenV1 = (hidden.members || []).find((m) => Number(m.id) === Number(v1.id));
+  const hiddenHole = hiddenV1 && (hiddenV1.holes || []).find((h) => h.holeNumber === 1);
+  if (hiddenHole && hiddenHole.gross != null) fail('Team 2 scorekeeper must not read Team 1 while hide-other is ON');
+  assertEqual(!!(hidden.round && hidden.round.showOtherScores), false, 'host hide-other stayed OFF');
+
+  const follower = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Vegas Follower',
+      email: `scorecard.vegasfollow.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  await api(base, 'POST', '/api/rounds/join', {
+    token: follower.token,
+    body: { code: joinCode, teamName: 'Team 2', role: 'follower' },
+  });
+  const followWrite = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: follower.token,
+    body: { memberId: v3.id, holeNumber: 3, gross: 8 },
+  });
+  assertEqual(followWrite.status, 403, 'Follow along stays read-only');
+  const afterFollow = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const v3h3 = ((afterFollow.members || []).find((m) => Number(m.id) === Number(v3.id)).holes || [])
+    .find((h) => h.holeNumber === 3);
+  assertEqual(v3h3 && v3h3.gross, 4, 'rejected follower write must not overwrite Team 2');
+
+  console.log('PASS host one-phone Vegas: host writes both teams; Team 2 keeper own-team only; follower 403; hide-other redacts');
+}
+
 async function runDemoOffScenario() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'goldendale-demo-off-'));
   const dbFile = path.join(tmpDir, 'demo-off.db');
@@ -1723,6 +1847,7 @@ async function main() {
     await runFollowerScenario(base);
     await runTeamFillScenario(base);
     await runStandardScorecardScenario(base);
+    await runVegasHostBothTeamsScenario(base);
     await runHardeningScenario(base);
     if (!requested) await runDemoOffScenario();
   } finally {

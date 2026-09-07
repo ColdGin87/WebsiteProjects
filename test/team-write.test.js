@@ -56,4 +56,18 @@ describe('Team write lock', () => {
     assert.equal(canManageRosterMember(me, other, false), false);
     assert.equal(canManageRosterMember(me, other, true), true);
   });
+
+  it('lets the host write every team while scorekeepers stay own-team and Follow along stays read-only', () => {
+    const host = { id: 1, team_id: 10, role: 'organizer' };
+    const mate = { id: 2, team_id: 10, role: 'player' };
+    const other = { id: 3, team_id: 20, role: 'player' };
+    const follower = { id: 9, team_id: 10, role: 'follower' };
+    assert.equal(canWriteTeamScore(host, mate, true), true);
+    assert.equal(canWriteTeamScore(host, other, true), true);
+    assert.equal(canWriteTeamScore(host, follower, true), false);
+    assert.equal(canWriteTeamScore(follower, mate, true), false);
+    assert.equal(canWriteTeamScore(other, mate, false), false);
+    assert.equal(canWriteTeamScore(other, other, false), true);
+    assert.equal(canWriteTeamScore(null, other, true), true);
+  });
 });

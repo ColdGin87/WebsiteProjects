@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907h/);
-    assert.match(html, /js\/formats\.js\?v=20260907h/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907h/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907h/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907h/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907h/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907h/);
-    assert.match(src, /ASSET_V:\s*'20260907h'/);
+    assert.match(html, /20260907i/);
+    assert.match(html, /js\/formats\.js\?v=20260907i/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907i/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907i/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907i/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907i/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907i/);
+    assert.match(src, /ASSET_V:\s*'20260907i'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -355,6 +355,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /score-advance/);
     assert.match(src, /nextDownTarget|nextAdvanceTarget/);
     assert.match(src, /writableAdvanceOrder/);
+    const advance = sliceFn('nextAdvanceTarget(memberId, holeNumber) {', 'focusNextHole(memberId, holeNumber)');
+    assert.match(advance, /organizer:\s*this\.isOrganizer/);
     const down = sliceFn('focusNextHole(memberId, holeNumber) {', 'paintCurrentHoleChrome()');
     assert.match(down, /nextAdvanceTarget/);
     assert.match(down, /retargetHoleView/);
@@ -420,7 +422,7 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(holeRow, /wolfHoldsScoring/);
     const writeLock = sliceFn('canWriteMember(state, member) {', 'lockScoreInputs()');
     assert.doesNotMatch(writeLock, /isWolfOn/);
-    assert.doesNotMatch(writeLock, /isOrganizer/);
+    assert.match(writeLock, /isOrganizer/);
     assert.doesNotMatch(writeLock, /is_admin/);
     assert.match(writeLock, /sameTeamIds/);
     assert.match(writeLock, /isFollowAlong/);
@@ -475,7 +477,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(canScoreFn, /canWriteTeamScore/);
     assert.doesNotMatch(canScoreFn, /wolfGameOn/);
     assert.doesNotMatch(canScoreFn, /is_admin/);
-    assert.doesNotMatch(canScoreFn, /isOrganizer/);
+    assert.match(canScoreFn, /isOrganizer/);
     assert.match(routes, /canManageMember/);
     assert.match(routes, /You can only remove players from your own team/);
     assert.match(routes, /DELETE FROM score_holes WHERE member_id = \? AND round_id/);

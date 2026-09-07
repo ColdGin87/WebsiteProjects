@@ -45,7 +45,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907h',
+  ASSET_V: '20260907i',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -1922,6 +1922,7 @@ const scorecard = {
         holes,
         memberId,
         holeNumber,
+        organizer: this.isOrganizer(this.state),
       });
     }
     const roster = (this.state && this.state.members || []).filter((m) => this.canWriteMember(this.state, m));
@@ -2175,6 +2176,7 @@ const scorecard = {
   canWriteMember(state, member) {
     if (!state || !member) return false;
     if (this.isFollowAlong(state) || this.isFollowAlongMember(member)) return false;
+    if (this.isOrganizer(state)) return true;
     const me = this.myMember(state);
     return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
   },
@@ -3563,7 +3565,7 @@ const scorecard = {
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>`}
-        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. The live card shows only your team’s scores. ON shows other teams read-only. Write lock stays — you cannot enter the other team’s scores.')}</label>
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always see and enter every team’s scores (one-phone Vegas). Non-hosts stay own-team write only.')}</label>
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
@@ -4527,9 +4529,9 @@ const scorecard = {
         <h3>Join code teams</h3>
         <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide gate. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins — no leak. The personal toggle does not change the host setting or unlock writes.</p>
+        <p>The host / organizer may enter hole scores for every team while staying in the live card (one-phone Vegas / Sunday). Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide read gate for non-hosts. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes.</p>
         <h3>Score entry</h3>
-        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Down never jumps to an opposing team.</p>
+        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Scorekeepers stay on their own team. The host walks every writable team on that hole.</p>
         <h3>Nines</h3>
         <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
         <h3>Presses</h3>
