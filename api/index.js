@@ -9,8 +9,15 @@ app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
 const { initDatabase } = require('../lib/database');
+const { assertProdSecrets } = require('../lib/security');
 let dbInitialized = false;
 let dbInitPromise = null;
+
+try {
+  assertProdSecrets();
+} catch (err) {
+  console.error(err.message || err);
+}
 
 app.use(async (req, res, next) => {
   try {
@@ -57,8 +64,12 @@ app.use(express.static(path.join(__dirname, '../public'), {
 
 app.use((err, req, res, next) => {
   console.error('Server error:', err.stack || err.message || err);
-  res.status(err.statusCode || 500).json({
-    error: err.message || 'Internal server error',
+  const status = Number(err.statusCode || err.status) || 500;
+  if (status >= 500) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  res.status(status).json({
+    error: err.message || 'Request failed.',
   });
 });
 

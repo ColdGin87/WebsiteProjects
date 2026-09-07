@@ -45,9 +45,9 @@ Never put real Turso, JWT, or Supabase secrets in git. `.env` is gitignored. Onl
 
 ## Product rules that ship
 
-- Email + password, magic link, password reset (links are returned in the API when no mail provider is configured).
+- Email + password, magic link, password reset. Production never returns magic/reset URLs in the API body.
 - Profile: display name, optional handicap, optional home tee.
-- Per-round organizer vs player. Join with a 6-character code or share link.
+- Per-round organizer vs player. Join with an 8-character code or share link. Invalid codes are 404. Join and score POST are rate-limited.
 - Guest players (name + handicap, no login). Max 20 players.
 - Users only see rounds they organize or joined.
 - Public leaderboard via an unguessable token — read-only, no login.

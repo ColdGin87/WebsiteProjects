@@ -2,6 +2,139 @@
 
 ## Developer
 
+### Merge clean slate (ASSET_V `20260907h`)
+
+David authorized merge of PR #4. First production boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260907`), then leaves new Sunday rounds alone. Goldendale paper-card SI/yards and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons. No Got beer.
+
+Kept: paper-card SI/yards, write lock + show-other, Follow along / Scorekeeper, Standard scorecard, team-fill spin (any short team + Skip→19th).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending production/Main deploy after merge.
+
+### Team-fill any short team + Standard scorecard (ASSET_V `20260907g`)
+
+Same PR #4. Got beer joke control removed.
+
+Host-only **Fill a short team (spin)** on the live Team roster card and Settings → Players. Any incomplete team (1–3 scoring players) can be the target — not only one hard-coded short team. Exclude names, fair random spin, Accept adds/moves the winner. After Accept on the 19th path, if another team is still short the spinner stays open; **Skip → 19th** is always available. Joiners 403.
+
+**Standard scorecard** is a New round / Settings game option. Dots + OUT/IN/TOT only. Server forces Sunday race and side games off (Vegas, Skins, Nassau, Wolf, Nines, presses, birdie slots). Team vs par 1G+2N math is unchanged when that format is selected.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `1a8e489`, ASSET_V `20260907g`): https://website-projects-oyxx59swu-coldgin87s-projects.vercel.app
+
+### Paper scorecard SI + yards (ASSET_V `20260907e`)
+
+Same PR #4. Hold merge.
+
+David’s paper card is authoritative. Seeded Goldendale `stroke_index` and White/Blue + Red/Gold yards now match the card. Boot seed **force-updates** live `course_holes` / `hole_yardages` (UPDATE by hole number, then upsert) so a stale prod hole 3 SI 9 cannot survive.
+
+SI changes vs old seed: 3 9→13, 8 13→11, 9 11→9, 12 10→14, 17 14→12, 18 12→10. Hole 1 stays SI 1. Par 72 unchanged.
+
+White/Blue TOT 5645 (OUT 2809 / IN 2836). Red/Gold TOT 5052 (OUT 2533 / IN 2519).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `43e16da`, ASSET_V `20260907e`): https://website-projects-jyksmwr4m-coldgin87s-projects.vercel.app
+
+### Follow along / Scorekeeper + personal board (ASSET_V `20260907c`)
+
+Same PR #4. Hold merge.
+
+Field root cause (verified in join/auth code, not guessed): joiners could not pick Team 1 (host team), join always created a scoring `player` row, and `app.init()` routed before `checkSession()` finished so a stored token still hit the Sign-in wall. Welcome also stashed codes shorter than the API accepts.
+
+Now one round + one join code. After team pick (including Team 1), choose **Scorekeeper** (own-team writes) or **Follow along** (read-only, no player row). Role persists on `score_members.role`. Server 403s follower score POSTs even on their team.
+
+Followers have a personal See / Hide other teams toggle (`follow_show_other` on the membership). They can hide opposing scores even when the host Show-other setting is ON. They can show opposing scores only when the host allows — if the host has Show-other OFF, server redaction still wins (no leak). The toggle does not change the host setting or scorekeeper GET/live. Write lock for scorekeepers unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `5701123`, ASSET_V `20260907c`): https://website-projects-6eiahkbak-coldgin87s-projects.vercel.app
+
+### Down score advance wrap (ASSET_V `20260907a`)
+
+Same PR #4. Hold merge.
+
+When advance is **Down**, after the last writable player on a hole commits a score, focus moves to player 1 on the next hole (P1→P2→P3→P4→ next hole P1). It does not stall on the last row. Across is unchanged (same player, next hole). Own-team write lock: Down never jumps to an opposing roster.
+
+Ships with the field P0 batch (OUT/TOT, Index dots, write-lock / hide, delete player, Index edit, 19th unlock).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `ff4042f`, ASSET_V `20260907a`): https://website-projects-rbd4me4v9-coldgin87s-projects.vercel.app
+
+### Field P0 batch + 19th unlock (ASSET_V `20260906i`)
+
+Same PR #4. Hold merge. One unique host when this whole batch is ready.
+
+Ships with OUT/TOT, Index dots, write-lock / hide other teams, delete player (confirm tap, no orphan scores), and start-of-round Index edits.
+
+**19th hole:** `Go to the 19th hole` unlocks when the viewer’s writable roster has all holes in. Incomplete opposing teams the viewer cannot score do not block it. Host / organizer can also open 19th once any team has finished 18 (confirm if other teams still have blanks). Banner sits at the top of the live card (after the join code), sticky and large on ~390px.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `710dd3e`, ASSET_V `20260906i`): https://website-projects-16iuhs83p-coldgin87s-projects.vercel.app
+
+### Field setup: delete player + start HCP (ASSET_V `20260906h`)
+
+Same PR #4. Hold merge. Ships with the three P0s (OUT/TOT, Index dots, write-lock / hide other teams).
+
+At team setup (live card roster, before / early scoring):
+
+- **Remove** is own-team only for joiners. Host / organizer can remove from teams they run. Confirm tap in the app modal so it is not accidental. `score_holes` for that player are deleted with the member (no leftover scores on GET/live or team balls).
+- **Index** is editable on each manageable row. Joiners: own team. Host / organizer: teams they run. Index only, 0.5 rounding — no Course Handicap. Save redraws stroke dots (live poll treats an Index change as a roster change).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `5ccc4c1`, ASSET_V `20260906h`): https://website-projects-1ybrqri7f-coldgin87s-projects.vercel.app
+
+### Field P0s: OUT/TOT, dots, write/see lock, roster (ASSET_V `20260906g`)
+
+Same PR #4. Hold merge.
+
+Phone OUT (front 1–9) and TOT (1–18) sit in a large bar on hole view and Full card; OUT is also after hole 9 on the table. Running vs-par stays under team totals. Stroke dots follow Handicap Index (0.5 rounding) vs scorecard SI — no Course Handicap; A/B/C/D lock 1/1/1/2 on hole 1 SI 1.
+
+Write lock is own-team only (no organizer/admin score bypass, including Wolf). Show-other default OFF: joiners get opposing hole scores redacted on GET/live; cross-team POST is 403 and does not persist. Organizer may still see all.
+
+At setup, joiners can Remove / set Index on their own team; host can manage the full roster. Index edits refresh strokes/dots.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `5ae7974`, ASSET_V `20260906g`): https://website-projects-7r7ouo3re-coldgin87s-projects.vercel.app
+
+### Live join code on the scoring page (ASSET_V `20260906f`)
+
+Same PR #4. Hold merge.
+
+The shared join / access code sits at the **top** of hole view and the full card (not Settings / overflow). Large type + one-tap **Copy** (tap the code or Copy). Host and joiners see the same code. Welcome / Join with code now accepts 6–12 characters so the new 8-char codes can be typed. Security locks from this PR stay.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `f37258c`, ASSET_V `20260906f`): https://website-projects-gzdxc9cyi-coldgin87s-projects.vercel.app
+
+### Scam / hack / backdoor hardening (ASSET_V `20260906e`)
+
+New PR from Main. Hold merge — David must say merge.
+
+Inventoried HTTP routes and locked unauthorized score tampering / access:
+
+- **Demo / seed / debug** — `POST /api/rounds/:id/demo/foursome` and `.../demo/team1-vs-par` stay 404 unless `ALLOW_DEMO=1`. `VERCEL_ENV=production` forces them off even if that env is set. No demo buttons. Course seed only; no player/score preload.
+- **Mutating score / guest / settings / press** — all require a signed-in JWT. Anonymous `POST /scores`, guests, presses, and `PUT` settings are 401. No anonymous score writes.
+- **Join codes** — new codes are 8 chars from a 32-symbol no-lookalike alphabet (~1.1e12). Invalid / too-short codes are 404 (same message). Existing 6-char field-test codes still work. Best-effort rate limit on join + join-info (30 / min / IP).
+- **Own-team write lock** — unchanged. Cross-team `POST /scores` is 403 and does not persist. Extra HTTP coverage in `test:scorecard`.
+- **Sunday rules / show-other-teams / formats** — `PUT /api/rounds/:id` is organizer/host only (403 for joiners). Covers `teamRace`, `showOtherScores`, format balls, side games.
+- **Secrets / leaks** — no JWT / Turso / DB creds in client JS. Weak hardcoded JWT fallback is rejected in Vercel production. 500s return `Internal server error` only. `/api/players` requires auth; non-admins do not see other emails. Magic/reset links are not returned on Vercel production.
+- **Abuse** — rate limit join attempts and score POST (180 / min / user, in-memory / best-effort on serverless).
+
+Still open (not a Sunday-game backdoor, leftover tournament surface): unauthenticated GET on legacy `/api/matches`, `/api/leaderboard`, and `/api/tournament/*` (read-only match-play lists, no emails, no score_rounds writes). Public leaderboard via unguessable token stays read-only by design. First registered account on an empty DB is still course admin (bootstrap). In-memory rate limits do not share across Vercel isolates.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host (READY, SHA `f5c1567`, ASSET_V `20260906e`): https://website-projects-ozl2o80be-coldgin87s-projects.vercel.app
+
+Live probe: anonymous score POST 401; demo foursome 404; new join code 8 chars; invalid join 404; magic-link body has no URL; `/api/players` 401 without auth.
+
 ### Field test merge + clean slate (ASSET_V `20260906d`)
 
 David authorized merge of PR #3 for today’s field test. First boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260906`), then leaves new Sunday rounds alone. Goldendale course seed and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons.

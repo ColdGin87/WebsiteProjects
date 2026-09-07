@@ -80,7 +80,22 @@ describe('field-test score wipe', () => {
     const stillCourse = await db.get("SELECT id FROM courses WHERE name = 'Goldendale Golf Club'");
     assert.ok(stillCourse, 'course seed survives the wipe');
 
+    await db.run(
+      'UPDATE course_holes SET stroke_index = 9, yards = 285 WHERE course_id = ? AND hole_number = 3',
+      [stillCourse.id]
+    );
+    const { seedGoldendale } = require('../lib/seed/goldendale');
+    await seedGoldendale(db);
+    const hole3 = await db.get(
+      'SELECT stroke_index, yards FROM course_holes WHERE course_id = ? AND hole_number = 3',
+      [stillCourse.id]
+    );
+    assert.equal(Number(hole3.stroke_index), 13, 'boot seed refreshes live Goldendale SI from the paper card');
+    assert.equal(Number(hole3.yards), 287, 'boot seed refreshes live White/Blue yards');
+
     await insertPracticeRound(db, '2');
+    const token = await db.get("SELECT value FROM app_meta WHERE key = 'field_test_wipe'");
+    assert.equal(String(token && token.value), '20260907');
     const second = await wipePracticeScoreDataOnce();
     assert.equal(second.skipped, true);
     const kept = await db.get('SELECT COUNT(*) AS cnt FROM score_rounds');

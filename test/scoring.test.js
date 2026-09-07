@@ -14,6 +14,9 @@ const {
   formatRuleText,
   formatLabel,
   shortFormatLabel,
+  isStandardScorecard,
+  normalizeRoundFormat,
+  quietSideGames,
   teamDisplayName,
   nextTeamLabel,
   sanitizeNickname,
@@ -107,6 +110,26 @@ describe('show other teams scores', () => {
     assert.equal(state.teams[1].total, 2);
     assert.equal(state.holeResults[0].teams[0].total, null);
     assert.equal(state.winner.total, null);
+  });
+
+  it('redacts other-team scores even when the host show-other setting is on', () => {
+    const state = {
+      round: { show_other_scores: 1 },
+      members: [
+        { id: 1, team_id: 10, holes: [{ holeNumber: 1, gross: 4, net: 3 }], totalGross: 4 },
+        { id: 2, team_id: 20, holes: [{ holeNumber: 1, gross: 5, net: 4 }], totalGross: 5 },
+      ],
+      teams: [
+        { id: 10, total: 1, holes: [{ holeNumber: 1, total: 1 }] },
+        { id: 20, total: 2, holes: [{ holeNumber: 1, total: 2 }] },
+      ],
+      holeResults: [{ holeNumber: 1, teams: [{ teamId: 10, total: 1 }, { teamId: 20, total: 2 }] }],
+      winner: { id: 10, total: 1 },
+    };
+    redactOtherTeamScores(state, { id: 2, team_id: 20, role: 'follower' });
+    assert.equal(state.members[0].holes[0].gross, null);
+    assert.equal(state.members[1].holes[0].gross, 5);
+    assert.equal(state.teams[0].total, null);
   });
 });
 
@@ -208,13 +231,13 @@ describe('strokesOnHole 9-hole', () => {
   const front = [
     { holeNumber: 1, strokeIndex: 1 },
     { holeNumber: 2, strokeIndex: 5 },
-    { holeNumber: 3, strokeIndex: 9 },
+    { holeNumber: 3, strokeIndex: 13 },
     { holeNumber: 4, strokeIndex: 17 },
     { holeNumber: 5, strokeIndex: 3 },
     { holeNumber: 6, strokeIndex: 7 },
     { holeNumber: 7, strokeIndex: 15 },
-    { holeNumber: 8, strokeIndex: 13 },
-    { holeNumber: 9, strokeIndex: 11 },
+    { holeNumber: 8, strokeIndex: 11 },
+    { holeNumber: 9, strokeIndex: 9 },
   ];
 
   it('uses round(H/2) against that nine\'s SI ranks', () => {
@@ -230,8 +253,8 @@ describe('strokesOnHole 9-hole', () => {
       );
     }
 
-    // H 9 → 9-hole 5 → five hardest: 1,5,2,6,3
-    const hardFive = new Set([1, 5, 2, 6, 3]);
+    // H 9 → 9-hole 5 → five hardest: 1,5,2,6,9 (card SI 1,3,5,7,9)
+    const hardFive = new Set([1, 5, 2, 6, 9]);
     for (const hole of front) {
       const strokes = strokesOnHole(9, hole.strokeIndex, {
         holes: 'front9',
@@ -268,6 +291,7 @@ describe('Goldendale required team hole', () => {
     });
 
     assert.deepEqual(players.map((p) => p.strokes), [1, 1, 1, 2]);
+    // Locked A/B/C/D dots use Index only. Course handicap would be 0/7/14/20 on White/Blue.
     assert.deepEqual(players.map((p) => p.net), [4, 5, 6, 6]);
 
     const team = teamHoleScore(players, { grossBalls: 1, netBalls: 2, dualCount: false, par: 5 });
@@ -280,6 +304,46 @@ describe('Goldendale required team hole', () => {
     assert.equal(team.balls.filter((b) => b.type === 'net').length, 2);
     assert.equal(holeTeamVsPar(team.total), 1, 'team hole total is already vs par');
     assert.equal(formatVsPar(team.total), '+1');
+  });
+});
+
+describe('A/B/C/D fixture stroke dots vs Goldendale SI', () => {
+  const fixture = [
+    { name: 'A', handicap: 4, hole1Dots: 1 },
+    { name: 'B', handicap: 11, hole1Dots: 1 },
+    { name: 'C', handicap: 18, hole1Dots: 1 },
+    { name: 'D', handicap: 24, hole1Dots: 2 },
+  ];
+
+  function expectedStrokes(index, si) {
+    return strokesOnHole(index, si);
+  }
+
+  it('dots follow rounded Index on each Goldendale SI, not course handicap', () => {
+    const tee = { slope: 112, rating: 67.9, par: 72 };
+    fixture.forEach((player) => {
+      const ch = courseHandicap(player.handicap, tee);
+      assert.notEqual(ch, player.handicap, player.name + ' course handicap is not the Index');
+      let differs = false;
+      GOLDENDALE_SI.forEach((si, idx) => {
+        const fromIndex = expectedStrokes(player.handicap, si);
+        const fromCourse = expectedStrokes(ch, si);
+        const marks = strokeDotMarks(fromIndex);
+        if (fromIndex < 0) {
+          assert.equal(marks.plus, true, player.name + ' plus on hole ' + (idx + 1));
+        } else {
+          assert.equal(marks.plus, false);
+          assert.equal(marks.count, Math.min(3, fromIndex), player.name + ' dots hole ' + (idx + 1));
+        }
+        if (fromIndex !== fromCourse) differs = true;
+      });
+      assert.equal(differs, true, player.name + ' must differ from course-handicap dots on at least one SI');
+      assert.equal(expectedStrokes(player.handicap, 1), player.hole1Dots, player.name + ' hole 1 SI 1 dots');
+    });
+    assert.deepEqual(fixture.map((p) => expectedStrokes(p.handicap, 1)), [1, 1, 1, 2]);
+    assert.equal(courseHandicap(4, tee) + 0, 0);
+    assert.equal(strokesOnHole(4, 1), 1);
+    assert.equal(strokesOnHole(0, 1), 0);
   });
 });
 
@@ -410,6 +474,22 @@ describe('team game formats', () => {
     assert.match(formatRuleText(1, 2), /lowest \(best\) combo/);
     assert.match(formatRuleText(1, 2), /running vs-par total/);
   });
+
+  it('treats Standard scorecard as its own format with side games off', () => {
+    assert.equal(isStandardScorecard('standard'), true);
+    assert.equal(isStandardScorecard({ format: 'standard_scorecard' }), true);
+    assert.equal(isStandardScorecard('team_net'), false);
+    assert.equal(normalizeRoundFormat('standard'), 'standard');
+    assert.equal(normalizeRoundFormat('team_net'), 'team_net');
+    assert.equal(normalizeRoundFormat('match_play'), 'match_play');
+    const quiet = quietSideGames();
+    assert.equal(quiet.vegas.on, false);
+    assert.equal(quiet.skins.on, false);
+    assert.equal(quiet.nassau.on, false);
+    assert.equal(quiet.wolf.on, false);
+    assert.equal(quiet.nines.on, false);
+    assert.equal(quiet.birdieSlots.on, false);
+  });
 });
 
 describe('validateGross', () => {
@@ -477,7 +557,7 @@ describe('demo foursome Kurt / Chase / Brian', () => {
       let strokeSum = 0;
       let netSum = 0;
       player.holes.forEach((gross, idx) => {
-        const si = [1, 5, 9, 17, 3, 7, 15, 13, 11, 2, 6, 10, 18, 4, 8, 16, 14, 12][idx];
+        const si = GOLDENDALE_SI[idx];
         const strokes = strokesOnHole(player.playingHandicap, si);
         strokeSum += strokes;
         netSum += netScore(gross, strokes);
@@ -590,15 +670,18 @@ describe('appBaseUrl', () => {
   });
 });
 
-describe('Goldendale seed yardages', () => {
-  it('keeps official White/Blue total', () => {
-    assert.equal(WHITE_TOTAL, 5683);
-    assert.equal(WHITE_HOLES.length, 18);
-  });
+describe('Goldendale paper scorecard seed', () => {
+  const CARD_SI = [1, 5, 13, 17, 3, 7, 15, 11, 9, 2, 6, 14, 18, 4, 8, 16, 12, 10];
+  const CARD_WHITE = [496, 365, 287, 104, 338, 465, 307, 284, 163, 500, 360, 280, 87, 352, 480, 306, 295, 176];
+  const CARD_RED = [378, 365, 287, 94, 331, 393, 307, 225, 153, 378, 360, 280, 87, 331, 393, 306, 225, 159];
 
-  it('estimates Red/Gold hole yards to the published 5066 total', () => {
-    const yards = estimateRedYards();
-    assert.equal(yards.length, 18);
-    assert.equal(yards.reduce((s, y) => s + y, 0), RED_TOTAL);
+  it('matches the paper card SI, White/Blue yards, and Red/Gold yards', () => {
+    assert.deepEqual(WHITE_HOLES.map((h) => h.si), CARD_SI);
+    assert.deepEqual(WHITE_HOLES.map((h) => h.yards), CARD_WHITE);
+    assert.deepEqual(estimateRedYards(), CARD_RED);
+    assert.equal(WHITE_TOTAL, 5645);
+    assert.equal(RED_TOTAL, 5052);
+    assert.equal(WHITE_HOLES.reduce((s, h) => s + h.par, 0), 72);
+    assert.deepEqual([...CARD_SI].sort((a, b) => a - b), Array.from({ length: 18 }, (_, i) => i + 1));
   });
 });

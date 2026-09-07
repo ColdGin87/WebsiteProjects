@@ -46,11 +46,12 @@ const dashboard = {
         </div>
         <div class="card">
           <h3 class="card-title">Have a join code?</h3>
-          <p class="card-subtitle">Sign in first, then enter the 6-character code from your organizer.</p>
+          <p class="card-subtitle">Enter the join code, then sign in or create an account. After you pick a team you can Scorekeep or Follow along.</p>
           <div class="inline-form">
-            <input id="guest-code" class="form-input join-code-input" maxlength="6" placeholder="ABC123" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();dashboard.stashGuestCodeAndSignIn();}">
-            <button class="btn btn-primary" onclick="dashboard.stashGuestCodeAndSignIn()">Sign in to join</button>
+            <input id="guest-code" class="form-input join-code-input" maxlength="12" placeholder="ABC234XY" autocomplete="off" style="text-transform:uppercase" onkeydown="if(event.key==='Enter'){event.preventDefault();dashboard.stashGuestCodeAndSignIn();}">
+            <button class="btn btn-primary" onclick="dashboard.stashGuestCodeAndSignIn()">Join with code</button>
           </div>
+          <div class="form-error" id="guest-code-error"></div>
         </div>`;
       return;
     }
@@ -76,7 +77,7 @@ const dashboard = {
           <div class="stat-card"><div class="stat-value">${done.length}</div><div class="stat-label">History</div></div>
         </div>
         <h2 class="section-title">Open rounds</h2>
-        ${live.length ? dashboard.roundGrid(live) : '<div class="empty-state"><h3>No open rounds</h3><p>Create a team round or join with a 6-character code.</p></div>'}
+        ${live.length ? dashboard.roundGrid(live) : '<div class="empty-state"><h3>No open rounds</h3><p>Create a team round or join with a code.</p></div>'}
         <h2 class="section-title mt-lg">History</h2>
         ${done.length ? dashboard.roundGrid(done) : '<div class="empty-state"><p>Completed rounds will land here.</p></div>'}
       `;
@@ -118,6 +119,7 @@ const dashboard = {
   },
 
   gameChip(round) {
+    if (round && (round.format === 'standard' || round.format === 'standard_scorecard')) return 'Standard scorecard';
     const api = this.formatsApi();
     if (typeof api.formatLabel === 'function') {
       return api.formatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
@@ -146,11 +148,11 @@ const dashboard = {
       submitLabel: 'Next',
       fields: [{
         name: 'code',
-        label: '6-character join code',
-        maxlength: 6,
+        label: 'Join code',
+        maxlength: 12,
         required: true,
         uppercase: true,
-        placeholder: 'ABC123',
+        placeholder: 'ABC234XY',
         alphabet: JOIN_ALPHABET,
       }],
     });
@@ -160,20 +162,30 @@ const dashboard = {
 
   stashGuestCodeAndSignIn() {
     const el = document.getElementById('guest-code');
-    const code = String((el && el.value) || '').trim().toUpperCase();
-    if (code.length >= 4) {
-      try { sessionStorage.setItem('pending_join', code); } catch { /* ignore */ }
+    const errEl = document.getElementById('guest-code-error');
+    const code = String((el && el.value) || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length < 6 || code.length > 12) {
+      if (errEl) errEl.textContent = 'Enter the 6–12 character join code from your organizer.';
+      return;
+    }
+    try { sessionStorage.setItem('pending_join', code); } catch { /* ignore */ }
+    if (window.auth && auth.currentUser) {
+      app.navigate('#join/' + code);
+      return;
     }
     if (window.auth) auth.showModal('login');
   },
 
   defaultJoinTeam(info) {
-    const next = (info && info.nextTeamName) || 'Team 2';
-    return next === 'Team 1' ? 'Team 2' : next;
+    const teams = this.joinableTeams(info);
+    const host = teams.find((t) => String(t.name || '').trim() === 'Team 1');
+    if (host) return host.name;
+    if (teams[0] && teams[0].name) return teams[0].name;
+    return (info && info.nextTeamName) || 'Team 1';
   },
 
   joinableTeams(info) {
-    return ((info && info.teams) || []).filter((t) => String(t.name || '').trim() !== 'Team 1');
+    return ((info && info.teams) || []).slice();
   },
 
   renderJoinPicker(code, info) {
@@ -191,20 +203,26 @@ const dashboard = {
     container.innerHTML = `
       <h2 class="section-title">Join ${ _esc((info && info.name) || 'Sunday game') }</h2>
       <form class="card join-picker" id="join-picker-form">
-        <p class="card-subtitle">Code <strong>${_esc(code)}</strong>. Host is ${_esc(hostLabel)}. Pick Team 2+ or Add team — you are not auto Team 1.</p>
+        <p class="card-subtitle">Code <strong>${_esc(code)}</strong>. Host is ${_esc(hostLabel)}. Pick a team (including Team 1) — you are not auto Team 1 until you choose it. Then pick Scorekeeper or Follow along.</p>
         <div class="add-team-picks" role="group" aria-label="Team">
           ${chips}
           <button type="button" class="add-team-more${selected === nextName && !teams.some((t) => t.name === nextName) ? ' is-on' : ''}" id="join-add-team" data-join-team="${_esc(nextName)}">Add team · ${_esc(nextName)}</button>
           <input type="hidden" id="join-team-name" name="teamName" value="${_esc(selected)}">
           <input type="hidden" id="join-add-flag" name="addTeam" value="${teams.some((t) => t.name === selected) ? '0' : '1'}">
         </div>
+        <div class="join-role" role="group" aria-label="How you are joining">
+          <button type="button" class="join-role-btn" data-join-role="player">Scorekeeper</button>
+          <button type="button" class="join-role-btn is-on" data-join-role="follower">Follow along</button>
+          <input type="hidden" id="join-role" name="role" value="follower">
+        </div>
+        <p class="card-subtitle join-role-help">Scorekeeper writes this team’s scores. Follow along is read-only for that team.</p>
+        <div class="form-group" id="join-card-name-group">
+          <label>Your name on the card (optional, Scorekeeper)</label>
+          <input class="form-input" id="join-display-name" name="displayName" maxlength="40" placeholder="${_esc((auth.currentUser && auth.currentUser.name) || 'Nickname')}">
+        </div>
         <div class="form-group">
           <label>Team nickname (optional)</label>
           <input class="form-input" id="join-team-nick" name="teamNickname" maxlength="24" placeholder="e.g. Wolves">
-        </div>
-        <div class="form-group">
-          <label>Your name on the card (optional)</label>
-          <input class="form-input" id="join-display-name" name="displayName" maxlength="40" placeholder="${_esc((auth.currentUser && auth.currentUser.name) || 'Nickname')}">
         </div>
         <div class="card-footer">
           <button class="btn btn-primary" type="submit">Join this team</button>
@@ -214,6 +232,12 @@ const dashboard = {
     const form = document.getElementById('join-picker-form');
     const hidden = document.getElementById('join-team-name');
     const addFlag = document.getElementById('join-add-flag');
+    const roleEl = document.getElementById('join-role');
+    const nameGroup = document.getElementById('join-card-name-group');
+    const syncRole = () => {
+      const follow = roleEl.value === 'follower';
+      if (nameGroup) nameGroup.hidden = follow;
+    };
     form.querySelectorAll('[data-join-team]').forEach((btn) => {
       btn.addEventListener('click', () => {
         form.querySelectorAll('[data-join-team]').forEach((b) => b.classList.remove('is-on'));
@@ -222,6 +246,15 @@ const dashboard = {
         addFlag.value = btn.id === 'join-add-team' ? '1' : '0';
       });
     });
+    form.querySelectorAll('[data-join-role]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        form.querySelectorAll('[data-join-role]').forEach((b) => b.classList.remove('is-on'));
+        btn.classList.add('is-on');
+        roleEl.value = btn.getAttribute('data-join-role');
+        syncRole();
+      });
+    });
+    syncRole();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const errEl = document.getElementById('join-picker-error');
@@ -230,6 +263,7 @@ const dashboard = {
           code,
           teamName: hidden.value,
           addTeam: addFlag.value === '1',
+          role: roleEl.value,
           teamNickname: (document.getElementById('join-team-nick') || {}).value || '',
           displayName: (document.getElementById('join-display-name') || {}).value || '',
         });
@@ -279,6 +313,7 @@ const dashboard = {
             <label>Format</label>
             <select class="form-input" name="format" id="create-format">
               <option value="team_net" selected>Team vs par</option>
+              <option value="standard">Standard scorecard</option>
               <option value="match_play">Match play</option>
             </select>
           </div>
@@ -331,13 +366,18 @@ const dashboard = {
       const dualRow = document.getElementById('create-dual-row');
       const raceRow = document.getElementById('create-team-race-row');
       const showOtherRow = document.getElementById('create-show-other-row');
+      const sideWrap = document.getElementById('create-side-games');
       const syncGameUi = () => {
         const teamMode = formatSel.value === 'team_net';
+        const standard = formatSel.value === 'standard';
         if (gameWrap) gameWrap.hidden = !teamMode;
         if (dualRow) dualRow.hidden = !teamMode;
         if (raceRow) raceRow.hidden = !teamMode;
-        if (showOtherRow) showOtherRow.hidden = !teamMode;
-        if (gameRule && gameSel) gameRule.textContent = dashboard.gameRule(gameSel.value);
+        if (showOtherRow) showOtherRow.hidden = formatSel.value === 'match_play';
+        if (sideWrap) sideWrap.hidden = !teamMode;
+        if (gameRule && gameSel) gameRule.textContent = standard
+          ? 'Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race or side games.'
+          : dashboard.gameRule(gameSel.value);
       };
       if (gameSel) gameSel.addEventListener('change', syncGameUi);
       if (formatSel) formatSel.addEventListener('change', syncGameUi);
@@ -357,22 +397,26 @@ const dashboard = {
         const fd = new FormData(e.target);
         const game = dashboard.gameFromKey(fd.get('gameKey'));
         try {
+          const format = fd.get('format');
+          const standard = format === 'standard';
           const state = await svcApi('post', '/api/rounds', {
             name: fd.get('name'),
             courseId: Number(fd.get('courseId')),
             teeId: fd.get('teeId') ? Number(fd.get('teeId')) : null,
-            format: fd.get('format'),
+            format,
             holes: fd.get('holes'),
             allowance: 100,
             grossBalls: game.grossBalls,
             netBalls: game.netBalls,
-            dualCount: fd.get('dualCount') === 'on',
-            teamRace: fd.get('teamRace') === 'on',
+            dualCount: standard ? false : fd.get('dualCount') === 'on',
+            teamRace: standard ? false : fd.get('teamRace') === 'on',
             showOtherScores: fd.get('showOtherScores') === 'on',
             team1Nickname: fd.get('team1Nickname') || '',
-            sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
-              ? scorecard.readSideGamesForm(fd)
-              : undefined,
+            sideGames: standard
+              ? ((window.sideGames && window.sideGames.quietSideGames && window.sideGames.quietSideGames()) || { birdieSlots: { on: false } })
+              : (typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
+                ? scorecard.readSideGamesForm(fd)
+                : undefined),
           });
           app.navigate('#round/' + state.round.id);
         } catch (err) {
@@ -590,8 +634,8 @@ function _formPrompt({ title, submitLabel, fields }) {
       const codeField = (fields || []).find((f) => f.name === 'code' && f.alphabet);
       if (codeField) {
         const code = values.code || '';
-        if (code.length !== 6 || [...code].some((ch) => !JOIN_ALPHABET.includes(ch))) {
-          errEl.textContent = 'Enter the 6-character code (no 0, O, 1, or I).';
+        if (code.length < 6 || code.length > 12 || [...code].some((ch) => !JOIN_ALPHABET.includes(ch))) {
+          errEl.textContent = 'Enter the join code (no 0, O, 1, or I).';
           return;
         }
       }
