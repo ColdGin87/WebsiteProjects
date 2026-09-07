@@ -974,22 +974,44 @@ async function runFollowerScenario(base) {
   const keeperHostHole = keeperSeesHost && (keeperSeesHost.holes || []).find((h) => h.holeNumber === 1);
   if (keeperHostHole && keeperHostHole.gross != null) fail('scorekeeper still redacted while host show-other is OFF');
 
-  const shown = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+  const preferSee = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
     token: follower.token,
     body: { showOtherScores: true },
   });
-  const shownKeeper = (shown.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
-  const shownHole = shownKeeper && (shownKeeper.holes || []).find((h) => h.holeNumber === 1);
-  assertEqual(shownHole && shownHole.gross, 6, 'follower personal See other teams reveals opposing scores');
-  const followAfter = (shown.members || []).find((m) => Number(m.id) === Number(followMe.id));
+  const preferKeeper = (preferSee.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  const preferHole = preferKeeper && (preferKeeper.holes || []).find((h) => h.holeNumber === 1);
+  if (preferHole && preferHole.gross != null) fail('host show-other OFF: server redaction still wins for followers');
+  const followAfter = (preferSee.members || []).find((m) => Number(m.id) === Number(followMe.id));
   assertEqual(!!(followAfter && (followAfter.followShowOther || followAfter.follow_show_other === 1)), true, 'personal board pref persisted on membership');
-  assertEqual(!!(shown.round && shown.round.showOtherScores), false, 'personal See does not change host show-other');
+  assertEqual(!!(preferSee.round && preferSee.round.showOtherScores), false, 'personal See does not change host show-other');
 
   const keeperStill = await api(base, 'GET', `/api/rounds/${roundId}`, { token: keeper.token });
   assertEqual(!!(keeperStill.round && keeperStill.round.showOtherScores), false, 'scorekeeper round setting stayed OFF');
   const keeperStillHost = (keeperStill.members || []).find((m) => Number(m.id) === Number(hostMember.id));
   const keeperStillHole = keeperStillHost && (keeperStillHost.holes || []).find((h) => h.holeNumber === 1);
   if (keeperStillHole && keeperStillHole.gross != null) fail('follower personal See must not leak opposing scores to scorekeepers');
+
+  await api(base, 'PUT', `/api/rounds/${roundId}`, {
+    token: host.token,
+    body: { showOtherScores: true },
+  });
+  const allowed = await api(base, 'GET', `/api/rounds/${roundId}`, { token: follower.token });
+  const allowedKeeper = (allowed.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  const allowedHole = allowedKeeper && (allowedKeeper.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(allowedHole && allowedHole.gross, 6, 'follower See works when the host allows other teams');
+
+  const hid = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+    token: follower.token,
+    body: { showOtherScores: false },
+  });
+  const hidKeeper = (hid.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  const hidHole = hidKeeper && (hidKeeper.holes || []).find((h) => h.holeNumber === 1);
+  if (hidHole && hidHole.gross != null) fail('follower can hide opposing scores even when host show-other is ON');
+
+  const keeperWhenHostOn = await api(base, 'GET', `/api/rounds/${roundId}`, { token: keeper.token });
+  const keeperSeesHostOn = (keeperWhenHostOn.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const keeperHostOnHole = keeperSeesHostOn && (keeperSeesHostOn.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(keeperHostOnHole && keeperHostOnHole.gross, 5, 'scorekeeper still follows the host show-other setting');
 
   const steal = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
     token: keeper.token,

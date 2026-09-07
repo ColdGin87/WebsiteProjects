@@ -2,17 +2,19 @@
 
 ## Developer
 
-### Follow along / Scorekeeper + personal board (ASSET_V `20260907b`)
+### Follow along / Scorekeeper + personal board (ASSET_V `20260907c`)
 
 Same PR #4. Hold merge.
 
 Field root cause (verified in join/auth code, not guessed): joiners could not pick Team 1 (host team), join always created a scoring `player` row, and `app.init()` routed before `checkSession()` finished so a stored token still hit the Sign-in wall. Welcome also stashed codes shorter than the API accepts.
 
-Now one round + one join code. After team pick (including Team 1), choose **Scorekeeper** (own-team writes) or **Follow along** (read-only, no player row). Role persists on `score_members.role`. Server 403s follower score POSTs even on their team. Followers have a personal See / Hide other teams toggle (`follow_show_other` on the membership) that does not change the host Show-other setting or scorekeeper GET/live. Write lock for scorekeepers unchanged.
+Now one round + one join code. After team pick (including Team 1), choose **Scorekeeper** (own-team writes) or **Follow along** (read-only, no player row). Role persists on `score_members.role`. Server 403s follower score POSTs even on their team.
+
+Followers have a personal See / Hide other teams toggle (`follow_show_other` on the membership). They can hide opposing scores even when the host Show-other setting is ON. They can show opposing scores only when the host allows — if the host has Show-other OFF, server redaction still wins (no leak). The toggle does not change the host setting or scorekeeper GET/live. Write lock for scorekeepers unchanged.
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host (READY, SHA `4e2d1ff`, ASSET_V `20260907b`): https://website-projects-gxrs5f4a5-coldgin87s-projects.vercel.app
+Unique host: pending this ship.
 
 ### Down score advance wrap (ASSET_V `20260907a`)
 

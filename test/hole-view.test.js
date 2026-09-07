@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907b/);
-    assert.match(html, /js\/formats\.js\?v=20260907b/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907b/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907b/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907b/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907b/);
-    assert.match(src, /ASSET_V:\s*'20260907b'/);
+    assert.match(html, /20260907c/);
+    assert.match(html, /js\/formats\.js\?v=20260907c/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907c/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907c/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907c/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907c/);
+    assert.match(src, /ASSET_V:\s*'20260907c'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -420,6 +420,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /setFollowShowOther/);
     assert.match(src, /follow-view/);
     assert.match(src, /See other teams/);
+    assert.match(src, /Host is hiding other teams/);
+    assert.match(src, /isShowOtherScoresOn\(state\) && this\.followShowOtherOn/);
     assert.match(css, /\.follow-along-bar/);
     assert.match(css, /\.follow-board-btn/);
     const dashJoin = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');

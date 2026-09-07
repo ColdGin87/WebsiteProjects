@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907b',
+  ASSET_V: '20260907c',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -391,7 +391,9 @@ const scorecard = {
 
   canSeeOtherTeams(state) {
     if (this.isPrivilegedViewer(state)) return true;
-    if (this.isFollowAlong(state)) return this.followShowOtherOn(state);
+    if (this.isFollowAlong(state)) {
+      return this.isShowOtherScoresOn(state) && this.followShowOtherOn(state);
+    }
     return this.isShowOtherScoresOn(state);
   },
 
@@ -2020,13 +2022,15 @@ const scorecard = {
     const me = this.myMember(state);
     const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me && (me.team_id ?? me.teamId)));
     const label = (team && (team.displayName || team.name)) || this.myTeamName(state);
-    const see = this.followShowOtherOn(state);
+    const prefOn = this.followShowOtherOn(state);
+    const hostAllows = this.isShowOtherScoresOn(state);
     return `<div class="follow-along-bar" id="follow-along-bar">
       <div class="follow-along-label">Following ${_esc(label)} · read-only</div>
       <div class="follow-board" role="group" aria-label="Other teams on your board">
-        <button type="button" class="follow-board-btn${see ? ' is-on' : ''}" data-follow-board="1" onclick="scorecard.setFollowShowOther(true)">See other teams</button>
-        <button type="button" class="follow-board-btn${!see ? ' is-on' : ''}" data-follow-board="0" onclick="scorecard.setFollowShowOther(false)">Hide other teams</button>
+        <button type="button" class="follow-board-btn${prefOn ? ' is-on' : ''}" data-follow-board="1" onclick="scorecard.setFollowShowOther(true)">See other teams</button>
+        <button type="button" class="follow-board-btn${!prefOn ? ' is-on' : ''}" data-follow-board="0" onclick="scorecard.setFollowShowOther(false)">Hide other teams</button>
       </div>
+      ${hostAllows ? '' : '<p class="follow-board-note">Host is hiding other teams. See applies when they turn that on.</p>'}
     </div>`;
   },
 
@@ -4239,7 +4243,7 @@ const scorecard = {
         <h3>Join code teams</h3>
         <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide setting for scorekeepers. Followers have their own See / Hide other teams toggle — it does not change the host setting or unlock writes.</p>
+        <p>Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide gate. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins — no leak. The personal toggle does not change the host setting or unlock writes.</p>
         <h3>Score entry</h3>
         <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Down never jumps to an opposing team.</p>
         <h3>Nines</h3>
