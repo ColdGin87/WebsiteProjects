@@ -14,6 +14,9 @@ const {
   formatRuleText,
   formatLabel,
   shortFormatLabel,
+  isStandardScorecard,
+  normalizeRoundFormat,
+  quietSideGames,
   teamDisplayName,
   nextTeamLabel,
   sanitizeNickname,
@@ -470,6 +473,22 @@ describe('team game formats', () => {
     assert.match(formatRuleText(1, 2), /vs par/);
     assert.match(formatRuleText(1, 2), /lowest \(best\) combo/);
     assert.match(formatRuleText(1, 2), /running vs-par total/);
+  });
+
+  it('treats Standard scorecard as its own format with side games off', () => {
+    assert.equal(isStandardScorecard('standard'), true);
+    assert.equal(isStandardScorecard({ format: 'standard_scorecard' }), true);
+    assert.equal(isStandardScorecard('team_net'), false);
+    assert.equal(normalizeRoundFormat('standard'), 'standard');
+    assert.equal(normalizeRoundFormat('team_net'), 'team_net');
+    assert.equal(normalizeRoundFormat('match_play'), 'match_play');
+    const quiet = quietSideGames();
+    assert.equal(quiet.vegas.on, false);
+    assert.equal(quiet.skins.on, false);
+    assert.equal(quiet.nassau.on, false);
+    assert.equal(quiet.wolf.on, false);
+    assert.equal(quiet.nines.on, false);
+    assert.equal(quiet.birdieSlots.on, false);
   });
 });
 

@@ -51,6 +51,19 @@ function defaultSideGames() {
   return out;
 }
 
+function quietSideGames() {
+  const out = parseSideGames({
+    skins: { on: false },
+    vegas: { on: false },
+    nassau: { on: false },
+    wolf: { on: false },
+    nines: { on: false },
+    birdieSlots: { on: false },
+    kps: { on: false, holes: [], winners: {} },
+  });
+  return out;
+}
+
 function parseSideGames(raw) {
   let obj = {};
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) obj = raw;
@@ -100,6 +113,7 @@ function formatMoney(value) {
 const sideGamesApi = {
   SIDE_GAMES,
   defaultSideGames,
+  quietSideGames,
   parseSideGames,
   sideGameRule,
   formatMoney,

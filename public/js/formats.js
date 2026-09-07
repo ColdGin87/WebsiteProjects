@@ -48,6 +48,19 @@ function shortFormatLabel(grossBalls, netBalls) {
   return key.replace(/G(\d)/, 'G+$1');
 }
 
+function isStandardScorecard(roundOrFormat) {
+  const format = typeof roundOrFormat === 'string'
+    ? roundOrFormat
+    : (roundOrFormat && (roundOrFormat.format || roundOrFormat.roundFormat));
+  return format === 'standard' || format === 'standard_scorecard';
+}
+
+function normalizeRoundFormat(format) {
+  if (format === 'match_play') return 'match_play';
+  if (isStandardScorecard(format)) return 'standard';
+  return 'team_net';
+}
+
 const teamFormatsApi = {
   TEAM_GAMES,
   gameFromBalls,
@@ -55,6 +68,8 @@ const teamFormatsApi = {
   formatRuleText,
   formatLabel,
   shortFormatLabel,
+  isStandardScorecard,
+  normalizeRoundFormat,
 };
 
 if (typeof module === 'object' && module.exports) {

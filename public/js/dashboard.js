@@ -119,6 +119,7 @@ const dashboard = {
   },
 
   gameChip(round) {
+    if (round && (round.format === 'standard' || round.format === 'standard_scorecard')) return 'Standard scorecard';
     const api = this.formatsApi();
     if (typeof api.formatLabel === 'function') {
       return api.formatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
@@ -312,6 +313,7 @@ const dashboard = {
             <label>Format</label>
             <select class="form-input" name="format" id="create-format">
               <option value="team_net" selected>Team vs par</option>
+              <option value="standard">Standard scorecard</option>
               <option value="match_play">Match play</option>
             </select>
           </div>
@@ -364,13 +366,18 @@ const dashboard = {
       const dualRow = document.getElementById('create-dual-row');
       const raceRow = document.getElementById('create-team-race-row');
       const showOtherRow = document.getElementById('create-show-other-row');
+      const sideWrap = document.getElementById('create-side-games');
       const syncGameUi = () => {
         const teamMode = formatSel.value === 'team_net';
+        const standard = formatSel.value === 'standard';
         if (gameWrap) gameWrap.hidden = !teamMode;
         if (dualRow) dualRow.hidden = !teamMode;
         if (raceRow) raceRow.hidden = !teamMode;
-        if (showOtherRow) showOtherRow.hidden = !teamMode;
-        if (gameRule && gameSel) gameRule.textContent = dashboard.gameRule(gameSel.value);
+        if (showOtherRow) showOtherRow.hidden = formatSel.value === 'match_play';
+        if (sideWrap) sideWrap.hidden = !teamMode;
+        if (gameRule && gameSel) gameRule.textContent = standard
+          ? 'Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race or side games.'
+          : dashboard.gameRule(gameSel.value);
       };
       if (gameSel) gameSel.addEventListener('change', syncGameUi);
       if (formatSel) formatSel.addEventListener('change', syncGameUi);
@@ -390,22 +397,26 @@ const dashboard = {
         const fd = new FormData(e.target);
         const game = dashboard.gameFromKey(fd.get('gameKey'));
         try {
+          const format = fd.get('format');
+          const standard = format === 'standard';
           const state = await svcApi('post', '/api/rounds', {
             name: fd.get('name'),
             courseId: Number(fd.get('courseId')),
             teeId: fd.get('teeId') ? Number(fd.get('teeId')) : null,
-            format: fd.get('format'),
+            format,
             holes: fd.get('holes'),
             allowance: 100,
             grossBalls: game.grossBalls,
             netBalls: game.netBalls,
-            dualCount: fd.get('dualCount') === 'on',
-            teamRace: fd.get('teamRace') === 'on',
+            dualCount: standard ? false : fd.get('dualCount') === 'on',
+            teamRace: standard ? false : fd.get('teamRace') === 'on',
             showOtherScores: fd.get('showOtherScores') === 'on',
             team1Nickname: fd.get('team1Nickname') || '',
-            sideGames: typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
-              ? scorecard.readSideGamesForm(fd)
-              : undefined,
+            sideGames: standard
+              ? ((window.sideGames && window.sideGames.quietSideGames && window.sideGames.quietSideGames()) || { birdieSlots: { on: false } })
+              : (typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
+                ? scorecard.readSideGamesForm(fd)
+                : undefined),
           });
           app.navigate('#round/' + state.round.id);
         } catch (err) {

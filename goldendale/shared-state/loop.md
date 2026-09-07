@@ -2,19 +2,17 @@
 
 ## Developer
 
-### Team-fill spin + pre-19th + Got beer? (ASSET_V `20260907f`)
+### Team-fill any short team + Standard scorecard (ASSET_V `20260907g`)
 
-Same PR #4. Hold merge.
+Same PR #4. Hold merge. Got beer joke control removed.
 
-Host-only **Fill a short team (spin)** on the live Team roster card and Settings → Players. Exclude names, fair random spin, Accept adds/moves the winner onto the short team (default = fewest players, 4-man side). Cancel / re-spin without Accept leaves the roster unchanged. Joiners 403.
+Host-only **Fill a short team (spin)** on the live Team roster card and Settings → Players. Any incomplete team (1–3 scoring players) can be the target — not only one hard-coded short team. Exclude names, fair random spin, Accept adds/moves the winner. After Accept on the 19th path, if another team is still short the spinner stays open; **Skip → 19th** is always available. Joiners 403.
 
-When 18 is in and a team is still short, the 19th banner offers the spin first plus **Skip → 19th**. Accept still adds, then continues to the 19th.
-
-**Got beer?** is a joke control on the 19th / 18-in banner. Off by default (`GOT_BEER_DEFAULT = false`). Enable with Settings “Joke: Got beer?”, `?gotBeer=1`, or localStorage `goldendale_got_beer=1`. No scoring impact.
+**Standard scorecard** is a New round / Settings game option. Dots + OUT/IN/TOT only. Server forces Sunday race and side games off (Vegas, Skins, Nassau, Wolf, Nines, presses, birdie slots). Team vs par 1G+2N math is unchanged when that format is selected.
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host (READY, SHA `6a349dc`, ASSET_V `20260907f`): https://website-projects-fmrsgxnme-coldgin87s-projects.vercel.app
+Unique host: pending READY unique project URL.
 
 ### Paper scorecard SI + yards (ASSET_V `20260907e`)
 

@@ -1,5 +1,5 @@
 /**
- * Team fill spin — pick one leftover golfer for a short team.
+ * Team fill spin — pick leftover golfers for any short team.
  * Fair random among included names. Accept is a separate step.
  */
 
@@ -37,25 +37,31 @@ function sortedTeams(state) {
   });
 }
 
-function hasShortTeam(state, fullSize) {
+function isTeamShort(state, team, fullSize) {
+  if (!team) return false;
   const size = Number(fullSize) > 0 ? Number(fullSize) : TEAM_FILL_SIZE;
-  const short = defaultShortTeam(state, size);
-  if (!short) return false;
-  return scoringCountOnTeam(state, short.id) < size;
+  const count = scoringCountOnTeam(state, team.id);
+  return count > 0 && count < size;
+}
+
+function shortTeams(state, fullSize) {
+  const size = Number(fullSize) > 0 ? Number(fullSize) : TEAM_FILL_SIZE;
+  return sortedTeams(state)
+    .map((team) => ({ team, count: scoringCountOnTeam(state, team.id) }))
+    .filter((row) => row.count > 0 && row.count < size)
+    .sort((a, b) => a.count - b.count || (a.team.sortOrder ?? a.team.sort_order ?? 0) - (b.team.sortOrder ?? b.team.sort_order ?? 0))
+    .map((row) => row.team);
+}
+
+function hasShortTeam(state, fullSize) {
+  return shortTeams(state, fullSize).length > 0;
 }
 
 function defaultShortTeam(state, fullSize) {
-  const size = Number(fullSize) > 0 ? Number(fullSize) : TEAM_FILL_SIZE;
+  const short = shortTeams(state, fullSize);
+  if (short.length) return short[0];
   const teams = sortedTeams(state);
-  if (!teams.length) return null;
-  const ranked = teams.map((team) => ({
-    team,
-    count: scoringCountOnTeam(state, team.id),
-  }));
-  const short = ranked.filter((row) => row.count < size);
-  const pool = short.length ? short : ranked;
-  pool.sort((a, b) => a.count - b.count || (a.team.sortOrder ?? a.team.sort_order ?? 0) - (b.team.sortOrder ?? b.team.sort_order ?? 0));
-  return pool[0].team;
+  return teams[0] || null;
 }
 
 function fillCandidates(state, targetTeamId) {
@@ -99,30 +105,15 @@ function teamOfMember(state, member) {
   return ((state && state.teams) || []).find((t) => sameTeamIds(t.id, member.team_id ?? member.teamId)) || null;
 }
 
-const GOT_BEER_DEFAULT = false;
-
-function isGotBeerOn(options) {
-  if (GOT_BEER_DEFAULT === true) return true;
-  const round = options && options.round;
-  if (round && (round.gotBeer === true || round.got_beer === 1 || round.got_beer === true)) return true;
-  try {
-    if (typeof localStorage !== 'undefined' && localStorage.getItem('goldendale_got_beer') === '1') return true;
-  } catch { /* ignore */ }
-  const href = options && options.href != null
-    ? String(options.href)
-    : (typeof location !== 'undefined' ? String(location.search || '') + String(location.hash || '') : '');
-  return /(?:[?&#]gotBeer=1)(?:&|$)/.test(href);
-}
-
 const teamFillApi = {
   TEAM_FILL_SIZE,
-  GOT_BEER_DEFAULT,
-  isGotBeerOn,
   hasShortTeam,
+  isTeamShort,
   isFollowAlongMember,
   scoringMembers,
   scoringCountOnTeam,
   sortedTeams,
+  shortTeams,
   defaultShortTeam,
   fillCandidates,
   candidateKey,

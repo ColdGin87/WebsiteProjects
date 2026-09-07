@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907f/);
-    assert.match(html, /js\/formats\.js\?v=20260907f/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907f/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907f/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907f/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907f/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907f/);
-    assert.match(src, /ASSET_V:\s*'20260907f'/);
+    assert.match(html, /20260907g/);
+    assert.match(html, /js\/formats\.js\?v=20260907g/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907g/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907g/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907g/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907g/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907g/);
+    assert.match(src, /ASSET_V:\s*'20260907g'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -327,7 +327,10 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /Skip → 19th/);
     assert.match(src, /openFillSpin/);
     assert.match(src, /shouldOfferFillBeforeNineteenth/);
-    assert.match(src, /got-beer-btn/);
+    assert.match(src, /shortTeams/);
+    assert.match(src, /isStandardScorecard/);
+    assert.match(src, /Standard scorecard/);
+    assert.doesNotMatch(src, /got-beer-btn|Got beer\?/);
     assert.match(src, /canOpenNineteenth/);
     assert.match(src, /openNineteenth/);
     assert.match(src, /nineteenthNeedsConfirm/);
@@ -587,6 +590,7 @@ describe('Wyrm Coil overlay', () => {
     assert.match(dbSrc, /DELETE FROM score_rounds/);
     assert.match(dbSrc, /field_test_wipe/);
     assert.match(dash, /New round/);
+    assert.match(dash, /Standard scorecard/);
     assert.match(dash, /Join with code/);
     assert.match(dash, /Game Rules/);
     assert.match(routes, /demoRoutesEnabled/);

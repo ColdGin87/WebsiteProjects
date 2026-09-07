@@ -1547,6 +1547,97 @@ async function runTeamFillScenario(base) {
   assertEqual(already.status, 400, 'already on target team is 400');
 
   console.log('PASS team-fill spin Accept moves leftover; joiner 403; new name guest');
+
+  const twoShort = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: { name: 'Two short teams', format: 'team_net', holes: '18' },
+  });
+  const twoId = twoShort.round.id;
+  for (const name of ['S1', 'S2']) {
+    await api(base, 'POST', `/api/rounds/${twoId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 10, teamName: 'Team 1' },
+    });
+  }
+  for (const name of ['T1']) {
+    await api(base, 'POST', `/api/rounds/${twoId}/guests`, {
+      token: host.token,
+      body: { name, handicap: 11, teamName: 'Team 2' },
+    });
+  }
+  const leftover = await api(base, 'POST', `/api/rounds/${twoId}/guests`, {
+    token: host.token,
+    body: { name: 'Floater', handicap: 8, teamName: 'Team 1' },
+  });
+  const floater = (leftover.members || []).find((m) => m.display_name === 'Floater');
+  const afterFirst = await api(base, 'POST', `/api/rounds/${twoId}/team-fill`, {
+    token: host.token,
+    body: { teamName: 'Team 2', memberId: floater.id },
+  });
+  const t2after = (afterFirst.teams || []).find((t) => t.name === 'Team 2');
+  const t1after = (afterFirst.teams || []).find((t) => t.name === 'Team 1');
+  const onT2 = (afterFirst.members || []).filter((m) => Number(m.team_id) === Number(t2after.id) && m.role !== 'follower');
+  const onT1 = (afterFirst.members || []).filter((m) => Number(m.team_id) === Number(t1after.id) && m.role !== 'follower' && m.display_name !== 'Fill Host');
+  assertEqual(onT2.length >= 2, true, 'first Accept fills Team 2');
+  assertEqual(onT1.length < 4, true, 'Team 1 stays short after filling Team 2');
+  console.log('PASS team-fill works when more than one team is short');
+}
+
+async function runStandardScorecardScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Standard Host',
+      email: `scorecard.standard.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Standard Saturday',
+      format: 'standard',
+      holes: '18',
+      teamRace: true,
+      sideGames: { vegas: { on: true }, skins: { on: true }, birdieSlots: { on: true } },
+    },
+  });
+  assertEqual(created.round.format, 'standard', 'standard format stored');
+  assertEqual(created.round.teamRace, false, 'standard forces Sunday race off');
+  const cfg = (created.sideGames && created.sideGames.config) || {};
+  assertEqual(!!(cfg.vegas && cfg.vegas.on), false, 'standard vegas off');
+  assertEqual(!!(cfg.skins && cfg.skins.on), false, 'standard skins off');
+  assertEqual(!!(cfg.birdieSlots && cfg.birdieSlots.on), false, 'standard birdie slots off');
+
+  const roundId = created.round.id;
+  let state = created;
+  for (const player of PLAYERS) {
+    state = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+      token: host.token,
+      body: { name: player.name, handicap: player.handicap, teamName: 'Team 1' },
+    });
+  }
+  for (const player of PLAYERS) {
+    const member = state.members.find((m) => m.display_name === player.name);
+    await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+      token: host.token,
+      body: { memberId: member.id, holeNumber: 1, gross: player.gross },
+    });
+  }
+  state = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  for (const player of PLAYERS) {
+    const member = state.members.find((m) => m.display_name === player.name);
+    const hole = (member.holes || []).find((h) => h.holeNumber === 1);
+    assertEqual(hole && hole.strokes, player.dots, player.name + ' standard dots');
+    assertEqual(hole && hole.net, player.net, player.name + ' standard net');
+  }
+  const switched = await api(base, 'PUT', `/api/rounds/${roundId}`, {
+    token: host.token,
+    body: { format: 'standard', teamRace: true, sideGames: { vegas: { on: true } } },
+  });
+  assertEqual(switched.round.format, 'standard', 'PUT keeps standard');
+  assertEqual(switched.round.teamRace, false, 'PUT cannot turn race on in standard');
+  console.log('PASS standard scorecard: dots + no gambling calcs');
 }
 
 async function runDemoOffScenario() {
@@ -1631,6 +1722,7 @@ async function main() {
     await runJoinIdentityScenario(base);
     await runFollowerScenario(base);
     await runTeamFillScenario(base);
+    await runStandardScorecardScenario(base);
     await runHardeningScenario(base);
     if (!requested) await runDemoOffScenario();
   } finally {

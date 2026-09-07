@@ -4292,10 +4292,6 @@ input.score-input[readonly] {
   min-height: 44px;
 }
 
-.got-beer-btn {
-  min-height: 44px;
-}
-
 @keyframes fill-spin-roll {
   from { transform: translateY(0); }
   to { transform: translateY(-72px); }

@@ -45,7 +45,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907f',
+  ASSET_V: '20260907g',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -336,36 +336,15 @@ const scorecard = {
     return !!(api.hasShortTeam && api.hasShortTeam(state));
   },
 
-  isGotBeerOn(state) {
-    const api = this.fillSpinApi();
-    if (api.isGotBeerOn) return api.isGotBeerOn({ round: state && state.round });
-    return false;
-  },
-
-  gotBeerHtml() {
-    if (!this.isGotBeerOn(this.state)) return '';
-    return `<button type="button" class="btn btn-secondary got-beer-btn" id="got-beer-btn" onclick="scorecard.gotBeer()">Got beer?</button>`;
-  },
-
-  gotBeer() {
-    if (!this.isGotBeerOn(this.state)) return;
-    _toast('Got beer? Always. First round’s on the 19th.', 'success');
-  },
-
-  toggleGotBeer(on) {
-    try {
-      localStorage.setItem('goldendale_got_beer', on ? '1' : '0');
-    } catch { /* ignore */ }
-    this.draw(this.state);
-  },
-
   eighteenBanner(state) {
     if (!this.canOpenNineteenth(state)) return '';
     const holes = (state.holes || []).length || 18;
     const confirm = this.nineteenthNeedsConfirm(state);
     const offerFill = this.shouldOfferFillBeforeNineteenth(state);
+    const api = this.fillSpinApi();
+    const shorts = (offerFill && api.shortTeams) ? api.shortTeams(state) : [];
     const copy = offerFill
-      ? `<p><strong>A team is still short.</strong> Spin to fill it, or skip straight to the 19th.</p>`
+      ? `<p><strong>${shorts.length > 1 ? shorts.length + ' teams are still short.' : 'A team is still short.'}</strong> Spin to fill any incomplete team, or skip straight to the 19th.</p>`
       : confirm
         ? `<p><strong>A team has all ${holes} in.</strong> Other teams still have blanks. Open the 19th hole anyway?</p>`
         : `<p><strong>${holes} holes are in.</strong> Go to the 19th hole.</p>`;
@@ -378,7 +357,6 @@ const scorecard = {
         ${copy}
         ${go}
         <button type="button" class="btn btn-secondary" onclick="scorecard.showScreen('results')">Round results</button>
-        ${this.gotBeerHtml()}
       </div>`;
   },
 
@@ -403,7 +381,15 @@ const scorecard = {
     this.showScreen('nineteenth');
   },
 
+  isStandardScorecard(state) {
+    const tf = typeof window !== 'undefined' ? window.teamFormats : null;
+    if (tf && typeof tf.isStandardScorecard === 'function') return tf.isStandardScorecard(state && state.round);
+    const format = state && state.round && state.round.format;
+    return format === 'standard' || format === 'standard_scorecard';
+  },
+
   isTeamRaceOn(state) {
+    if (this.isStandardScorecard(state)) return false;
     const r = (state && state.round) || {};
     if (r.teamRace === false || r.team_race === 0 || r.team_race === false) return false;
     return true;
@@ -463,11 +449,13 @@ const scorecard = {
   },
 
   isVegasOn(state) {
+    if (this.isStandardScorecard(state)) return false;
     const cfg = this.sideConfig(state);
     return !!(cfg.vegas && cfg.vegas.on);
   },
 
   isWolfOn(state) {
+    if (this.isStandardScorecard(state)) return false;
     if (!state) return false;
     const cfg = this.sideConfig(state);
     if (cfg && cfg.wolf && this.flagOn(cfg.wolf.on)) return true;
@@ -602,6 +590,7 @@ const scorecard = {
   },
 
   isNassauOn(state) {
+    if (this.isStandardScorecard(state)) return false;
     if (!state) return false;
     const cfg = this.sideConfig(state);
     if (cfg && cfg.nassau && this.flagOn(cfg.nassau.on)) return true;
@@ -801,6 +790,7 @@ const scorecard = {
   },
 
   isNinesOn(state) {
+    if (this.isStandardScorecard(state)) return false;
     if (!state) return false;
     const cfg = this.sideConfig(state);
     if (cfg && cfg.nines && this.flagOn(cfg.nines.on)) return true;
@@ -1200,7 +1190,7 @@ const scorecard = {
     if (!this.isOrganizer(state)) return '';
     return `<div class="card fill-spin-launch" id="fill-spin-launch">
       <div class="card-title">Fill a short team</div>
-      <p class="card-subtitle">Odd-person leftover? Exclude names, spin, then Accept to put the winner on the short team.</p>
+      <p class="card-subtitle">Any incomplete team (under 4). Pick which team to fill, exclude names, spin, then Accept.</p>
       <button type="button" class="btn btn-accent" id="fill-spin-open" onclick="scorecard.openFillSpin()">Fill a short team (spin)</button>
     </div>`;
   },
@@ -1265,6 +1255,14 @@ const scorecard = {
     const target = teams.find((t) => t.name === this.fillSpin.teamName) || teams[0];
     const count = target && api.scoringCountOnTeam ? api.scoringCountOnTeam(state, target.id) : 0;
     const need = Math.max(0, (api.TEAM_FILL_SIZE || 4) - count);
+    const shorts = api.shortTeams ? api.shortTeams(state) : [];
+    const shortIds = new Set(shorts.map((t) => Number(t.id)));
+    const shortLine = shorts.length
+      ? shorts.map((t) => {
+        const n = api.scoringCountOnTeam ? api.scoringCountOnTeam(state, t.id) : 0;
+        return `${api.teamDisplay ? api.teamDisplay(t) : t.name} needs ${(api.TEAM_FILL_SIZE || 4) - n}`;
+      }).join(' · ')
+      : 'No team is short of 4';
     const items = this.fillSpinItems(state);
     const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
     const winner = this.fillSpin.winner;
@@ -1278,7 +1276,8 @@ const scorecard = {
     const teamOpts = teams.map((t) => {
       const n = api.scoringCountOnTeam ? api.scoringCountOnTeam(state, t.id) : 0;
       const sel = target && Number(t.id) === Number(target.id) ? ' selected' : '';
-      return `<option value="${_esc(t.name)}"${sel}>${_esc(api.teamDisplay ? api.teamDisplay(t) : t.name)} · ${n}</option>`;
+      const mark = shortIds.has(Number(t.id)) ? ' · short' : '';
+      return `<option value="${_esc(t.name)}"${sel}>${_esc(api.teamDisplay ? api.teamDisplay(t) : t.name)} · ${n}${mark}</option>`;
     }).join('');
     const rows = items.map((item) => {
       const key = api.candidateKey ? api.candidateKey(item) : item.name;
@@ -1294,7 +1293,8 @@ const scorecard = {
     host.innerHTML = `
       <div class="fill-spin-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-spin-title">
         <h2 id="fill-spin-title">Fill a short team</h2>
-        <p class="fill-spin-sub">Unchecked names stay off the wheel. Spin is random. Accept is what adds them.</p>
+        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Spin is random. Accept is what adds them.</p>
+        <p class="fill-spin-need" id="fill-spin-short-list">${_esc(shortLine)}</p>
         <label class="tiny-label">Target team
           <select class="form-input" id="fill-spin-team" ${this.fillSpin.spinning ? 'disabled' : ''}>${teamOpts}</select>
         </label>
@@ -1395,7 +1395,13 @@ const scorecard = {
       this.closeFillSpin();
       this.draw(next);
       _toast((winner.name || 'Winner') + ' is on ' + teamName, 'success');
-      if (fromNineteenth) this.openNineteenth({ skipFill: true });
+      if (fromNineteenth) {
+        if (this.shouldOfferFillBeforeNineteenth(this.state)) {
+          this.openFillSpin({ fromNineteenth: true });
+        } else {
+          this.openNineteenth({ skipFill: true });
+        }
+      }
     } catch (err) {
       _toast(err.message || 'Could not add the winner', 'error');
     }
@@ -2441,6 +2447,7 @@ const scorecard = {
 
   teamFormatLabel(round) {
     if (!round || round.format === 'match_play') return 'Match play';
+    if (round.format === 'standard' || round.format === 'standard_scorecard') return 'Standard scorecard';
     const tf = window.teamFormats;
     if (tf && typeof tf.formatLabel === 'function') {
       return tf.formatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
@@ -2457,6 +2464,7 @@ const scorecard = {
   },
 
   liveGameTitle(state) {
+    if (this.isStandardScorecard(state)) return 'Standard scorecard';
     const bits = [];
     if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
       bits.push('Sunday game · ' + this.shortRaceTitle(state.round));
@@ -2509,6 +2517,19 @@ const scorecard = {
     this.updateSettings({ grossBalls: game.grossBalls, netBalls: game.netBalls });
   },
 
+  changeRoundFormat(format) {
+    const body = { format };
+    if (format === 'standard' || format === 'standard_scorecard') {
+      body.teamRace = false;
+      body.sideGames = (window.sideGames && window.sideGames.quietSideGames)
+        ? window.sideGames.quietSideGames()
+        : { skins: { on: false }, vegas: { on: false }, nassau: { on: false }, wolf: { on: false }, nines: { on: false }, birdieSlots: { on: false } };
+    } else if (format === 'team_net') {
+      body.teamRace = true;
+    }
+    this.updateSettings(body);
+  },
+
   sideConfig(state) {
     const fromSide = state && state.sideGames && state.sideGames.config;
     if (fromSide && typeof fromSide === 'object' && !Array.isArray(fromSide) && (fromSide.nassau || fromSide.vegas || fromSide.wolf || fromSide.nines || fromSide.skins)) {
@@ -2526,6 +2547,7 @@ const scorecard = {
   },
 
   pressableGames(state) {
+    if (this.isStandardScorecard(state)) return [];
     const cfg = this.sideConfig(state);
     const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
     return defs.filter((g) => g.pressable && cfg[g.key] && this.flagOn(cfg[g.key].on));
@@ -2776,6 +2798,7 @@ const scorecard = {
   },
 
   sideGamesSettingsHtml(state) {
+    if (this.isStandardScorecard(state)) return '';
     const cfg = this.sideConfig(state);
     return `<form class="card" id="side-games-settings" onsubmit="event.preventDefault();scorecard.saveSideGames()">
       <div class="card-title">Side games</div>
@@ -2877,6 +2900,7 @@ const scorecard = {
   },
 
   raceStripText(state) {
+    if (this.isStandardScorecard(state)) return '';
     const extra = state.sideGames && state.sideGames.stripText;
     const vegasBit = this.isVegasOn(state) ? this.vegasStripText(state) : '';
     const extraSansVegas = extra
@@ -3187,7 +3211,7 @@ const scorecard = {
     const showIn = this.showIn(state);
     const showTot = this.showTot(state);
     if (!showOut && !showIn && !showTot) return '';
-    const teams = (state.teams || []).filter((t) => this.canSeeTeamScores(state, t));
+    const teams = this.isStandardScorecard(state) ? [] : (state.teams || []).filter((t) => this.canSeeTeamScores(state, t));
     const teamBits = teams.map((t) => {
       const seen = this.canSeeTeamScores(state, t);
       const chips = [];
@@ -3242,6 +3266,7 @@ const scorecard = {
   },
 
   kpPickerHtml(state, holeNumber) {
+    if (this.isStandardScorecard(state)) return '';
     const cfg = this.sideConfig(state);
     if (!cfg.kps || !cfg.kps.on) return '';
     if (!(cfg.kps.holes || []).includes(Number(holeNumber))) return '';
@@ -3438,12 +3463,13 @@ const scorecard = {
     const container = document.getElementById('app');
     const r = state.round;
     const teamFormat = r.format === 'team_net';
+    const standard = this.isStandardScorecard(state);
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card results-board" id="results-board">
         <h2 class="card-title">Round results</h2>
-        <p class="card-subtitle">${_esc(r.name)} · ${_esc(r.course?.name || 'Goldendale Golf Club')} · ${teamFormat ? _esc(this.teamFormatLabel(r)) : 'Match play'}</p>
-        <p class="race-strip">${_esc(this.raceStripText(state))}</p>
+        <p class="card-subtitle">${_esc(r.name)} · ${_esc(r.course?.name || 'Goldendale Golf Club')} · ${standard ? 'Standard scorecard' : (teamFormat ? _esc(this.teamFormatLabel(r)) : 'Match play')}</p>
+        ${standard ? '' : `<p class="race-strip">${_esc(this.raceStripText(state))}</p>`}
         <div class="roster-table-wrap">
           <table class="roster-table results-table">
             <thead>
@@ -3471,7 +3497,7 @@ const scorecard = {
             </tbody>
           </table>
         </div>
-        ${teamFormat ? `
+        ${standard ? '' : teamFormat ? `
           <h3 class="section-title">Balls counted by hole</h3>
           <p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>
           <div class="ball-board">${(state.holeResults || []).map((hr) => {
@@ -3482,7 +3508,7 @@ const scorecard = {
             return `<div>Hole ${hr.holeNumber}: ${_esc(bits)}</div>`;
           }).join('')}</div>
         ` : this.matchBlock(state)}
-        ${this.sideGamesResultsHtml(state)}
+        ${standard ? '' : this.sideGamesResultsHtml(state)}
         <div class="welcome-actions mt-md">
           ${this.canOpenNineteenth(state) ? '<button class="btn btn-accent btn-sm" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>' : ''}
           <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
@@ -3526,15 +3552,22 @@ const scorecard = {
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
         <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
+        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N and friends). Standard scorecard is dots plus OUT/IN/TOT only — no side games.')}
+          <select onchange="scorecard.changeRoundFormat(this.value)">
+            <option value="team_net" ${r.format === 'team_net' ? 'selected' : ''}>Team vs par</option>
+            <option value="standard" ${r.format === 'standard' || r.format === 'standard_scorecard' ? 'selected' : ''}>Standard scorecard</option>
+            <option value="match_play" ${r.format === 'match_play' ? 'selected' : ''}>Match play</option>
+          </select>
+        </label>
         ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par when Sunday game is ON. Pick 1G+2N (default) or 1G+1N, plus 3G, 3N, 1G+3N, 2G+2N.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
-        <label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>`}
         <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. The live card shows only your team’s scores. ON shows other teams read-only. Write lock stays — you cannot enter the other team’s scores.')}</label>
-        <label class="tiny-label"><input type="checkbox" ${this.isGotBeerOn(state) ? 'checked' : ''} onchange="scorecard.toggleGotBeer(this.checked)"> Joke: Got beer? ${this.infoTip('got-beer', 'Off by default. Fun only — no scoring. Enable here, or add ?gotBeer=1. Leave off for field/prod.')}</label>
-        <label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
+      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race, Vegas, Skins, Nassau, Wolf, Nines, presses, or birdie slots.</p>' : ''}
       ${this.sideGamesSettingsHtml(state)}
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
@@ -4639,12 +4672,13 @@ const scorecard = {
 
   drawNineteenth(state) {
     const container = document.getElementById('app');
+    const standard = this.isStandardScorecard(state);
     const fmt = (rows) => (rows || []).length
       ? rows.map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ')
       : '—';
     const facts = state.funFacts || {};
     const cfg = this.sideConfig(state);
-    const kps = cfg.kps && cfg.kps.on
+    const kps = !standard && cfg.kps && cfg.kps.on
       ? (cfg.kps.holes || []).map((hn) => {
         const win = cfg.kps.winners && cfg.kps.winners[String(hn)];
         return `Hole ${hn}: ${win && win.name ? win.name : '—'}`;
@@ -4654,28 +4688,30 @@ const scorecard = {
     const skinsBody = skins
       ? `Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}`
       : 'Skins off';
+    const standardRows = (state.members || []).filter((m) => m.team_id && !this.isFollowAlongMember(m)).map((m) => {
+      return `<p><strong>${_esc(m.display_name)}</strong> · OUT ${m.outGross ?? '—'} / ${m.outNet ?? '—'} · IN ${m.inGross ?? '—'} / ${m.inNet ?? '—'} · TOT ${m.totalGross ?? '—'} / ${m.totalNet ?? '—'}</p>`;
+    }).join('') || '<p>No scores yet.</p>';
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card nineteenth" id="nineteenth">
         <h2 class="card-title">19th hole</h2>
-        <p class="card-subtitle">${_esc(state.round.name)} · confirmed card · sound off</p>
-        ${this.podiumHtml(state)}
-        <div class="reveal-row">
+        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'confirmed card · sound off'}</p>
+        ${standard ? '' : this.podiumHtml(state)}
+        ${standard ? '' : `<div class="reveal-row">
           ${this.revealCardHtml('front', 'Front', _esc(fmt(state.frontLeaders)))}
           ${this.revealCardHtml('back', 'Back', _esc(fmt(state.backLeaders)))}
           ${this.revealCardHtml('overall', 'Overall', _esc(fmt(state.overallLeaders)))}
           ${this.revealCardHtml('skins', 'Skins', _esc(skinsBody))}
-        </div>
+        </div>`}
         <div class="share-strip" id="share-strip">
           <span>${_esc(this.nineteenthShareText(state))}</span>
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
-        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : ''}
-        ${typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : ''}
-        ${this.gotBeerHtml()}
-        <h3>Sunday game</h3>
-        ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}
-        ${this.sideGamesResultsHtml(state)}
+        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : '')}
+        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : '')}
+        ${standard ? `<h3>Standard scorecard</h3>${standardRows}` : `<h3>Sunday game</h3>
+        ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}`}
+        ${standard ? '' : this.sideGamesResultsHtml(state)}
         ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
         <h3>Fun facts</h3>
         <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
