@@ -2,6 +2,18 @@
 
 ## Developer
 
+### Follow along / Scorekeeper + personal board (ASSET_V `20260907b`)
+
+Same PR #4. Hold merge.
+
+Field root cause (verified in join/auth code, not guessed): joiners could not pick Team 1 (host team), join always created a scoring `player` row, and `app.init()` routed before `checkSession()` finished so a stored token still hit the Sign-in wall. Welcome also stashed codes shorter than the API accepts.
+
+Now one round + one join code. After team pick (including Team 1), choose **Scorekeeper** (own-team writes) or **Follow along** (read-only, no player row). Role persists on `score_members.role`. Server 403s follower score POSTs even on their team. Followers have a personal See / Hide other teams toggle (`follow_show_other` on the membership) that does not change the host Show-other setting or scorekeeper GET/live. Write lock for scorekeepers unchanged.
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending this ship.
+
 ### Down score advance wrap (ASSET_V `20260907a`)
 
 Same PR #4. Hold merge.

@@ -21,7 +21,7 @@ function svcApi(method) {
 }
 
 const app = {
-  init() {
+  async init() {
     auth.init();
     window.addEventListener('hashchange', () => this.route());
 
@@ -42,6 +42,7 @@ const app = {
       });
     }
 
+    if (auth.ensureSession) await auth.ensureSession();
     this.route();
   },
 
@@ -126,11 +127,12 @@ const app = {
       dashboard.render();
       return;
     }
+    if (auth.ensureSession) await auth.ensureSession();
     if (!auth.currentUser) {
       container.innerHTML = `
         <div class="empty-state">
           <h3>Join round ${ _esc(code.toUpperCase()) }</h3>
-          <p>Sign in, then we'll add you to this group.</p>
+          <p>Sign in or create an account, then pick a team and choose Scorekeeper or Follow along.</p>
           <button class="btn btn-primary" onclick="auth.showModal('login')">Sign In</button>
         </div>`;
       sessionStorage.setItem('pending_join', code);
@@ -183,8 +185,8 @@ const app = {
 };
 
 window.app = app;
-document.addEventListener('DOMContentLoaded', () => {
-  app.init();
+document.addEventListener('DOMContentLoaded', async () => {
+  await app.init();
   const pending = sessionStorage.getItem('pending_join');
   if (pending && auth.currentUser && !location.hash.startsWith('#join')) {
     app.navigate('#join/' + pending);

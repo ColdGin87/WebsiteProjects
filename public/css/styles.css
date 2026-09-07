@@ -2352,6 +2352,69 @@ img {
   font-weight: 800;
 }
 
+.follow-along-bar {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+  background: #E3F2FD;
+  border: 2px solid #1565C0;
+  border-radius: var(--radius-sm);
+  color: #0D47A1;
+}
+
+.follow-along-label {
+  font-size: 1.05rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.follow-board {
+  display: flex;
+  gap: 8px;
+}
+
+.follow-board-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 2px solid #90CAF9;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-weight: 800;
+  color: #1565C0;
+  cursor: pointer;
+}
+
+.follow-board-btn.is-on {
+  border-color: #1565C0;
+  background: #BBDEFB;
+}
+
+.join-role {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.join-role-btn {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 2px solid #BDBDBD;
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.join-role-btn.is-on {
+  border-color: var(--accent);
+  background: #E8F5E9;
+  color: #1B5E20;
+}
+
+.join-role-help {
+  margin-bottom: 12px;
+}
+
 .hole-toolbar {
   position: relative;
   flex-wrap: nowrap;

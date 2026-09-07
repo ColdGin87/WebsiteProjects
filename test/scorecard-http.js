@@ -775,11 +775,6 @@ async function runJoinIdentityScenario(base) {
     body: { code: created.round.join_code || created.round.joinCode },
   });
   assertEqual(refused.status, 400, 'joiner must pick a team');
-  const refusedHost = await apiStatus(base, 'POST', '/api/rounds/join', {
-    token: joiner.token,
-    body: { code: created.round.join_code || created.round.joinCode, teamName: 'Team 1' },
-  });
-  assertEqual(refusedHost.status, 400, 'joiner cannot take Team 1');
   const joined = await api(base, 'POST', '/api/rounds/join', {
     token: joiner.token,
     body: {
@@ -872,6 +867,143 @@ async function runJoinIdentityScenario(base) {
   assertEqual(stillLocked.status, 403, 'visible other-team scores stay read-only');
 
   console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner Add player own team only; other-team scores hidden until toggle');
+}
+
+async function runFollowerScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Follow Host',
+      email: `scorecard.followhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Follow along Sunday game',
+      format: 'team_net',
+      holes: '18',
+      team1Nickname: 'Birds',
+      showOtherScores: false,
+    },
+  });
+  const joinCode = created.round.join_code || created.round.joinCode;
+  const roundId = created.round.id;
+  const hostMember = (created.members || []).find((m) => Number(m.player_id) === Number(host.user && host.user.id));
+  if (!hostMember) fail('host member missing for follower scenario');
+
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 5 },
+  });
+
+  const follower = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Follow Pal',
+      email: `scorecard.followpal.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const joined = await api(base, 'POST', '/api/rounds/join', {
+    token: follower.token,
+    body: { code: joinCode, teamName: 'Team 1', role: 'follower' },
+  });
+  const followMe = (joined.members || []).find((m) => Number(m.player_id) === Number(follower.user && follower.user.id));
+  if (!followMe) fail('follower did not join');
+  assertEqual(followMe.role, 'follower', 'membership role is follower');
+  assertEqual(Number(followMe.team_id ?? followMe.teamId), Number(hostMember.team_id ?? hostMember.teamId), 'follower is on Team 1');
+  const hostRow = (joined.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hostHole = hostRow && (hostRow.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hostHole && hostHole.gross, 5, 'follower sees own-team hole scores');
+  const team1 = (joined.teams || []).find((t) => t.name === 'Team 1');
+  const team1h1 = team1 && (team1.holes || []).find((h) => Number(h.holeNumber) === 1);
+  if (team1h1 && (team1h1.balls || []).some((b) => Number(b.id) === Number(followMe.id))) {
+    fail('follower must not appear as a scoring ball');
+  }
+
+  const ownPost = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: follower.token,
+    body: { memberId: hostMember.id, holeNumber: 1, gross: 3 },
+  });
+  assertEqual(ownPost.status, 403, 'follower own-team score POST is 403');
+  if (!String((ownPost.body && ownPost.body.error) || '').includes('Follow along')) {
+    fail('follower 403 should name Follow along');
+  }
+  const afterOwn = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const hostAfter = (afterOwn.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hostAfterHole = hostAfter && (hostAfter.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(hostAfterHole && hostAfterHole.gross, 5, 'rejected follower score must not persist');
+
+  const addBlocked = await apiStatus(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: follower.token,
+    body: { name: 'Should Not Add', handicap: 8 },
+  });
+  assertEqual(addBlocked.status, 403, 'follower cannot add players');
+  const delBlocked = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/members/${hostMember.id}`, {
+    token: follower.token,
+  });
+  assertEqual(delBlocked.status, 403, 'follower cannot delete players');
+
+  const keeper = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Team 2 Keeper',
+      email: `scorecard.followkeep.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const t2 = await api(base, 'POST', '/api/rounds/join', {
+    token: keeper.token,
+    body: { code: joinCode, addTeam: true, role: 'player' },
+  });
+  const keeperMe = (t2.members || []).find((m) => Number(m.player_id) === Number(keeper.user && keeper.user.id));
+  if (!keeperMe) fail('scorekeeper did not join Team 2');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: keeper.token,
+    body: { memberId: keeperMe.id, holeNumber: 1, gross: 6 },
+  });
+
+  const hidden = await api(base, 'GET', `/api/rounds/${roundId}`, { token: follower.token });
+  const hiddenKeeper = (hidden.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  const hiddenHole = hiddenKeeper && (hiddenKeeper.holes || []).find((h) => h.holeNumber === 1);
+  if (hiddenHole && hiddenHole.gross != null) fail('follower hide default must redact opposing scores');
+  assertEqual(!!(hidden.round && hidden.round.showOtherScores), false, 'follower toggle must not flip the host show-other setting');
+
+  const keeperHidden = await api(base, 'GET', `/api/rounds/${roundId}`, { token: keeper.token });
+  const keeperSeesHost = (keeperHidden.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const keeperHostHole = keeperSeesHost && (keeperSeesHost.holes || []).find((h) => h.holeNumber === 1);
+  if (keeperHostHole && keeperHostHole.gross != null) fail('scorekeeper still redacted while host show-other is OFF');
+
+  const shown = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+    token: follower.token,
+    body: { showOtherScores: true },
+  });
+  const shownKeeper = (shown.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  const shownHole = shownKeeper && (shownKeeper.holes || []).find((h) => h.holeNumber === 1);
+  assertEqual(shownHole && shownHole.gross, 6, 'follower personal See other teams reveals opposing scores');
+  const followAfter = (shown.members || []).find((m) => Number(m.id) === Number(followMe.id));
+  assertEqual(!!(followAfter && (followAfter.followShowOther || followAfter.follow_show_other === 1)), true, 'personal board pref persisted on membership');
+  assertEqual(!!(shown.round && shown.round.showOtherScores), false, 'personal See does not change host show-other');
+
+  const keeperStill = await api(base, 'GET', `/api/rounds/${roundId}`, { token: keeper.token });
+  assertEqual(!!(keeperStill.round && keeperStill.round.showOtherScores), false, 'scorekeeper round setting stayed OFF');
+  const keeperStillHost = (keeperStill.members || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const keeperStillHole = keeperStillHost && (keeperStillHost.holes || []).find((h) => h.holeNumber === 1);
+  if (keeperStillHole && keeperStillHole.gross != null) fail('follower personal See must not leak opposing scores to scorekeepers');
+
+  const steal = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+    token: keeper.token,
+    body: { showOtherScores: true },
+  });
+  assertEqual(steal.status, 403, 'scorekeeper cannot use follow-view');
+
+  const still403 = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: follower.token,
+    body: { memberId: keeperMe.id, holeNumber: 1, gross: 4 },
+  });
+  assertEqual(still403.status, 403, 'follower still cannot write after seeing other teams');
+
+  console.log('PASS follower join Team 1 read-only; score POST 403; personal See/Hide other teams');
 }
 
 async function runWolfScenario(base) {
@@ -1385,6 +1517,7 @@ async function main() {
     await runWolfScenario(base);
     await runNinesScenario(base);
     await runJoinIdentityScenario(base);
+    await runFollowerScenario(base);
     await runHardeningScenario(base);
     if (!requested) await runDemoOffScenario();
   } finally {

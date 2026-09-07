@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907a/);
-    assert.match(html, /js\/formats\.js\?v=20260907a/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907a/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907a/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907a/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907a/);
-    assert.match(src, /ASSET_V:\s*'20260907a'/);
+    assert.match(html, /20260907b/);
+    assert.match(html, /js\/formats\.js\?v=20260907b/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907b/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907b/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907b/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907b/);
+    assert.match(src, /ASSET_V:\s*'20260907b'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -415,6 +415,19 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(writeLock, /isOrganizer/);
     assert.doesNotMatch(writeLock, /is_admin/);
     assert.match(writeLock, /sameTeamIds/);
+    assert.match(writeLock, /isFollowAlong/);
+    assert.match(src, /followAlongBarHtml/);
+    assert.match(src, /setFollowShowOther/);
+    assert.match(src, /follow-view/);
+    assert.match(src, /See other teams/);
+    assert.match(css, /\.follow-along-bar/);
+    assert.match(css, /\.follow-board-btn/);
+    const dashJoin = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dashJoin, /data-join-role="follower"/);
+    assert.match(dashJoin, /data-join-role="player"/);
+    assert.match(dashJoin, /Follow along/);
+    const appSrcJoin = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+    assert.match(appSrcJoin, /ensureSession/);
     assert.match(src, /canManageRosterMember/);
     assert.match(src, /removeMember\(/);
     assert.match(src, /confirmRemoveMember/);
@@ -443,6 +456,9 @@ describe('Combined PR3 hole view', () => {
     assert.match(dash, /name="showOtherScores"/);
     assert.doesNotMatch(dash, /name="showOtherScores" checked/);
     const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.match(routes, /parseJoinRole/);
+    assert.match(routes, /follow-view/);
+    assert.match(routes, /Follow along is read-only/);
     const canScoreAt = routes.indexOf('function canScore');
     const canManageAt = routes.indexOf('function canManageMember', canScoreAt);
     const canScoreFn = routes.slice(canScoreAt, canManageAt > canScoreAt ? canManageAt : canScoreAt + 400);

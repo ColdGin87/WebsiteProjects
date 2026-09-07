@@ -44,7 +44,7 @@ const scorecard = {
   stepperOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907a',
+  ASSET_V: '20260907b',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -204,6 +204,10 @@ const scorecard = {
       member.totalNet = tot.totalNet;
       member.playing_handicap = tot.playing_handicap;
       member.team_id = tot.team_id;
+      if (tot.follow_show_other != null || tot.followShowOther != null) {
+        member.follow_show_other = tot.follow_show_other ?? (tot.followShowOther ? 1 : 0);
+        member.followShowOther = !!(tot.followShowOther || tot.follow_show_other === 1);
+      }
     }
     if (patch.teams) {
       this.state.teams = (this.state.teams || []).map((t) => {
@@ -373,23 +377,42 @@ const scorecard = {
     return this.isOrganizer(state);
   },
 
+  followShowOtherOn(state) {
+    const me = this.myMember(state);
+    if (me && (me.followShowOther === true || me.follow_show_other === 1 || me.follow_show_other === true)) return true;
+    if (me && (me.followShowOther === false || me.follow_show_other === 0)) return false;
+    try {
+      const id = state && state.round && state.round.id;
+      return !!(id && localStorage.getItem('goldendale_follow_show_' + id) === '1');
+    } catch {
+      return false;
+    }
+  },
+
+  canSeeOtherTeams(state) {
+    if (this.isPrivilegedViewer(state)) return true;
+    if (this.isFollowAlong(state)) return this.followShowOtherOn(state);
+    return this.isShowOtherScoresOn(state);
+  },
+
   canSeeMemberScores(state, member) {
     if (!member) return false;
-    if (this.canWriteMember(state, member)) return true;
-    if (this.isPrivilegedViewer(state)) return true;
-    return this.isShowOtherScoresOn(state);
+    if (this.canSeeOtherTeams(state)) return true;
+    const me = this.myMember(state);
+    return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
   },
 
   canSeeTeamScores(state, team) {
     if (!team) return false;
-    if (this.isShowOtherScoresOn(state)) return true;
-    if (this.isPrivilegedViewer(state)) return true;
+    if (this.canSeeOtherTeams(state)) return true;
     const me = this.myMember(state);
     return this.sameTeamIds(me && (me.team_id ?? me.teamId), team.id);
   },
 
   canManageRosterMember(state, member) {
     if (!state || !member) return false;
+    if (this.isFollowAlong(state)) return false;
+    if (this.isFollowAlongMember(member) && !this.isOrganizer(state)) return false;
     if (this.isOrganizer(state)) return true;
     return this.canWriteMember(state, member);
   },
@@ -1107,6 +1130,7 @@ const scorecard = {
   },
 
   canAddPlayer(state) {
+    if (this.isFollowAlong(state)) return false;
     if (this.isOrganizer(state)) return true;
     const me = this.myMember(state);
     return !!(me && ((me.team_id != null && me.team_id !== '') || (me.teamId != null && me.teamId !== '')));
@@ -1156,7 +1180,7 @@ const scorecard = {
   },
 
   addPlayerPanelInner(state) {
-    const count = (state.members || []).length;
+    const count = (state.members || []).filter((m) => !this.isFollowAlongMember(m)).length;
     if (count >= 2 && !this.addPlayerOpen) {
       return `<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
     }
@@ -1882,8 +1906,18 @@ const scorecard = {
     return Number(a) === Number(b) && Number.isFinite(Number(a));
   },
 
+  isFollowAlongMember(member) {
+    const role = String((member && member.role) || '').toLowerCase();
+    return role === 'follower' || role === 'follow' || role === 'follow_along';
+  },
+
+  isFollowAlong(state) {
+    return this.isFollowAlongMember(this.myMember(state));
+  },
+
   canWriteMember(state, member) {
     if (!state || !member) return false;
+    if (this.isFollowAlong(state) || this.isFollowAlongMember(member)) return false;
     const me = this.myMember(state);
     return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
   },
@@ -1925,7 +1959,7 @@ const scorecard = {
   },
 
   wolfRoster(state) {
-    return [...(state.members || [])];
+    return (state.members || []).filter((m) => !this.isFollowAlongMember(m));
   },
 
   draw(state) {
@@ -1979,6 +2013,42 @@ const scorecard = {
       <button type="button" class="live-join-code" id="live-join-code" onclick="scorecard.copyJoinCode()" aria-label="Copy join code ${_esc(code)}">${_esc(code)}</button>
       <button type="button" class="btn btn-sm btn-accent live-join-copy" id="live-join-copy" onclick="scorecard.copyJoinCode()">Copy</button>
     </div>`;
+  },
+
+  followAlongBarHtml(state) {
+    if (!this.isFollowAlong(state)) return '';
+    const me = this.myMember(state);
+    const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me && (me.team_id ?? me.teamId)));
+    const label = (team && (team.displayName || team.name)) || this.myTeamName(state);
+    const see = this.followShowOtherOn(state);
+    return `<div class="follow-along-bar" id="follow-along-bar">
+      <div class="follow-along-label">Following ${_esc(label)} · read-only</div>
+      <div class="follow-board" role="group" aria-label="Other teams on your board">
+        <button type="button" class="follow-board-btn${see ? ' is-on' : ''}" data-follow-board="1" onclick="scorecard.setFollowShowOther(true)">See other teams</button>
+        <button type="button" class="follow-board-btn${!see ? ' is-on' : ''}" data-follow-board="0" onclick="scorecard.setFollowShowOther(false)">Hide other teams</button>
+      </div>
+    </div>`;
+  },
+
+  async setFollowShowOther(on) {
+    if (!this.state || !this.isFollowAlong(this.state)) return;
+    const want = !!on;
+    const me = this.myMember(this.state);
+    if (me) {
+      me.followShowOther = want;
+      me.follow_show_other = want ? 1 : 0;
+    }
+    try {
+      localStorage.setItem('goldendale_follow_show_' + this.state.round.id, want ? '1' : '0');
+    } catch { /* ignore */ }
+    this.draw(this.state);
+    try {
+      const next = await svcApi('put', `/api/rounds/${this.state.round.id}/follow-view`, { showOtherScores: want });
+      this.state = next;
+      this.draw(this.state);
+    } catch (err) {
+      _toast(err.message || 'Could not save board view', 'error');
+    }
   },
 
   copyJoinCode() {
@@ -2734,6 +2804,7 @@ const scorecard = {
 
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
+      ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
@@ -3038,6 +3109,7 @@ const scorecard = {
 
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
+      ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
       ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
@@ -3259,7 +3331,7 @@ const scorecard = {
     const groups = [];
     const teams = [...(state.teams || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
     for (const team of teams) {
-      const members = (state.members || []).filter((m) => m.team_id === team.id);
+      const members = (state.members || []).filter((m) => m.team_id === team.id && !this.isFollowAlongMember(m));
       members.forEach((m) => used.add(m.id));
       groups.push({ team, members });
     }
@@ -4165,9 +4237,9 @@ const scorecard = {
         <h3>Wolf</h3>
         <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles: Partnered ±, Lone ±, and Blind Lone ±. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>
-        <p>Host is Team 1 (optional nickname). A joiner with the code picks Team 2 / 3 / 4… or Add team — they are not auto Team 1. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
+        <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>You may enter scores only for players on your own team. The server rejects cross-team score writes. <strong>Show other teams’ scores</strong> is a Sunday game setup toggle (default OFF): other teams stay blank on the live card until the organizer turns it ON. When ON, other teams are visible and still read-only.</p>
+        <p>Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide setting for scorekeepers. Followers have their own See / Hide other teams toggle — it does not change the host setting or unlock writes.</p>
         <h3>Score entry</h3>
         <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Down never jumps to an opposing team.</p>
         <h3>Nines</h3>

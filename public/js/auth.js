@@ -155,6 +155,7 @@ function callApi(method) {
 
 const auth = {
   currentUser: null,
+  sessionReady: null,
 
   init() {
     const loginBtn = document.getElementById('login-btn');
@@ -182,7 +183,11 @@ const auth = {
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) logoutBtn.addEventListener('click', () => this.logout());
 
-    this.checkSession();
+    this.sessionReady = this.checkSession();
+  },
+
+  ensureSession() {
+    return this.sessionReady || Promise.resolve(this.currentUser);
   },
 
   async checkSession() {
