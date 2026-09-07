@@ -14,7 +14,7 @@ White/Blue TOT 5645 (OUT 2809 / IN 2836). Red/Gold TOT 5052 (OUT 2533 / IN 2519)
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending READY unique project URL.
+Unique host (READY, SHA `74ff11d`, ASSET_V `20260907d`): https://website-projects-dbgu7bfva-coldgin87s-projects.vercel.app
 
 ### Follow along / Scorekeeper + personal board (ASSET_V `20260907c`)
 
