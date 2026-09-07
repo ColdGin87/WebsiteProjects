@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907g/);
-    assert.match(html, /js\/formats\.js\?v=20260907g/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907g/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907g/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907g/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907g/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907g/);
-    assert.match(src, /ASSET_V:\s*'20260907g'/);
+    assert.match(html, /20260907h/);
+    assert.match(html, /js\/formats\.js\?v=20260907h/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907h/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907h/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907h/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907h/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907h/);
+    assert.match(src, /ASSET_V:\s*'20260907h'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -589,6 +589,7 @@ describe('Wyrm Coil overlay', () => {
     assert.match(dbSrc, /wipePracticeScoreDataOnce/);
     assert.match(dbSrc, /DELETE FROM score_rounds/);
     assert.match(dbSrc, /field_test_wipe/);
+    assert.match(dbSrc, /20260907/);
     assert.match(dash, /New round/);
     assert.match(dash, /Standard scorecard/);
     assert.match(dash, /Join with code/);

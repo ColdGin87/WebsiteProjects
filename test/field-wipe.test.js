@@ -94,6 +94,8 @@ describe('field-test score wipe', () => {
     assert.equal(Number(hole3.yards), 287, 'boot seed refreshes live White/Blue yards');
 
     await insertPracticeRound(db, '2');
+    const token = await db.get("SELECT value FROM app_meta WHERE key = 'field_test_wipe'");
+    assert.equal(String(token && token.value), '20260907');
     const second = await wipePracticeScoreDataOnce();
     assert.equal(second.skipped, true);
     const kept = await db.get('SELECT COUNT(*) AS cnt FROM score_rounds');

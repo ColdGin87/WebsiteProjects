@@ -2,9 +2,19 @@
 
 ## Developer
 
+### Merge clean slate (ASSET_V `20260907h`)
+
+David authorized merge of PR #4. First production boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260907`), then leaves new Sunday rounds alone. Goldendale paper-card SI/yards and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons. No Got beer.
+
+Kept: paper-card SI/yards, write lock + show-other, Follow along / Scorekeeper, Standard scorecard, team-fill spin (any short team + Skip→19th).
+
+`npm run test:scorecard` hole-1 best 1G+2N = +1.
+
+Unique host: pending production/Main deploy after merge.
+
 ### Team-fill any short team + Standard scorecard (ASSET_V `20260907g`)
 
-Same PR #4. Hold merge. Got beer joke control removed.
+Same PR #4. Got beer joke control removed.
 
 Host-only **Fill a short team (spin)** on the live Team roster card and Settings → Players. Any incomplete team (1–3 scoring players) can be the target — not only one hard-coded short team. Exclude names, fair random spin, Accept adds/moves the winner. After Accept on the 19th path, if another team is still short the spinner stays open; **Skip → 19th** is always available. Joiners 403.
 
