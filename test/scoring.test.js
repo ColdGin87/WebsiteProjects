@@ -108,6 +108,26 @@ describe('show other teams scores', () => {
     assert.equal(state.holeResults[0].teams[0].total, null);
     assert.equal(state.winner.total, null);
   });
+
+  it('redacts other-team scores even when the host show-other setting is on', () => {
+    const state = {
+      round: { show_other_scores: 1 },
+      members: [
+        { id: 1, team_id: 10, holes: [{ holeNumber: 1, gross: 4, net: 3 }], totalGross: 4 },
+        { id: 2, team_id: 20, holes: [{ holeNumber: 1, gross: 5, net: 4 }], totalGross: 5 },
+      ],
+      teams: [
+        { id: 10, total: 1, holes: [{ holeNumber: 1, total: 1 }] },
+        { id: 20, total: 2, holes: [{ holeNumber: 1, total: 2 }] },
+      ],
+      holeResults: [{ holeNumber: 1, teams: [{ teamId: 10, total: 1 }, { teamId: 20, total: 2 }] }],
+      winner: { id: 10, total: 1 },
+    };
+    redactOtherTeamScores(state, { id: 2, team_id: 20, role: 'follower' });
+    assert.equal(state.members[0].holes[0].gross, null);
+    assert.equal(state.members[1].holes[0].gross, 5);
+    assert.equal(state.teams[0].total, null);
+  });
 });
 
 describe('fun facts', () => {
