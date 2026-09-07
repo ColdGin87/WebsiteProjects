@@ -325,7 +325,7 @@ const dashboard = {
           <label class="check-row" id="create-show-other-row">
             <input type="checkbox" name="showOtherScores">
             Show other teams’ scores
-            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-show-other', 'Default OFF. Each team sees only its own scores on the live card. ON shows other teams read-only. Nobody can edit the other team.') : ''}
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always enter every team’s scores.') : ''}
           </label>
           <div class="form-group" id="create-game-wrap">
             <label>Sunday game format ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1G+2N. Also 1G+1N, 3G, 3N, 1G+3N, 2G+2N.') : ''}</label>
