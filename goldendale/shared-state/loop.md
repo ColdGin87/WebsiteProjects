@@ -2,15 +2,17 @@
 
 ## Developer
 
-### Merge clean slate (ASSET_V `20260907h`)
+### Merged to Main — clean slate (ASSET_V `20260907h`)
 
-David authorized merge of PR #4. First production boot after this deploy wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260907`), then leaves new Sunday rounds alone. Goldendale paper-card SI/yards and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons. No Got beer.
+PR #4 is **merged** into Main (`17afe2c`). First production boot wipes leftover `score_rounds` / scores / guest rosters once (`field_test_wipe=20260907`), then leaves new Sunday rounds alone. Goldendale paper-card SI/yards and login accounts stay. Demo HTTP routes stay behind `ALLOW_DEMO=1` only. No demo buttons. No Got beer.
 
 Kept: paper-card SI/yards, write lock + show-other, Follow along / Scorekeeper, Standard scorecard, team-fill spin (any short team + Skip→19th).
 
 `npm run test:scorecard` hole-1 best 1G+2N = +1.
 
-Unique host: pending production/Main deploy after merge.
+Unique / distribute host (READY, Main SHA `17afe2c`, ASSET_V `20260907h`, no SSO/password): https://website-projects-p89a5p7cy-coldgin87s-projects.vercel.app
+
+Project production aliases (`website-projects-khaki.vercel.app`, `website-projects-coldgin87s-projects.vercel.app`) 404 — do not use those. Do not use the git-Main alias.
 
 ### Team-fill any short team + Standard scorecard (ASSET_V `20260907g`)
 
