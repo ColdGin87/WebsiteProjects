@@ -46,7 +46,7 @@ const scorecard = {
   pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907m',
+  ASSET_V: '20260907n',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -3690,7 +3690,7 @@ const scorecard = {
     const showOut = this.showOut(state);
     const showIn = this.showIn(state);
     const showTot = this.showTot(state);
-    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}"><button type="button" class="sc-hole-head-btn" onclick="scorecard.onFullCardHoleTap(${h.hole_number})" aria-label="Hole ${h.hole_number}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}</button></th>`;
+    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="sc-hole-head${h.hole_number === this.currentHole ? ' is-current-hole' : ''}" onclick="scorecard.onFullCardHoleTap(${h.hole_number})"><button type="button" class="sc-hole-head-btn" aria-label="Hole ${h.hole_number}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}</button></th>`;
     const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
     const outPar = outHoles.reduce((s, h) => s + h.par, 0);
     const inPar = inHoles.reduce((s, h) => s + h.par, 0);

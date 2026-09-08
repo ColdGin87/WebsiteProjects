@@ -3078,12 +3078,18 @@ img {
   top: 108px;
 }
 
+.team-scorecard thead th.sc-hole-head {
+  cursor: pointer;
+  padding: 0;
+}
+
 .sc-hole-head-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  min-height: 28px;
+  width: 100%;
+  min-width: 36px;
+  min-height: 36px;
   padding: 0 4px;
   border: 0;
   background: transparent;
@@ -3091,6 +3097,7 @@ img {
   font: inherit;
   font-weight: 800;
   cursor: pointer;
+  pointer-events: none;
 }
 
 .nassau-live-dock {
