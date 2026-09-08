@@ -46,7 +46,7 @@ const scorecard = {
   pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907n',
+  ASSET_V: '20260907o',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -929,6 +929,30 @@ const scorecard = {
     } catch (err) {
       _toast(err.message, 'error');
     }
+  },
+
+  vegasPressStartHoles(state) {
+    const starts = [];
+    const seen = new Set();
+    this.vegasPresses(state).forEach((press) => {
+      const start = Number(press.start_hole ?? press.startHole);
+      if (!Number.isInteger(start) || start < 1 || start > 18 || seen.has(start)) return;
+      seen.add(start);
+      starts.push(start);
+    });
+    return starts.sort((a, b) => a - b);
+  },
+
+  isVegasPressStartHole(state, holeNumber) {
+    return this.vegasPressStartHoles(state).indexOf(Number(holeNumber)) !== -1;
+  },
+
+  holeNumberLabelHtml(state, holeNumber) {
+    const hn = Number(holeNumber) || 1;
+    const pip = this.isVegasOn(state) && this.isVegasPressStartHole(state, hn)
+      ? ' <span class="hole-pressed-pip">Pressed</span>'
+      : '';
+    return 'Hole ' + hn + pip;
   },
 
   pressedChipItems(state) {
@@ -2221,10 +2245,17 @@ const scorecard = {
   paintCurrentHoleChrome() {
     const n = this.currentHole;
     document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
-      th.classList.toggle('is-current-hole', Number(th.dataset.holeH) === n);
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-current-hole', hn === n);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
     });
     const label = document.getElementById('hole-number');
-    if (label) label.textContent = 'Hole ' + n;
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, n);
     const nav = document.querySelector('.hole-nav-label');
     if (nav) nav.textContent = 'Hole ' + n;
     const meta = document.getElementById('hole-meta');
@@ -3364,7 +3395,7 @@ const scorecard = {
           ${this.nassauBoardHtml(state, 'nassau-board-card')}
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number-row">
-            <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+            <div class="hole-number" id="hole-number">${this.holeNumberLabelHtml(state, holeNumber)}</div>
             <button type="button" class="btn btn-sm btn-accent hole-full-card-btn" onclick="scorecard.setCardMode('full')">Full card</button>
           </div>
           ${this.vegasBoardHtml(state)}
@@ -3690,7 +3721,10 @@ const scorecard = {
     const showOut = this.showOut(state);
     const showIn = this.showIn(state);
     const showTot = this.showTot(state);
-    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="sc-hole-head${h.hole_number === this.currentHole ? ' is-current-hole' : ''}" onclick="scorecard.onFullCardHoleTap(${h.hole_number})"><button type="button" class="sc-hole-head-btn" aria-label="Hole ${h.hole_number}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}</button></th>`;
+    const holeHead = (h) => {
+      const pressed = this.isVegasOn(state) && this.isVegasPressStartHole(state, h.hole_number);
+      return `<th data-hole-h="${h.hole_number}" class="sc-hole-head${h.hole_number === this.currentHole ? ' is-current-hole' : ''}${pressed ? ' is-vegas-pressed' : ''}" onclick="scorecard.onFullCardHoleTap(${h.hole_number})"><button type="button" class="sc-hole-head-btn" aria-label="Hole ${h.hole_number}${pressed ? ', Vegas press starts here' : ''}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}${pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : ''}</button></th>`;
+    };
     const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
     const outPar = outHoles.reduce((s, h) => s + h.par, 0);
     const inPar = inHoles.reduce((s, h) => s + h.par, 0);
@@ -4291,6 +4325,21 @@ const scorecard = {
     if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
   },
 
+  paintPressedHoleMarks() {
+    if (!this.state) return;
+    const label = document.getElementById('hole-number');
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, this.currentHole || 1);
+    document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
+    });
+  },
+
   paintPressChrome() {
     if (!this.state) return;
     const hn = this.currentHole || 1;
@@ -4312,6 +4361,7 @@ const scorecard = {
       if (node && toolbar && toolbar.parentNode) toolbar.insertAdjacentElement('beforebegin', node);
       else if (node && nassauBar && nassauBar.parentNode) nassauBar.insertAdjacentElement('beforebegin', node);
     }
+    this.paintPressedHoleMarks();
     this.ensureNassauLiveDock(hn);
     const ninesBoard = document.getElementById('nines-board');
     if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);

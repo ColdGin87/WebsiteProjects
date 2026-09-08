@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907n/);
-    assert.match(html, /js\/formats\.js\?v=20260907n/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907n/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907n/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907n/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907n/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907n/);
-    assert.match(src, /ASSET_V:\s*'20260907n'/);
+    assert.match(html, /20260907o/);
+    assert.match(html, /js\/formats\.js\?v=20260907o/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907o/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907o/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907o/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907o/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907o/);
+    assert.match(src, /ASSET_V:\s*'20260907o'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -533,6 +533,9 @@ describe('Combined PR3 hole view', () => {
   it('shows a sticky pressed-hole strip and lets a missed Vegas press start on an old hole', () => {
     assert.match(src, /pressedHolesBarHtml/);
     assert.match(src, /pressedChipItems/);
+    assert.match(src, /vegasPressStartHoles/);
+    assert.match(src, /is-vegas-pressed/);
+    assert.match(src, /sc-hole-press-pip/);
     assert.match(src, /offerMissedVegasPress/);
     assert.match(src, /onFullCardHoleTap/);
     assert.match(src, /Missed a press/);
@@ -558,6 +561,8 @@ describe('Combined PR3 hole view', () => {
     const table = sliceFn('scoreTable(state, holes, outHoles, inHoles)', 'drawSettings(state)');
     assert.match(table, /onFullCardHoleTap/);
     assert.match(css, /\.pressed-holes-bar[\s\S]{0,80}position:\s*sticky/);
+    assert.match(css, /\.is-vegas-pressed/);
+    assert.match(css, /\.sc-hole-press-pip/);
     assert.match(css, /\.pressed-holes-bar[\s\S]{0,120}top:\s*60px/);
     assert.match(css, /\.pressed-missed-btn/);
     assert.match(css, /\.pressed-holes-bar ~ \.nassau-toolbar-press[\s\S]{0,40}top:\s*108px/);

@@ -689,6 +689,19 @@ async function runSideGamesScenario(base) {
   const stillTeam = (still.teams || []).find((t) => t.teamName === 'Team 1');
   assertEqual(stillTeam && stillTeam.total, 1, 'press must not change hole-1 vs-par');
 
+  const missed = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
+    token,
+    body: { gameKey: 'vegas', startHole: 4, endHole: 18 },
+  });
+  const missedStarts = (missed.presses || [])
+    .filter((p) => (p.game_key || p.gameKey) === 'vegas')
+    .map((p) => Number(p.start_hole ?? p.startHole));
+  if (!missedStarts.includes(4)) fail('missed Vegas press must keep start hole 4, not snap to the latest hole');
+  const missedH1 = ((missed.sideGames && missed.sideGames.games && missed.sideGames.games.vegas && missed.sideGames.games.vegas.holes) || [])
+    .find((h) => h.holeNumber === 1);
+  assertEqual(missedH1 && missedH1.games, 2, 'press starting at 4 must not change hole-1 games running');
+  await api(base, 'DELETE', `/api/rounds/${roundId}/presses/last`, { token });
+
   const frontPress = await api(base, 'POST', `/api/rounds/${roundId}/presses`, {
     token: friend.token,
     body: { gameKey: 'nassau', segment: 'front', startHole: 1, endHole: 18 },
