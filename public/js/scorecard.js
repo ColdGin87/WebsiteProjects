@@ -46,7 +46,7 @@ const scorecard = {
   pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907l',
+  ASSET_V: '20260907m',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -579,10 +579,10 @@ const scorecard = {
     const n = this.vegasGamesRunning(state, holeNumber);
     return `<div class="vegas-press-wrap" id="vegas-press-wrap">
       <div class="vegas-press-bar">
-        <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game.">
+        <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game from hole ${holeNumber} through 18.">
           <span class="vegas-press-label">Press</span>
           <span class="vegas-press-badge">${n}</span>
-          <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
+          <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running${Number(holeNumber) > 1 ? ` · from ${holeNumber}→18` : ''}</span>
         </button>
         ${this.pressEditButtonHtml()}
       </div>
@@ -657,6 +657,7 @@ const scorecard = {
     const btns = [];
     if (this.isVegasOn(state)) {
       btns.push(`<button type="button" class="press-edit-add" onclick="scorecard.pressVegasFromHole(${hn})">Add Vegas press</button>`);
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>');
     }
     if (this.isNassauOn(state)) {
       this.nassauSegmentsForHole(hn).forEach((seg) => {
@@ -928,6 +929,130 @@ const scorecard = {
     } catch (err) {
       _toast(err.message, 'error');
     }
+  },
+
+  pressedChipItems(state) {
+    const items = [];
+    const presses = ((state && state.presses) || []).slice().sort((a, b) => {
+      const sa = Number(a.start_hole ?? a.startHole ?? 0);
+      const sb = Number(b.start_hole ?? b.startHole ?? 0);
+      if (sa !== sb) return sa - sb;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+    presses.forEach((press) => {
+      const key = String(press.game_key || press.gameKey || '');
+      const start = Number(press.start_hole ?? press.startHole);
+      let end = Number(press.end_hole ?? press.endHole);
+      if (!Number.isInteger(start) || start < 1) return;
+      if (!Number.isInteger(end) || end < start) end = 18;
+      if (key === 'vegas') {
+        items.push({
+          kind: 'vegas',
+          hole: start,
+          label: 'V ' + start + '→' + end,
+          title: 'Vegas press holes ' + start + ' through ' + end,
+        });
+      } else if (key === 'nassau') {
+        const side = String(press.segment || '');
+        let label = 'Nassau ' + start + '→' + end;
+        if (side === 'front') label = 'Front ' + start + '–' + end;
+        else if (side === 'back') label = 'Back ' + start + '–' + end;
+        else if (side === 'overall') label = 'Overall ' + start + '→' + end;
+        items.push({
+          kind: 'nassau',
+          hole: start,
+          label,
+          title: label + ' press',
+        });
+      }
+    });
+    return items;
+  },
+
+  pressedHolesBarHtml(state) {
+    if (!state || this.isStandardScorecard(state)) return '';
+    if (!this.isVegasOn(state) && !this.isNassauOn(state)) return '';
+    const chips = this.pressedChipItems(state);
+    const chipHtml = chips.length
+      ? chips.map((chip) => (
+        `<button type="button" class="pressed-chip pressed-chip-${_esc(chip.kind)}" data-go-pressed-hole="${chip.hole}" onclick="scorecard.goToPressedHole(${chip.hole})" title="${_esc(chip.title)}">${_esc(chip.label)}</button>`
+      )).join('')
+      : '<span class="pressed-holes-empty">None yet</span>';
+    const missed = this.isVegasOn(state)
+      ? '<button type="button" class="pressed-missed-btn" id="missed-press-btn" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>'
+      : '';
+    return `<div id="pressed-holes-bar" class="pressed-holes-bar" aria-label="Pressed holes">
+      <div class="pressed-holes-copy">
+        <span class="pressed-holes-label">Pressed</span>
+        <div class="pressed-holes-chips">${chipHtml}</div>
+      </div>
+      ${missed}
+    </div>`;
+  },
+
+  goToPressedHole(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    if (this.screen === 'play' && this.cardMode === 'full') {
+      this.paintCurrentHoleChrome();
+      return;
+    }
+    this.cardMode = 'hole';
+    if (this.state) this.draw(this.state);
+  },
+
+  async offerMissedVegasPress(preferredHole) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    let defaultHole = Number(preferredHole);
+    if (!Number.isInteger(defaultHole) || defaultHole < 1 || defaultHole > 18) {
+      defaultHole = Number(this.currentHole) || 1;
+    }
+    const options = [];
+    for (let h = 1; h <= 18; h += 1) {
+      options.push({ value: String(h), label: 'Hole ' + h + ' → 18' });
+    }
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (!prompt) return;
+    const values = await prompt({
+      title: 'Missed a press — start at an earlier hole. Running Vegas updates from that hole through 18.',
+      submitLabel: 'Add press',
+      fields: [{
+        name: 'startHole',
+        label: 'Start Vegas press at',
+        type: 'select',
+        options,
+        value: String(defaultHole),
+      }],
+    });
+    if (!values) return;
+    await this.pressVegasFromHole(Number(values.startHole));
+  },
+
+  async offerVegasPressFromHole(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Add missed Vegas press from hole ' + hole + ' through 18?',
+        submitLabel: 'Add press',
+        fields: [],
+      });
+      if (!ok) return;
+    } else if (typeof window !== 'undefined' && window.confirm) {
+      if (!window.confirm('Add missed Vegas press from hole ' + hole + ' through 18?')) return;
+    }
+    await this.pressVegasFromHole(hole);
+  },
+
+  async onFullCardHoleTap(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    this.paintCurrentHoleChrome();
+    if (this.isVegasOn(this.state)) await this.offerVegasPressFromHole(hole);
   },
 
   isNinesOn(state) {
@@ -3184,6 +3309,7 @@ const scorecard = {
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
           ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
           ${this.canManagePresses(state) ? '<button type="button" onclick="scorecard.togglePressEdit()">Edit presses</button>' : ''}
+          ${this.isVegasOn(state) ? '<button type="button" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>' : ''}
           ${this.latestPress(state) ? '<button type="button" onclick="scorecard.undoLastPress()">Undo last press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
@@ -3228,6 +3354,7 @@ const scorecard = {
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
+      ${this.pressedHolesBarHtml(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
       ${this.nassauLiveDockHtml(state, holeNumber)}
@@ -3535,6 +3662,7 @@ const scorecard = {
       ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
+      ${this.pressedHolesBarHtml(state)}
       ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}
       ${this.addPlayerPanel(state)}
@@ -3562,7 +3690,7 @@ const scorecard = {
     const showOut = this.showOut(state);
     const showIn = this.showIn(state);
     const showTot = this.showTot(state);
-    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`;
+    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}"><button type="button" class="sc-hole-head-btn" onclick="scorecard.onFullCardHoleTap(${h.hole_number})" aria-label="Hole ${h.hole_number}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}</button></th>`;
     const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
     const outPar = outHoles.reduce((s, h) => s + h.par, 0);
     const inPar = inHoles.reduce((s, h) => s + h.par, 0);
@@ -4172,6 +4300,18 @@ const scorecard = {
       document.getElementById('vegas-press-wrap') || document.querySelector('.vegas-press-wrap'),
       this.vegasPressButtonHtml(this.state, hn)
     );
+    const pressedBar = document.getElementById('pressed-holes-bar');
+    const pressedHtml = this.pressedHolesBarHtml(this.state);
+    if (pressedBar) this.replaceNode(pressedBar, pressedHtml);
+    else if (pressedHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = pressedHtml;
+      const node = tmp.firstElementChild;
+      const toolbar = document.getElementById('hole-toolbar');
+      const nassauBar = document.getElementById('nassau-toolbar-press');
+      if (node && toolbar && toolbar.parentNode) toolbar.insertAdjacentElement('beforebegin', node);
+      else if (node && nassauBar && nassauBar.parentNode) nassauBar.insertAdjacentElement('beforebegin', node);
+    }
     this.ensureNassauLiveDock(hn);
     const ninesBoard = document.getElementById('nines-board');
     if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);

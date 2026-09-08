@@ -2995,6 +2995,104 @@ img {
   margin-top: 6px;
 }
 
+.pressed-holes-bar {
+  position: sticky;
+  top: 60px;
+  z-index: 92;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  background: #E8EAF6;
+  border: 2px solid #1a237e;
+  border-radius: var(--radius-sm);
+}
+
+.pressed-holes-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pressed-holes-label {
+  flex: 0 0 auto;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #1a237e;
+}
+
+.pressed-holes-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pressed-chip {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: #1a237e;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pressed-chip-nassau {
+  background: #C62828;
+}
+
+.pressed-holes-empty {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #3949ab;
+}
+
+.pressed-missed-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 2px solid #1a237e;
+  border-radius: 10px;
+  background: #fff;
+  color: #1a237e;
+  font-size: 0.8rem;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pressed-holes-bar ~ .nassau-toolbar-press {
+  top: 108px;
+}
+
+.sc-hole-head-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .nassau-live-dock {
   position: sticky;
   top: 60px;

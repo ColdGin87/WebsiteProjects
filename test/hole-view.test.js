@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907l/);
-    assert.match(html, /js\/formats\.js\?v=20260907l/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907l/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907l/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907l/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907l/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907l/);
-    assert.match(src, /ASSET_V:\s*'20260907l'/);
+    assert.match(html, /20260907m/);
+    assert.match(html, /js\/formats\.js\?v=20260907m/);
+    assert.match(html, /js\/sideGames\.js\?v=20260907m/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260907m/);
+    assert.match(html, /js\/nineteen\.js\?v=20260907m/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260907m/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260907m/);
+    assert.match(src, /ASSET_V:\s*'20260907m'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -528,6 +528,39 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /Sunday game · /);
     assert.match(src, /<h3>Sunday game<\/h3>/);
     assert.match(css, /\.info-pop:not\(\[hidden\]\)/);
+  });
+
+  it('shows a sticky pressed-hole strip and lets a missed Vegas press start on an old hole', () => {
+    assert.match(src, /pressedHolesBarHtml/);
+    assert.match(src, /pressedChipItems/);
+    assert.match(src, /offerMissedVegasPress/);
+    assert.match(src, /onFullCardHoleTap/);
+    assert.match(src, /Missed a press/);
+    assert.match(src, /'V ' \+ start \+ '→' \+ end/);
+    assert.match(src, /'Front ' \+ start \+ '–' \+ end/);
+    assert.match(src, /'Back ' \+ start \+ '–' \+ end/);
+    assert.match(src, /'Overall ' \+ start \+ '→' \+ end/);
+    const hole = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    assert.match(hole, /pressedHolesBarHtml/);
+    assert.match(full, /pressedHolesBarHtml/);
+    assert.ok(hole.indexOf('pressedHolesBarHtml') < hole.indexOf('holeToolbar'), 'pressed strip sits above the live-card holes');
+    assert.ok(full.indexOf('pressedHolesBarHtml') < full.indexOf('<div class="card">'), 'pressed strip sits above the full-card holes');
+    const chips = sliceFn('pressedChipItems(state)', 'pressedHolesBarHtml(state)');
+    assert.doesNotMatch(chips, /for \(let h = start; h <= end/);
+    const missed = sliceFn('offerMissedVegasPress(preferredHole)', 'offerVegasPressFromHole(holeNumber)');
+    assert.match(missed, /Start Vegas press at/);
+    assert.match(missed, /pressVegasFromHole/);
+    assert.match(src, /Undo last press/);
+    assert.match(src, /presses\/last/);
+    const paint = sliceFn('paintPressChrome()', 'ensureNassauLiveDock(holeNumber)');
+    assert.match(paint, /pressed-holes-bar/);
+    const table = sliceFn('scoreTable(state, holes, outHoles, inHoles)', 'drawSettings(state)');
+    assert.match(table, /onFullCardHoleTap/);
+    assert.match(css, /\.pressed-holes-bar[\s\S]{0,80}position:\s*sticky/);
+    assert.match(css, /\.pressed-holes-bar[\s\S]{0,120}top:\s*60px/);
+    assert.match(css, /\.pressed-missed-btn/);
+    assert.match(css, /\.pressed-holes-bar ~ \.nassau-toolbar-press[\s\S]{0,40}top:\s*108px/);
   });
 
   it('hole Back is a button so a leftover tap cannot change the hash', () => {
