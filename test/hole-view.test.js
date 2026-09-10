@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260907o/);
-    assert.match(html, /js\/formats\.js\?v=20260907o/);
-    assert.match(html, /js\/sideGames\.js\?v=20260907o/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260907o/);
-    assert.match(html, /js\/nineteen\.js\?v=20260907o/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260907o/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260907o/);
-    assert.match(src, /ASSET_V:\s*'20260907o'/);
+    assert.match(html, /20260910a/);
+    assert.match(html, /js\/formats\.js\?v=20260910a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260910a/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260910a/);
+    assert.match(html, /js\/nineteen\.js\?v=20260910a/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260910a/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260910a/);
+    assert.match(src, /ASSET_V:\s*'20260910a'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -481,6 +481,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /playing_handicap/);
     const rosterChange = sliceFn('rosterChanged(patch) {', 'applyLivePatch(patch)');
     assert.match(rosterChange, /playing_handicap/);
+    assert.match(rosterChange, /sameTeamIds/);
     assert.match(src, /nineTotalsBarHtml/);
     assert.match(src, /joinCardRow/);
     assert.match(src, />OUT</);
@@ -566,6 +567,31 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.pressed-holes-bar[\s\S]{0,120}top:\s*60px/);
     assert.match(css, /\.pressed-missed-btn/);
     assert.match(css, /\.pressed-holes-bar ~ \.nassau-toolbar-press[\s\S]{0,40}top:\s*108px/);
+  });
+
+  it('fill spin shuffles each tap and Accept redraws roster plus live card', () => {
+    const fill = fs.readFileSync(path.join(ROOT, 'public/js/teamFillSpin.js'), 'utf8');
+    assert.match(fill, /function shuffleFillPool/);
+    assert.match(fill, /function fairIndex/);
+    assert.match(fill, /crypto\.getRandomValues/);
+    assert.match(fill, /shuffled\[0\]/);
+    assert.doesNotMatch(fill, /lastWinner/);
+    const spin = sliceFn('runFillSpin() {', 'applyAcceptedFill(next)');
+    assert.match(spin, /shuffleFillPool/);
+    assert.match(spin, /reelOrder = shuffled/);
+    assert.match(spin, /reelOrder = \[winner\]/);
+    const accept = sliceFn('acceptFillSpin() {', 'manageableMembers(state)');
+    assert.match(accept, /applyAcceptedFill/);
+    assert.match(accept, /showFilledScorecard/);
+    assert.match(accept, /team-fill/);
+    const show = sliceFn('showFilledScorecard(next) {', 'acceptFillSpin()');
+    assert.match(show, /this\.screen = 'play'/);
+    assert.match(show, /this\.draw\(next\)/);
+    const groups = sliceFn('groupedMembers(state) {', 'playerRows(state, holes, outHoles, inHoles, showOut, showIn)');
+    assert.match(groups, /sameTeamIds/);
+    assert.doesNotMatch(groups, /m\.team_id === team\.id/);
+    assert.match(src, /Each Spin shuffles every eligible name/);
+    assert.match(css, /\.fill-spin-cell\.is-landed/);
   });
 
   it('hole Back is a button so a leftover tap cannot change the hash', () => {

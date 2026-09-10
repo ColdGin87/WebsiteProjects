@@ -4546,6 +4546,10 @@ input.score-input[readonly] {
   font-weight: 800;
 }
 
+.fill-spin-cell.is-landed {
+  background: #C8E6C9;
+}
+
 .fill-spin-winner {
   margin: 0 0 10px;
   font-size: 1.1rem;

@@ -1601,6 +1601,10 @@ async function runTeamFillScenario(base) {
   const patAfter = (filled.members || []).find((m) => Number(m.id) === Number(pat.id));
   const t2 = (filled.teams || []).find((t) => t.name === 'Team 2');
   assertEqual(Number(patAfter && (patAfter.team_id ?? patAfter.teamId)), Number(t2 && t2.id), 'Accept moves leftover onto the short team');
+  if (!Array.isArray(patAfter.holes) || !patAfter.holes.length) fail('Accept must return score holes so the live card can take scores');
+  const liveAfterFill = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: host.token });
+  const livePat = ((liveAfterFill.memberTotals || []).find((m) => Number(m.id) === Number(pat.id)));
+  assertEqual(Number(livePat && (livePat.team_id ?? livePat.teamId)), Number(t2 && t2.id), 'live patch must show the filled player on the short team');
 
   const createdName = await api(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
     token: host.token,

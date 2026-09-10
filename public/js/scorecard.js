@@ -46,7 +46,7 @@ const scorecard = {
   pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907o',
+  ASSET_V: '20260910a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -150,6 +150,7 @@ const scorecard = {
       const patch = await svcApi('getLive', '/api/rounds/' + id + '/live', this.state && this.state.updatedAt);
       if (!patch || patch.notModified) return;
       if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
+      if (this.state && patch.updatedAt && this.state.updatedAt && String(patch.updatedAt) < String(this.state.updatedAt)) return;
       if (this.rosterChanged(patch)) {
         if (this.shouldHoldAddPlayer()) return;
         const full = await svcApi('get', '/api/rounds/' + id);
@@ -174,7 +175,8 @@ const scorecard = {
     return next.some((t) => {
       const m = cur.find((x) => Number(x.id) === Number(t.id));
       if (!m) return true;
-      return Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap);
+      if (Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap)) return true;
+      return !this.sameTeamIds(m.team_id ?? m.teamId, t.team_id ?? t.teamId);
     });
   },
 
@@ -205,7 +207,10 @@ const scorecard = {
       member.inNet = tot.inNet;
       member.totalNet = tot.totalNet;
       member.playing_handicap = tot.playing_handicap;
-      member.team_id = tot.team_id;
+      if (tot.team_id != null || tot.teamId != null) {
+        member.team_id = tot.team_id ?? tot.teamId;
+        member.teamId = tot.teamId ?? tot.team_id;
+      }
       if (tot.follow_show_other != null || tot.followShowOther != null) {
         member.follow_show_other = tot.follow_show_other ?? (tot.followShowOther ? 1 : 0);
         member.followShowOther = !!(tot.followShowOther || tot.follow_show_other === 1);
@@ -1524,6 +1529,7 @@ const scorecard = {
       excluded: new Set(),
       extraNames: [],
       winner: null,
+      reelOrder: [],
       spinning: false,
       fromNineteenth: !!(opts && opts.fromNineteenth),
     };
@@ -1555,6 +1561,9 @@ const scorecard = {
       : 'No team is short of 4';
     const items = this.fillSpinItems(state);
     const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const reelNames = (this.fillSpin.reelOrder && this.fillSpin.reelOrder.length)
+      ? this.fillSpin.reelOrder
+      : included;
     const winner = this.fillSpin.winner;
     let host = document.getElementById('fill-spin-overlay');
     if (!host) {
@@ -1579,11 +1588,14 @@ const scorecard = {
         <em>${_esc(where)}</em>
       </label>`;
     }).join('') || '<p class="fill-spin-empty">No leftover names. Add a name or pick another team.</p>';
-    const reel = (included.length ? included : [{ name: '—' }]).map((item) => `<div class="fill-spin-cell">${_esc(item.name)}</div>`).join('');
+    const reel = (reelNames.length ? reelNames : [{ name: '—' }]).map((item) => {
+      const landed = !!(winner && !this.fillSpin.spinning && item && item.name === winner.name);
+      return `<div class="fill-spin-cell${landed ? ' is-landed' : ''}">${_esc(item.name)}</div>`;
+    }).join('');
     host.innerHTML = `
       <div class="fill-spin-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-spin-title">
         <h2 id="fill-spin-title">Fill a short team</h2>
-        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Spin is random. Accept is what adds them.</p>
+        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Each Spin shuffles every eligible name with equal chance. Accept is what adds them to the roster and live card.</p>
         <p class="fill-spin-need" id="fill-spin-short-list">${_esc(shortLine)}</p>
         <label class="tiny-label">Target team
           <select class="form-input" id="fill-spin-team" ${this.fillSpin.spinning ? 'disabled' : ''}>${teamOpts}</select>
@@ -1612,6 +1624,7 @@ const scorecard = {
       teamEl.onchange = () => {
         this.fillSpin.teamName = teamEl.value;
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     }
@@ -1621,6 +1634,7 @@ const scorecard = {
         if (box.checked) this.fillSpin.excluded.delete(key);
         else this.fillSpin.excluded.add(key);
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     });
@@ -1632,6 +1646,7 @@ const scorecard = {
         if (!raw) return;
         if (!this.fillSpin.extraNames.includes(raw)) this.fillSpin.extraNames.push(raw);
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     }
@@ -1654,20 +1669,42 @@ const scorecard = {
     if (!this.fillSpin || this.fillSpin.spinning) return;
     const api = this.fillSpinApi();
     const items = this.fillSpinItems(this.state);
-    const winner = api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null;
+    const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const shuffled = api.shuffleFillPool ? api.shuffleFillPool(included) : included.slice();
+    const winner = shuffled[0] || (api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null);
     if (!winner) {
       _toast('Include at least one name', 'error');
       return;
     }
     this.fillSpin.spinning = true;
     this.fillSpin.winner = null;
+    this.fillSpin.reelOrder = shuffled;
     this.drawFillSpin();
     window.setTimeout(() => {
       if (!this.fillSpin) return;
       this.fillSpin.spinning = false;
       this.fillSpin.winner = winner;
+      this.fillSpin.reelOrder = [winner];
       this.drawFillSpin();
     }, 1100);
+  },
+
+  applyAcceptedFill(next) {
+    this.state = next;
+    if (next && next.round && next.round.id) this.writeCache(next.round.id, next);
+  },
+
+  showFilledScorecard(next) {
+    this.screen = 'play';
+    const id = next && next.round && next.round.id;
+    if (id && typeof app !== 'undefined' && typeof app.navigate === 'function') {
+      const hash = '#round/' + id;
+      if (String(window.location.hash || '') !== hash) {
+        app.navigate(hash);
+        return;
+      }
+    }
+    this.draw(next);
   },
 
   async acceptFillSpin() {
@@ -1680,10 +1717,9 @@ const scorecard = {
       else body.name = winner.name;
       const fromNineteenth = !!(this.fillSpin && this.fillSpin.fromNineteenth);
       const next = await svcApi('post', `/api/rounds/${this.state.round.id}/team-fill`, body);
-      this.state = next;
-      this.writeCache(next.round.id, next);
+      if (!next || !next.round || !next.members) throw new Error('Could not add the winner');
+      this.applyAcceptedFill(next);
       this.closeFillSpin();
-      this.draw(next);
       _toast((winner.name || 'Winner') + ' is on ' + teamName, 'success');
       if (fromNineteenth) {
         if (this.shouldOfferFillBeforeNineteenth(this.state)) {
@@ -1691,7 +1727,9 @@ const scorecard = {
         } else {
           this.openNineteenth({ skipFill: true });
         }
+        return;
       }
+      this.showFilledScorecard(next);
     } catch (err) {
       _toast(err.message || 'Could not add the winner', 'error');
     }
@@ -3926,7 +3964,7 @@ const scorecard = {
     const groups = [];
     const teams = [...(state.teams || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
     for (const team of teams) {
-      const members = (state.members || []).filter((m) => m.team_id === team.id && !this.isFollowAlongMember(m));
+      const members = (state.members || []).filter((m) => this.sameTeamIds(m.team_id ?? m.teamId, team.id) && !this.isFollowAlongMember(m));
       members.forEach((m) => used.add(m.id));
       groups.push({ team, members });
     }

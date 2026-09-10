@@ -8,6 +8,8 @@ const {
   fillCandidates,
   includedCandidates,
   pickFillWinner,
+  shuffleFillPool,
+  fairIndex,
   candidateKey,
   scoringMembers,
 } = require('../public/js/teamFillSpin');
@@ -81,8 +83,43 @@ describe('Team fill spin', () => {
     ];
     const excluded = new Set([candidateKey(cands[0])]);
     assert.deepEqual(includedCandidates(cands, excluded).map((c) => c.name), ['B', 'C']);
-    assert.equal(pickFillWinner(cands, excluded, () => 0).name, 'B');
-    assert.equal(pickFillWinner(cands, excluded, () => 0.99).name, 'C');
+    assert.equal(pickFillWinner(cands, excluded, () => 0).name, 'C');
+    assert.equal(pickFillWinner(cands, excluded, () => 0.99).name, 'B');
     assert.equal(pickFillWinner(cands, new Set(cands.map(candidateKey))), null);
+  });
+
+  it('shuffles eligible names independently each spin with equal chance', () => {
+    const cands = [
+      { memberId: 1, name: 'A' },
+      { memberId: 2, name: 'B' },
+      { memberId: 3, name: 'C' },
+      { memberId: 4, name: 'D' },
+    ];
+    assert.equal(fairIndex(4, () => 0), 0);
+    assert.equal(fairIndex(4, () => 0.99), 3);
+    const rotated = shuffleFillPool(cands, () => 0).map((c) => c.name);
+    const rolls = [0.75, 0.1, 0.4];
+    let k = 0;
+    const mixed = shuffleFillPool(cands, () => rolls[k++]).map((c) => c.name);
+    assert.deepEqual(rotated, ['B', 'C', 'D', 'A']);
+    assert.notDeepEqual(mixed, ['A', 'B', 'C', 'D']);
+    assert.notDeepEqual(mixed, rotated);
+
+    const counts = { A: 0, B: 0, C: 0, D: 0 };
+    const n = 2000;
+    for (let i = 0; i < n; i += 1) {
+      const winner = pickFillWinner(cands);
+      counts[winner.name] += 1;
+    }
+    const expected = n / 4;
+    for (const name of Object.keys(counts)) {
+      const share = counts[name] / n;
+      assert.ok(share > 0.18 && share < 0.32, `${name} share ${share} should be near 0.25`);
+      assert.ok(Math.abs(counts[name] - expected) < expected * 0.28, `${name} count ${counts[name]} drifted from ${expected}`);
+    }
+    const sample = [];
+    for (let i = 0; i < 8; i += 1) sample.push(pickFillWinner(cands).name);
+    assert.equal(sample.length, 8);
+    assert.ok(new Set(sample).size >= 2, `8 independent spins should not all be one name: ${sample.join(',')}`);
   });
 });

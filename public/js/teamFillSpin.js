@@ -83,6 +83,12 @@ function includedCandidates(candidates, excludedKeys) {
   });
 }
 
+function clampUnit(roll) {
+  const n = Number(roll);
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(Math.max(n, 0), 0.999999999);
+}
+
 function fairUnit() {
   if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
     const buf = new Uint32Array(1);
@@ -92,12 +98,42 @@ function fairUnit() {
   return Math.random();
 }
 
+function fairIndex(n, randomFn) {
+  const size = Math.floor(Number(n));
+  if (size <= 1) return 0;
+  if (typeof randomFn === 'function') {
+    return Math.floor(clampUnit(randomFn()) * size);
+  }
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const max = 0x100000000;
+    const limit = max - (max % size);
+    const buf = new Uint32Array(1);
+    let x;
+    do {
+      crypto.getRandomValues(buf);
+      x = buf[0];
+    } while (x >= limit);
+    return x % size;
+  }
+  return Math.floor(clampUnit(Math.random()) * size);
+}
+
+function shuffleFillPool(candidates, randomFn) {
+  const list = (candidates || []).slice();
+  for (let i = list.length - 1; i > 0; i -= 1) {
+    const j = fairIndex(i + 1, randomFn);
+    const tmp = list[i];
+    list[i] = list[j];
+    list[j] = tmp;
+  }
+  return list;
+}
+
 function pickFillWinner(candidates, excludedKeys, randomFn) {
   const pool = includedCandidates(candidates, excludedKeys);
   if (!pool.length) return null;
-  const roll = typeof randomFn === 'function' ? Number(randomFn()) : fairUnit();
-  const unit = Number.isFinite(roll) ? Math.min(Math.max(roll, 0), 0.999999999) : 0;
-  return pool[Math.floor(unit * pool.length)] || null;
+  const shuffled = shuffleFillPool(pool, randomFn);
+  return shuffled[0] || null;
 }
 
 function teamOfMember(state, member) {
@@ -119,6 +155,8 @@ const teamFillApi = {
   candidateKey,
   includedCandidates,
   fairUnit,
+  fairIndex,
+  shuffleFillPool,
   pickFillWinner,
   teamDisplay,
   teamOfMember,
