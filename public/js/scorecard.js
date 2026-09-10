@@ -46,7 +46,7 @@ const scorecard = {
   pressEditOpen: false,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260910b',
+  ASSET_V: '20260910c',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -459,19 +459,12 @@ const scorecard = {
     return this.canWriteMember(state, member);
   },
 
-  isVegasOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    const cfg = this.sideConfig(state);
-    return !!(cfg.vegas && cfg.vegas.on);
+  isVegasOn(_state) {
+    return false;
   },
 
-  isWolfOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.wolf && this.flagOn(cfg.wolf.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    return !!(games && games.wolf);
+  isWolfOn(_state) {
+    return false;
   },
 
   vegasGame(state) {
@@ -523,9 +516,8 @@ const scorecard = {
     return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${run}`;
   },
 
-  vegasBoardHtml(state) {
-    if (!this.isVegasOn(state)) return '';
-    return `<div class="vegas-board" id="vegas-board">${this.vegasBoardInner(state)}</div>`;
+  vegasBoardHtml(_state) {
+    return '';
   },
 
   vegasPresses(state) {
@@ -584,21 +576,8 @@ const scorecard = {
       <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v, hn))}</div>`;
   },
 
-  vegasPressButtonHtml(state, holeNumber) {
-    if (!this.isVegasOn(state)) return '';
-    const n = this.vegasGamesRunning(state, holeNumber);
-    return `<div class="vegas-press-wrap" id="vegas-press-wrap">
-      <div class="vegas-press-bar">
-        <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game from hole ${holeNumber} through 18.">
-          <span class="vegas-press-label">Press</span>
-          <span class="vegas-press-badge">${n}</span>
-          <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running${Number(holeNumber) > 1 ? ` · from ${holeNumber}→18` : ''}</span>
-        </button>
-        ${this.pressEditButtonHtml()}
-      </div>
-      ${this.undoLastPressHtml(state)}
-      ${this.pressEditPanelHtml(state)}
-    </div>`;
+  vegasPressButtonHtml(_state, _holeNumber) {
+    return '';
   },
 
   latestPress(state) {
@@ -621,28 +600,16 @@ const scorecard = {
     return 'Press';
   },
 
-  undoLastPressHtml(state) {
-    const last = this.latestPress(state);
-    if (!last) return '';
-    const label = this.pressUndoLabel(last);
-    return `<div class="undo-last-press-wrap">
-      <button type="button" class="undo-last-press-btn" onclick="scorecard.undoLastPress()" aria-label="Undo last press ${label}">
-        Undo last press<span class="undo-last-press-hint">${_esc(label)}</span>
-      </button>
-    </div>`;
+  undoLastPressHtml(_state) {
+    return '';
   },
 
-  canManagePresses(state) {
-    if (!state || this.isStandardScorecard(state)) return false;
-    return this.isVegasOn(state) || this.isNassauOn(state)
-      || this.isWolfOn(state) || this.isNinesOn(state);
+  canManagePresses(_state) {
+    return false;
   },
 
   pressEditButtonHtml() {
-    const open = !!this.pressEditOpen;
-    return `<button type="button" class="press-edit-btn${open ? ' is-open' : ''}" onclick="scorecard.togglePressEdit()" aria-expanded="${open ? 'true' : 'false'}" aria-controls="press-edit-panel">
-      Edit
-    </button>`;
+    return '';
   },
 
   pressEditSummary(state) {
@@ -681,14 +648,8 @@ const scorecard = {
     return btns.join('');
   },
 
-  pressEditPanelHtml(state) {
-    if (!this.pressEditOpen || !this.canManagePresses(state)) return '';
-    return `<div class="press-edit-panel" id="press-edit-panel">
-      <div class="press-edit-heading">Edit presses</div>
-      <p class="press-edit-summary">${_esc(this.pressEditSummary(state))}</p>
-      <div class="press-edit-adds">${this.pressEditAddButtonsHtml(state)}</div>
-      ${this.undoLastPressHtml(state) || '<p class="press-edit-empty">Nothing to undo.</p>'}
-    </div>`;
+  pressEditPanelHtml(_state) {
+    return '';
   },
 
   togglePressEdit() {
@@ -737,17 +698,8 @@ const scorecard = {
     return value === true || value === 1 || value === '1' || value === 'on' || value === 'true' || value === 'yes';
   },
 
-  isNassauOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.nassau && this.flagOn(cfg.nassau.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    if (games && (games.nassau || (games.nassauPresses && games.nassauPresses.length))) return true;
-    const presses = state.presses || [];
-    if (presses.some((p) => (p.game_key || p.gameKey) === 'nassau')) return true;
-    const strip = state.sideGames && (state.sideGames.stripText || '');
-    return /\bNassau\b/i.test(strip);
+  isNassauOn(_state) {
+    return false;
   },
 
   nassauPresses(state) {
@@ -838,18 +790,12 @@ const scorecard = {
     </div>`;
   },
 
-  nassauBoardHtml(state, boardId) {
-    if (!this.isNassauOn(state)) return '';
-    return `<div class="nassau-board" id="${boardId || 'nassau-board'}">${this.nassauBoardInner(state)}</div>`;
+  nassauBoardHtml(_state, _boardId) {
+    return '';
   },
 
-  nassauLiveDockHtml(state, holeNumber) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-live-dock" id="nassau-live-dock">
-      ${this.nassauPressButtonsHtml(state, hn)}
-      ${this.nassauBoardHtml(state)}
-    </div>`;
+  nassauLiveDockHtml(_state, _holeNumber) {
+    return '';
   },
 
   nassauBoardInner(state) {
@@ -882,21 +828,8 @@ const scorecard = {
     return `${badge}${original}${pressLines}`;
   },
 
-  nassauPressButtonsHtml(state, holeNumber, wrapId) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    const manage = wrapId === 'nassau-press-wrap-toolbar' && !this.isVegasOn(state);
-    return `<div class="nassau-press-wrap" id="${wrapId || 'nassau-press-wrap'}">
-      <div class="nassau-press-heading">Nassau Press</div>
-      <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
-        const c = this.nassauPressCount(state, seg.key);
-        const disabled = seg.enabled === false ? ' disabled' : '';
-        return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
-      }).join('')}</div>
-      ${manage ? `<div class="vegas-press-bar nassau-press-manage">${this.pressEditButtonHtml()}</div>` : ''}
-      ${manage ? this.undoLastPressHtml(state) : ''}
-      ${manage ? this.pressEditPanelHtml(state) : ''}
-    </div>`;
+  nassauPressButtonsHtml(_state, _holeNumber, _wrapId) {
+    return '';
   },
 
   async pressNassauFromHole(holeNumber, segment) {
@@ -1003,25 +936,8 @@ const scorecard = {
     return items;
   },
 
-  pressedHolesBarHtml(state) {
-    if (!state || this.isStandardScorecard(state)) return '';
-    if (!this.isVegasOn(state) && !this.isNassauOn(state)) return '';
-    const chips = this.pressedChipItems(state);
-    const chipHtml = chips.length
-      ? chips.map((chip) => (
-        `<button type="button" class="pressed-chip pressed-chip-${_esc(chip.kind)}" data-go-pressed-hole="${chip.hole}" onclick="scorecard.goToPressedHole(${chip.hole})" title="${_esc(chip.title)}">${_esc(chip.label)}</button>`
-      )).join('')
-      : '<span class="pressed-holes-empty">None yet</span>';
-    const missed = this.isVegasOn(state)
-      ? '<button type="button" class="pressed-missed-btn" id="missed-press-btn" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>'
-      : '';
-    return `<div id="pressed-holes-bar" class="pressed-holes-bar" aria-label="Pressed holes">
-      <div class="pressed-holes-copy">
-        <span class="pressed-holes-label">Pressed</span>
-        <div class="pressed-holes-chips">${chipHtml}</div>
-      </div>
-      ${missed}
-    </div>`;
+  pressedHolesBarHtml(_state) {
+    return '';
   },
 
   goToPressedHole(holeNumber) {
@@ -1089,22 +1005,16 @@ const scorecard = {
     if (this.isVegasOn(this.state)) await this.offerVegasPressFromHole(hole);
   },
 
-  isNinesOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.nines && this.flagOn(cfg.nines.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    return !!(games && games.nines);
+  isNinesOn(_state) {
+    return false;
   },
 
   ninesGame(state) {
     return state && state.sideGames && state.sideGames.games && state.sideGames.games.nines;
   },
 
-  ninesBoardHtml(state) {
-    if (!this.isNinesOn(state)) return '';
-    return `<div class="nines-board" id="nines-board">${this.ninesBoardInner(state)}</div>`;
+  ninesBoardHtml(_state) {
+    return '';
   },
 
   ninesPtsLine(players, key) {
@@ -2611,9 +2521,6 @@ const scorecard = {
     if (this.screen === 'nineteenth') {
       this.drawNineteenth(state);
       this.bindInfoTips();
-      if (window.wyrmCoil && typeof window.wyrmCoil.onNineteenthDrawn === 'function') {
-        window.wyrmCoil.onNineteenthDrawn(state);
-      }
       return;
     }
     if (this.isHoleView()) this.drawHoleView(state);
@@ -2836,22 +2743,10 @@ const scorecard = {
 
   liveGameTitle(state) {
     if (this.isStandardScorecard(state)) return 'Standard scorecard';
-    const bits = [];
     if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
-      bits.push('Sunday game · ' + this.shortRaceTitle(state.round));
+      return 'Sunday game · ' + this.shortRaceTitle(state.round);
     }
-    const cfg = this.sideConfig(state);
-    const labels = [
-      ['vegas', 'Vegas'],
-      ['wolf', 'Wolf'],
-      ['nassau', 'Nassau'],
-      ['nines', 'Nines'],
-      ['skins', 'Skins'],
-    ];
-    for (const [key, label] of labels) {
-      if (cfg[key] && this.flagOn(cfg[key].on)) bits.push(label);
-    }
-    return bits.join(' + ') || 'Scorecard';
+    return 'Scorecard';
   },
 
   liveGameTitleHtml(state) {
@@ -2917,11 +2812,8 @@ const scorecard = {
     return fromSide || {};
   },
 
-  pressableGames(state) {
-    if (this.isStandardScorecard(state)) return [];
-    const cfg = this.sideConfig(state);
-    const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
-    return defs.filter((g) => g.pressable && cfg[g.key] && this.flagOn(cfg[g.key].on));
+  pressableGames(_state) {
+    return [];
   },
 
   async confirmPress() {
@@ -3075,218 +2967,54 @@ const scorecard = {
     };
   },
 
-  wolfBarHtml(state, holeNumber) {
-    const cfg = this.sideConfig(state);
-    if (!cfg.wolf || !cfg.wolf.on) return '';
-    const wolf = this.wolfForHole(state, holeNumber);
-    if (!wolf) return '';
-    const pick = this.wolfPickFor(state, holeNumber);
-    const sides = this.wolfSides(state, holeNumber);
-    if (sides) {
-      const wolfNames = sides.wolfSide.map((m) => m.display_name).join(' + ');
-      const fieldNames = sides.field.map((m) => m.display_name).join(' / ') || 'field';
-      const vals = this.wolfPointValues(state);
-      const kind = sides.blind
-        ? `Blind Lone Wolf ±${vals.blind}`
-        : (sides.lone ? `Lone Wolf ±${vals.lone}` : `Wolf + partner ±${vals.partnered}`);
-      return `<div class="wolf-bar" id="wolf-bar">
-        <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
-        <div class="wolf-sides">${_esc(kind)} · ${_esc(wolfNames)} vs ${_esc(fieldNames)}</div>
-      </div>`;
-    }
-    const passed = this.wolfPassedIds(pick);
-    const others = this.wolfOthers(state, holeNumber);
-    const current = others.find((m) => !passed.includes(Number(m.id)));
-    const canBlind = passed.length === 0;
-    const rows = others.map((m) => {
-      if (passed.includes(Number(m.id))) {
-        return `<div class="wolf-tee is-passed">Passed ${_esc(m.display_name)}</div>`;
-      }
-      if (current && current.id === m.id) {
-        return `<div class="wolf-tee is-up">${_esc(m.display_name)} teed
-          <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { partnerId: ${m.id}, locked: true })">Pick partner</button>
-          <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.wolfPass(${holeNumber}, ${m.id})">Pass</button>
-        </div>`;
-      }
-      return `<div class="wolf-tee">Waiting to tee: ${_esc(m.display_name)}</div>`;
-    }).join('');
-    return `<div class="wolf-bar" id="wolf-bar">
-      <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
-      <p class="card-subtitle">After each tee, pick that player or pass. Lock Wolf sides before scoring this hole for points — you can still enter gross now. Next hole is a new Wolf.</p>
-      ${canBlind ? `<button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, blind: true, locked: true })">Blind Lone Wolf ±${this.wolfPointValues(state).blind}</button>` : ''}
-      ${rows}
-      <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, locked: true })">Lone Wolf ±${this.wolfPointValues(state).lone}</button>
-    </div>`;
+  wolfBarHtml(_state, _holeNumber) {
+    return '';
   },
 
-  sideGamesFieldsInner(cfg) {
-    cfg = cfg || {};
-    const skinsOn = !!(cfg.skins && cfg.skins.on);
-    const vegasOn = !!(cfg.vegas && cfg.vegas.on);
-    const nassauOn = !!(cfg.nassau && cfg.nassau.on);
-    const wolfOn = !!(cfg.wolf && cfg.wolf.on);
-    const ninesOn = !!(cfg.nines && cfg.nines.on);
-    return `
-      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off. ${this.infoTip('side-games', 'Turn on any mix. Sunday game is a separate setup toggle. Side games can run alone.')}</p>
-      <label class="check-row"><input type="checkbox" name="skinsOn" ${skinsOn ? 'checked' : ''}> Skins</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('skins')) || '')}</p>
-      <div class="form-group"><label>Skins pot</label><input class="form-input" name="skinsPot" type="number" min="0" step="1" value="${cfg.skins && cfg.skins.pot != null ? cfg.skins.pot : 20}"></div>
-      <label class="check-row"><input type="checkbox" name="vegasOn" ${vegasOn ? 'checked' : ''}> Vegas</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('vegas')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Vegas scoring</label><select class="form-input" name="vegasScoring"><option value="gross" ${cfg.vegas && cfg.vegas.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.vegas && cfg.vegas.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="vegasDollars" type="number" min="0" step="0.5" value="${cfg.vegas && cfg.vegas.dollarsPerPoint != null ? cfg.vegas.dollarsPerPoint : 1}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="nassauOn" ${nassauOn ? 'checked' : ''}> Nassau (NASA)</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nassau')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Nassau scoring</label><select class="form-input" name="nassauScoring"><option value="net" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
-        <div class="form-group"><label>Front $</label><input class="form-input" name="nassauFront" type="number" min="0" value="${cfg.nassau && cfg.nassau.front != null ? cfg.nassau.front : 2}"></div>
-        <div class="form-group"><label>Back $</label><input class="form-input" name="nassauBack" type="number" min="0" value="${cfg.nassau && cfg.nassau.back != null ? cfg.nassau.back : 2}"></div>
-        <div class="form-group"><label>Overall $</label><input class="form-input" name="nassauOverall" type="number" min="0" value="${cfg.nassau && cfg.nassau.overall != null ? cfg.nassau.overall : 2}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="wolfOn" ${wolfOn ? 'checked' : ''}> Wolf</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('wolf')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Wolf scoring</label><select class="form-input" name="wolfScoring"><option value="gross" ${cfg.wolf && cfg.wolf.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.wolf && cfg.wolf.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
-        <div class="form-group"><label>Partnered ±</label><input class="form-input" name="wolfPartnered" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.partnered != null ? cfg.wolf.partnered : 1}"></div>
-        <div class="form-group"><label>Lone ±</label><input class="form-input" name="wolfLone" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.lone != null ? cfg.wolf.lone : 2}"></div>
-        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 4}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
-      <label class="check-row"><input type="checkbox" name="ninesBlitz" ${!cfg.nines || cfg.nines.blitz !== false ? 'checked' : ''}> Blitz 9-0-0</label>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (one player 29 · another 50). 19th hole shows the fun board. Longer reel before it settles.')}</label>
-      <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
-      <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
-        <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
-      </div>`;
+  sideGamesFieldsInner(_cfg) {
+    return '';
   },
 
-  sideGamesSettingsHtml(state) {
-    if (this.isStandardScorecard(state)) return '';
-    const cfg = this.sideConfig(state);
-    return `<form class="card" id="side-games-settings" onsubmit="event.preventDefault();scorecard.saveSideGames()">
-      <div class="card-title">Side games</div>
-      ${this.sideGamesFieldsInner(cfg)}
-      <button class="btn btn-secondary btn-sm" type="submit">Save side games</button>
-    </form>`;
+  sideGamesSettingsHtml(_state) {
+    return '';
   },
 
   saveSideGames() {
-    const form = document.getElementById('side-games-settings');
-    if (!form) return;
-    const fd = new FormData(form);
-    this.updateSettings({ sideGames: this.readSideGamesForm(fd) });
+    return;
   },
 
-  readSideGamesForm(fd) {
+  readSideGamesForm(_fd) {
+    if (window.sideGames && typeof window.sideGames.quietSideGames === 'function') {
+      return window.sideGames.quietSideGames();
+    }
     return {
-      skins: { on: fd.get('skinsOn') === 'on', pot: Number(fd.get('skinsPot') || 0) },
-      vegas: { on: fd.get('vegasOn') === 'on', scoring: fd.get('vegasScoring') || 'gross', dollarsPerPoint: Number(fd.get('vegasDollars') || 1) },
-      nassau: {
-        on: fd.get('nassauOn') === 'on',
-        scoring: fd.get('nassauScoring') || 'net',
-        front: Number(fd.get('nassauFront') || 0),
-        back: Number(fd.get('nassauBack') || 0),
-        overall: Number(fd.get('nassauOverall') || 0),
-      },
-      wolf: {
-        on: fd.get('wolfOn') === 'on',
-        scoring: fd.get('wolfScoring') || 'gross',
-        dollarsPerPoint: Number(fd.get('wolfDollars') || 1),
-        partnered: Number(fd.get('wolfPartnered') || 1),
-        lone: Number(fd.get('wolfLone') || 2),
-        blind: Number(fd.get('wolfBlind') || 4),
-      },
-      nines: {
-        on: fd.get('ninesOn') === 'on',
-        scoring: fd.get('ninesScoring') || 'net',
-        blitz: fd.get('ninesBlitz') === 'on',
-        dollarsPerPoint: Number(fd.get('ninesDollars') || 1),
-      },
-      birdieSlots: { on: fd.get('birdieSlotsOn') === 'on' },
-      kps: {
-        on: fd.get('kpsOn') === 'on',
-        holes: String(fd.get('kpsHoles') || '').split(/[\s,]+/).map(Number).filter((n) => n >= 1 && n <= 18),
-        winners: (this.state && this.sideConfig(this.state).kps && this.sideConfig(this.state).kps.winners) || {},
-      },
+      skins: { on: false },
+      vegas: { on: false },
+      nassau: { on: false },
+      wolf: { on: false },
+      nines: { on: false },
+      birdieSlots: { on: false },
+      kps: { on: false, holes: [], winners: {} },
     };
   },
 
   sideGamesResultsHtml(state) {
-    const side = state.sideGames;
-    if (!side || !side.games) return '';
-    const blocks = [];
-    const g = side.games;
     const raceTeams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
     if (this.isTeamRaceOn(state) && raceTeams) {
-      blocks.push(`<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`);
+      return `<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`;
     }
-    if (g.skins) {
-      const s = g.skins;
-      const gross = (s.grossWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
-      const net = (s.netWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
-      blocks.push(`<div class="card"><h3 class="card-title">Skins</h3>
-        <p>Pot ${s.pot} · ${s.skinCount} skins · ${s.valuePerSkin ? s.valuePerSkin.toFixed(2) : '0'} each</p>
-        <p>Gross skins: ${_esc(gross)}</p>
-        <p>Net skins: ${_esc(net)}</p></div>`);
-    }
-    if (g.vegas && g.vegas.teamA) {
-      blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
-        <p>${_esc(g.vegas.teamA.name)} ${this.fmtVegasPts(g.vegas.teamA.points)} · ${_esc(g.vegas.teamB.name)} ${this.fmtVegasPts(g.vegas.teamB.points)} <span class="tiny-label">zero-sum</span></p></div>`);
-    }
-    if (g.nassau && g.nassau.front) {
-      const presses = g.nassauPresses || [];
-      const pressBits = presses.map((p, i) =>
-        `Press ${i + 1} ${this.nassauSegLabel(p.segment)} H${p.startHole}–${p.endHole}: ${p.status}`
-      ).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Nassau (NASA)</h3>
-        <p>Original · Front ${ _esc(g.nassau.front.status) } · Back ${ _esc(g.nassau.back.status) } · 18 ${ _esc(g.nassau.overall.status) }</p>
-        ${pressBits ? `<p>${_esc(pressBits)}</p>` : ''}
-        <p class="card-subtitle">Three bets. Presses die at the end of that segment. Original stays live.</p></div>`);
-    }
-    if (g.wolf) {
-      const pts = (g.wolf.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Wolf</h3><p>${_esc(pts || 'No holes decided')}</p></div>`);
-    }
-    if (g.nines) {
-      const pts = (g.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
-    }
-    if (g.birdieSlots && g.birdieSlots.on) {
-      const board = g.birdieSlots.funBoard || (g.birdieSlots.leader ? g.birdieSlots.leader.name + ' ' + g.birdieSlots.leader.points : '');
-      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil fun board</h3><p>${_esc(board || 'No birdies yet')} · fun only, not team money</p></div>`);
-    }
-    if (side.stripText) {
-      blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
-    }
-    if (!blocks.length) return '';
-    return `<h3 class="section-title">Side games</h3>${blocks.join('')}`;
+    return '';
   },
 
   raceStripText(state) {
     if (this.isStandardScorecard(state)) return '';
-    const extra = state.sideGames && state.sideGames.stripText;
-    const vegasBit = this.isVegasOn(state) ? this.vegasStripText(state) : '';
-    const extraSansVegas = extra
-      ? extra.split(' · ').filter((bit) => !/^Vegas\b/.test(bit)).join(' · ')
-      : '';
-    if (!this.isTeamRaceOn(state)) {
-      return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
-    }
+    if (!this.isTeamRaceOn(state)) return '';
     const teams = state.teams || [];
-    if (!teams.length) return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    if (!teams.length) return '';
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) {
-      const win = `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
-      return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
+      return `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
     }
     const teamBits = teams.map((t) => {
       const seen = this.canSeeTeamScores(state, t);
@@ -3296,7 +3024,7 @@ const scorecard = {
       }
       return bit;
     }).join(' · ');
-    return [vegasBit, `Sunday game ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
+    return `Sunday game ${teamBits}`;
   },
 
   fillSeatLabel(member, team) {
@@ -3405,13 +3133,8 @@ const scorecard = {
     }).join('')}</div>`;
   },
 
-  nassauToolbarPressHtml(state, holeNumber) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-toolbar-press" id="nassau-toolbar-press">
-      ${this.nassauPressButtonsHtml(state, hn, 'nassau-press-wrap-toolbar')}
-      ${this.nassauBoardHtml(state, 'nassau-board-toolbar')}
-    </div>`;
+  nassauToolbarPressHtml(_state, _holeNumber) {
+    return '';
   },
 
   holeToolbar(state) {
@@ -3424,15 +3147,10 @@ const scorecard = {
         <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
-          ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
-          ${this.canManagePresses(state) ? '<button type="button" onclick="scorecard.togglePressEdit()">Edit presses</button>' : ''}
-          ${this.isVegasOn(state) ? '<button type="button" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>' : ''}
-          ${this.latestPress(state) ? '<button type="button" onclick="scorecard.undoLastPress()">Undo last press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
-      </div>
-      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}`;
+      </div>`;
   },
 
   toggleHoleOverflow(e) {
@@ -3471,28 +3189,18 @@ const scorecard = {
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
-      ${this.pressedHolesBarHtml(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
-      ${this.nassauLiveDockHtml(state, holeNumber)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
-          ${this.nassauPressButtonsHtml(state, holeNumber, 'nassau-press-wrap-card')}
-          ${this.nassauBoardHtml(state, 'nassau-board-card')}
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number-row">
             <div class="hole-number" id="hole-number">${this.holeNumberLabelHtml(state, holeNumber)}</div>
             <button type="button" class="btn btn-sm btn-accent hole-full-card-btn" onclick="scorecard.setCardMode('full')">Full card</button>
           </div>
-          ${this.vegasBoardHtml(state)}
-          ${this.vegasPressButtonHtml(state, holeNumber)}
-          ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
-          ${this.pressableGames(state).filter((g) => g.key !== 'nassau' && g.key !== 'vegas').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'Vegas Press increments games running (not a new ledger). Wolf / Nines press from this hole to 18. Nassau uses Front / Back / Overall on the live card.')}` : ''}
         </div>
         ${this.nineTotalsBarHtml(state)}
-        ${this.wolfBarHtml(state, holeNumber)}
-        ${this.kpPickerHtml(state, holeNumber)}
         ${this.addPlayerPanel(state)}
         ${this.holePlayersHtml(state, holeNumber)}
       </div>
@@ -3779,15 +3487,10 @@ const scorecard = {
       ${this.followAlongBarHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
-      ${this.pressedHolesBarHtml(state)}
-      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}
       ${this.addPlayerPanel(state)}
-      ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
-        ${this.vegasBoardHtml(state)}
-        ${this.vegasPressButtonHtml(state, this.currentHole || 1)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>
@@ -3840,7 +3543,7 @@ const scorecard = {
     container.innerHTML = `
         ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card">
-        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game, format, and side games. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
+        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game and format. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
         <p class="card-subtitle">${_esc(r.name)} · join <strong>${_esc(r.joinCode || r.join_code)}</strong></p>
         <p class="join-row">
           <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.joinUrl || '')}')">Copy join link</button>
@@ -3945,22 +3648,22 @@ const scorecard = {
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
         <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
-        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N and friends). Standard scorecard is dots plus OUT/IN/TOT only — no side games.')}
+        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N or 1G+1N). Standard scorecard is dots plus OUT/IN/TOT only.')}
           <select onchange="scorecard.changeRoundFormat(this.value)">
             <option value="team_net" ${r.format === 'team_net' ? 'selected' : ''}>Team vs par</option>
             <option value="standard" ${r.format === 'standard' || r.format === 'standard_scorecard' ? 'selected' : ''}>Standard scorecard</option>
             <option value="match_play" ${r.format === 'match_play' ? 'selected' : ''}>Match play</option>
           </select>
         </label>
-        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par when Sunday game is ON. Pick 1G+2N (default) or 1G+1N, plus 3G, 3N, 1G+3N, 2G+2N.')}
+        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par. Pick 1G+2N (default) or 1G+1N.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
-        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>`}
-        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always see and enter every team’s scores (one-phone Vegas). Non-hosts stay own-team write only.')}</label>
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race (1G+2N or 1G+1N).')}</label>`}
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always see and enter every team’s scores. Non-hosts stay own-team write only.')}</label>
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
-      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race, Vegas, Skins, Nassau, Wolf, Nines, presses, or birdie slots.</p>' : ''}
+      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race.</p>' : ''}
       ${this.sideGamesSettingsHtml(state)}
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
@@ -4947,35 +4650,19 @@ const scorecard = {
         <h2 class="card-title">Game Rules</h2>
         <p class="card-subtitle">House rules. Short and plain. Tap ℹ on the live card for one-line help.</p>
         <h3>Sunday game</h3>
-        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
+        <p>The Sunday game is the team vs-par race. Default ON. Each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net). Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18.</p>
         <h3>Handicap index</h3>
         <p>No course handicap. Round the index at 0.5 (2.4→2, 2.5→3, 18.7→19, 1.3→1). That integer is applied by scorecard stroke index for every net game.</p>
-        <h3>Skins</h3>
-        <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
-        <h3>Vegas</h3>
-        <p>2v2. Pair numbers, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104, 4 and 11 = 114). Not the Sunday game vs-par total. Press is a games-running count that starts at 1; each tap adds a game from that hole on. This-hole swing = difference × games running (5-point hole × 3 games = +15/−15). Two lines: this-hole difference, then RUNNING that names who is up and who is down (e.g. Team B up 20 · Team A down 20). Flip on gross birdie+. Both sides birdie+ flips both.</p>
-        <h3>Nassau (NASA)</h3>
-        <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
-        <h3>Wolf</h3>
-        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles: Partnered ±, Lone ±, and Blind Lone ±. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>
         <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>The host / organizer may enter hole scores for every team while staying in the live card (one-phone Vegas / Sunday). Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide read gate for non-hosts. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes.</p>
+        <p>The host / organizer may enter hole scores for every team while staying in the live card. Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide read gate for non-hosts. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes.</p>
         <h3>Score entry</h3>
         <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Scorekeepers stay on their own team. The host walks every writable team on that hole.</p>
-        <h3>Nines</h3>
-        <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
-        <h3>Presses</h3>
-        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press. <strong>Edit</strong> sits beside Vegas Press (or under Nassau Press when Vegas is off) and opens Add / Undo on the live card. <strong>Undo last press</strong> stays under Press and inside Edit. It pops only the newest press after a confirm — Vegas badge or Nassau Front / Back / Overall. Anyone who can press can undo.</p>
         <h3>Score marks</h3>
-        <p>On the Sunday / side-game live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
-        <h3>Birdie dragon slots (Wyrm Coil)</h3>
-        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
-        <h3>Optional KPs</h3>
-        <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
+        <p>On the Sunday live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
         <h3>19th hole</h3>
-        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
+        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st. Tap Front / Back / Overall to reveal Sunday team vs-par winners. Share strip is one-tap summary plus a screenshot card.</p>
         <h3>OUT / IN / TOT</h3>
         <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
@@ -5023,11 +4710,9 @@ const scorecard = {
   nineteenthShareText(state) {
     const ranked = this.nineteenthRankedTeams(state);
     const winner = ranked[0];
-    const vegas = this.vegasGame(state);
     const bits = [
       `Sunday game · ${state.round && state.round.name ? state.round.name : 'Goldendale'}`,
       winner ? `Winner ${winner.name} ${this.fmtTeam(winner.total)}` : '',
-      vegas && vegas.teamA ? this.vegasNamedRun(vegas) : '',
     ].filter(Boolean);
     return bits.join(' · ');
   },
@@ -5113,17 +4798,6 @@ const scorecard = {
       ? rows.map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ')
       : '—';
     const facts = state.funFacts || {};
-    const cfg = this.sideConfig(state);
-    const kps = !standard && cfg.kps && cfg.kps.on
-      ? (cfg.kps.holes || []).map((hn) => {
-        const win = cfg.kps.winners && cfg.kps.winners[String(hn)];
-        return `Hole ${hn}: ${win && win.name ? win.name : '—'}`;
-      }).join(' · ')
-      : '';
-    const skins = state.sideGames && state.sideGames.games && state.sideGames.games.skins;
-    const skinsBody = skins
-      ? `Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}`
-      : 'Skins off';
     const standardRows = (state.members || []).filter((m) => m.team_id && !this.isFollowAlongMember(m)).map((m) => {
       return `<p><strong>${_esc(m.display_name)}</strong> · OUT ${m.outGross ?? '—'} / ${m.outNet ?? '—'} · IN ${m.inGross ?? '—'} / ${m.inNet ?? '—'} · TOT ${m.totalGross ?? '—'} / ${m.totalNet ?? '—'}</p>`;
     }).join('') || '<p>No scores yet.</p>';
@@ -5131,24 +4805,19 @@ const scorecard = {
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card nineteenth" id="nineteenth">
         <h2 class="card-title">19th hole</h2>
-        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'confirmed card · sound off'}</p>
+        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'Sunday game'}</p>
         ${standard ? '' : this.podiumHtml(state)}
         ${standard ? '' : `<div class="reveal-row">
           ${this.revealCardHtml('front', 'Front', _esc(fmt(state.frontLeaders)))}
           ${this.revealCardHtml('back', 'Back', _esc(fmt(state.backLeaders)))}
           ${this.revealCardHtml('overall', 'Overall', _esc(fmt(state.overallLeaders)))}
-          ${this.revealCardHtml('skins', 'Skins', _esc(skinsBody))}
         </div>`}
         <div class="share-strip" id="share-strip">
           <span>${_esc(this.nineteenthShareText(state))}</span>
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
-        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : '')}
-        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : '')}
         ${standard ? `<h3>Standard scorecard</h3>${standardRows}` : `<h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}`}
-        ${standard ? '' : this.sideGamesResultsHtml(state)}
-        ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
         <h3>Fun facts</h3>
         <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
         <p>Hardest hole: ${facts.hardest ? ('#' + facts.hardest.hole + ' (' + (facts.hardest.avg > 0 ? '+' : '') + facts.hardest.avg.toFixed(1) + ' vs par)') : '—'}</p>
