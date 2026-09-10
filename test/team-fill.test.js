@@ -12,6 +12,8 @@ const {
   fairIndex,
   candidateKey,
   scoringMembers,
+  scoringCountOnTeam,
+  memberOnTeam,
 } = require('../public/js/teamFillSpin');
 
 function stateOf(teams, members) {
@@ -121,5 +123,24 @@ describe('Team fill spin', () => {
     for (let i = 0; i < 8; i += 1) sample.push(pickFillWinner(cands).name);
     assert.equal(sample.length, 8);
     assert.ok(new Set(sample).size >= 2, `8 independent spins should not all be one name: ${sample.join(',')}`);
+  });
+
+  it('counts a fill seat on the short team without dropping the home team', () => {
+    const state = stateOf([t1, t2], [
+      { id: 10, display_name: 'A', team_id: 1, role: 'player' },
+      { id: 11, display_name: 'B', team_id: 1, role: 'player' },
+      { id: 12, display_name: 'C', team_id: 1, role: 'player' },
+      { id: 20, display_name: 'D', team_id: 2, role: 'player' },
+      { id: 21, display_name: 'E', team_id: 2, role: 'player' },
+      { id: 22, display_name: 'F', team_id: 2, role: 'player' },
+      { id: 30, display_name: 'Pat', team_id: 1, fill_team_id: 2, role: 'player' },
+    ]);
+    const pat = state.members.find((m) => m.display_name === 'Pat');
+    assert.equal(memberOnTeam(pat, 1), true);
+    assert.equal(memberOnTeam(pat, 2), true);
+    assert.equal(scoringCountOnTeam(state, 1), 4);
+    assert.equal(scoringCountOnTeam(state, 2), 4);
+    assert.deepEqual(fillCandidates(state, 2).map((m) => m.display_name), ['A', 'B', 'C']);
+    assert.equal(hasShortTeam(state), false);
   });
 });

@@ -28,7 +28,7 @@ describe('Combined PR3 hole view', () => {
   });
 
   it('paints net next to the hole-row gross', () => {
-    const fn = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'holePlayersHtml(state, holeNumber)');
+    const fn = sliceFn('holePlayerRowHtml(state, member, holeNumber, team)', 'holePlayersHtml(state, holeNumber)');
     assert.match(fn, /net-mini/);
     assert.match(fn, /score-input/);
   });
@@ -68,14 +68,14 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260910a/);
-    assert.match(html, /js\/formats\.js\?v=20260910a/);
-    assert.match(html, /js\/sideGames\.js\?v=20260910a/);
-    assert.match(html, /js\/wyrmCoil\.js\?v=20260910a/);
-    assert.match(html, /js\/nineteen\.js\?v=20260910a/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260910a/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260910a/);
-    assert.match(src, /ASSET_V:\s*'20260910a'/);
+    assert.match(html, /20260910b/);
+    assert.match(html, /js\/formats\.js\?v=20260910b/);
+    assert.match(html, /js\/sideGames\.js\?v=20260910b/);
+    assert.match(html, /js\/wyrmCoil\.js\?v=20260910b/);
+    assert.match(html, /js\/nineteen\.js\?v=20260910b/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260910b/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260910b/);
+    assert.match(src, /ASSET_V:\s*'20260910b'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -133,7 +133,7 @@ describe('Combined PR3 hole view', () => {
   });
 
   it('race strip and Team N totals format vs-par, not stroke sums', () => {
-    const race = sliceFn('raceStripText(state)', 'holePlayerRowHtml(state, member, holeNumber)');
+    const race = sliceFn('raceStripText(state)', 'fillSeatLabel(member, team)');
     assert.match(race, /fmtTeam/);
     assert.match(race, /vegasStripText|isVegasOn/);
     assert.match(race, /Sunday game /);
@@ -231,7 +231,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(ninesLine, /nines-player-run/);
     assert.match(ninesLine, /<div class="nines-player-run">/);
     assert.match(src, /applyLocalScore[\s\S]{0,400}paintNinesBoard/);
-    const playerRow = sliceFn('onePlayerRow(state, m, holes, showOut, showIn) {', 'oneTeamRow(state, team, holes, showOut, showIn) {');
+    const playerRow = sliceFn('onePlayerRow(state, m, holes, showOut, showIn, team) {', 'oneTeamRow(state, team, holes, showOut, showIn) {');
     assert.match(playerRow, /onePlayerNinesRows/);
     const perPlayer = sliceFn('onePlayerNinesRows(state, member, holes, showOut, showIn) {', 'afterHoleScored(state, holeNumber) {');
     assert.match(perPlayer, /nines-player-run-row/);
@@ -446,7 +446,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(wolfVals, /blind[\s\S]*4/);
     assert.match(css, /\.podium-place/);
     assert.match(css, /\.reveal-card/);
-    const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber)', 'playerNineLineHtml(state, member)');
+    const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber, team)', 'playerNineLineHtml(state, member)');
     assert.match(holeRow, /canWriteMember/);
     assert.match(holeRow, /focusHoleScore/);
     assert.match(holeRow, /playerNinesLineHtml/);
@@ -455,7 +455,7 @@ describe('Combined PR3 hole view', () => {
     assert.doesNotMatch(writeLock, /isWolfOn/);
     assert.match(writeLock, /isOrganizer/);
     assert.doesNotMatch(writeLock, /is_admin/);
-    assert.match(writeLock, /sameTeamIds/);
+    assert.match(writeLock, /shareAnyTeam/);
     assert.match(writeLock, /isFollowAlong/);
     assert.match(src, /followAlongBarHtml/);
     assert.match(src, /setFollowShowOther/);
@@ -481,7 +481,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /playing_handicap/);
     const rosterChange = sliceFn('rosterChanged(patch) {', 'applyLivePatch(patch)');
     assert.match(rosterChange, /playing_handicap/);
-    assert.match(rosterChange, /sameTeamIds/);
+    assert.match(rosterChange, /sameTeamOrEmpty/);
+    assert.match(rosterChange, /fill_team_id/);
     assert.match(src, /nineTotalsBarHtml/);
     assert.match(src, /joinCardRow/);
     assert.match(src, />OUT</);
@@ -588,10 +589,19 @@ describe('Combined PR3 hole view', () => {
     assert.match(show, /this\.screen = 'play'/);
     assert.match(show, /this\.draw\(next\)/);
     const groups = sliceFn('groupedMembers(state) {', 'playerRows(state, holes, outHoles, inHoles, showOut, showIn)');
-    assert.match(groups, /sameTeamIds/);
+    assert.match(groups, /memberOnTeam/);
     assert.doesNotMatch(groups, /m\.team_id === team\.id/);
     assert.match(src, /Each Spin shuffles every eligible name/);
+    assert.match(src, /leaves them on their original team/);
+    assert.match(src, /fillSeatLabel/);
+    assert.match(src, /rosterFillNote/);
     assert.match(css, /\.fill-spin-cell\.is-landed/);
+    assert.match(css, /\.fill-seat/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    const fillAt = routes.indexOf("router.post('/:id/team-fill'");
+    const fillFn = routes.slice(fillAt, fillAt + 1800);
+    assert.match(fillFn, /SET fill_team_id/);
+    assert.match(fillFn, /memberOnTeam/);
   });
 
   it('hole Back is a button so a leftover tap cannot change the hash', () => {

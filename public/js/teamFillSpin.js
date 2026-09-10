@@ -19,6 +19,22 @@ function sameTeamIds(a, b) {
   return Number(a) === Number(b) && Number.isFinite(Number(a));
 }
 
+function memberTeamIds(member) {
+  if (!member) return [];
+  const ids = [];
+  const home = member.team_id ?? member.teamId;
+  const fill = member.fill_team_id ?? member.fillTeamId;
+  if (home != null && home !== '' && Number.isFinite(Number(home))) ids.push(Number(home));
+  if (fill != null && fill !== '' && Number.isFinite(Number(fill)) && !sameTeamIds(fill, home)) {
+    ids.push(Number(fill));
+  }
+  return ids;
+}
+
+function memberOnTeam(member, teamId) {
+  return memberTeamIds(member).some((id) => sameTeamIds(id, teamId));
+}
+
 function teamDisplay(team) {
   if (!team) return 'Unassigned';
   const nick = team.nickname || team.teamNickname;
@@ -26,7 +42,7 @@ function teamDisplay(team) {
 }
 
 function scoringCountOnTeam(state, teamId) {
-  return scoringMembers(state && state.members).filter((m) => sameTeamIds(m.team_id ?? m.teamId, teamId)).length;
+  return scoringMembers(state && state.members).filter((m) => memberOnTeam(m, teamId)).length;
 }
 
 function sortedTeams(state) {
@@ -65,7 +81,7 @@ function defaultShortTeam(state, fullSize) {
 }
 
 function fillCandidates(state, targetTeamId) {
-  return scoringMembers(state && state.members).filter((m) => !sameTeamIds(m.team_id ?? m.teamId, targetTeamId));
+  return scoringMembers(state && state.members).filter((m) => !memberOnTeam(m, targetTeamId));
 }
 
 function candidateKey(item) {
@@ -161,6 +177,8 @@ const teamFillApi = {
   teamDisplay,
   teamOfMember,
   sameTeamIds,
+  memberTeamIds,
+  memberOnTeam,
 };
 
 if (typeof module === 'object' && module.exports) {

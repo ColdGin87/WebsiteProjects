@@ -1600,11 +1600,35 @@ async function runTeamFillScenario(base) {
   });
   const patAfter = (filled.members || []).find((m) => Number(m.id) === Number(pat.id));
   const t2 = (filled.teams || []).find((t) => t.name === 'Team 2');
-  assertEqual(Number(patAfter && (patAfter.team_id ?? patAfter.teamId)), Number(t2 && t2.id), 'Accept moves leftover onto the short team');
+  assertEqual(Number(patAfter && (patAfter.team_id ?? patAfter.teamId)), Number(t1.id), 'Accept must leave the player on the original team');
+  assertEqual(Number(patAfter && (patAfter.fill_team_id ?? patAfter.fillTeamId)), Number(t2 && t2.id), 'Accept adds the player to the short team');
+  const t1Roster = (t1 && (filled.teams || []).find((t) => t.name === 'Team 1')) || (filled.teams || []).find((t) => Number(t.id) === Number(t1.id));
+  const t2Roster = (filled.teams || []).find((t) => Number(t.id) === Number(t2 && t2.id));
+  const onHome = ((t1Roster && t1Roster.members) || []).some((m) => Number(m.id) === Number(pat.id));
+  const onFill = ((t2Roster && t2Roster.members) || []).some((m) => Number(m.id) === Number(pat.id));
+  assertEqual(onHome, true, 'original team roster still lists the fill player');
+  assertEqual(onFill, true, 'short team roster lists the fill player');
   if (!Array.isArray(patAfter.holes) || !patAfter.holes.length) fail('Accept must return score holes so the live card can take scores');
   const liveAfterFill = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: host.token });
   const livePat = ((liveAfterFill.memberTotals || []).find((m) => Number(m.id) === Number(pat.id)));
-  assertEqual(Number(livePat && (livePat.team_id ?? livePat.teamId)), Number(t2 && t2.id), 'live patch must show the filled player on the short team');
+  assertEqual(Number(livePat && (livePat.team_id ?? livePat.teamId)), Number(t1.id), 'live patch keeps the original team');
+  assertEqual(Number(livePat && (livePat.fill_team_id ?? livePat.fillTeamId)), Number(t2 && t2.id), 'live patch shows the fill seat');
+  await api(base, 'POST', `/api/rounds/${roundId}/scores`, {
+    token: host.token,
+    body: { memberId: pat.id, holeNumber: 1, gross: 5 },
+  });
+  const scored = await api(base, 'GET', `/api/rounds/${roundId}`, { token: host.token });
+  const patScored = (scored.members || []).find((m) => Number(m.id) === Number(pat.id));
+  const h1 = ((patScored && patScored.holes) || []).find((h) => Number(h.holeNumber) === 1);
+  assertEqual(Number(h1 && h1.gross), 5, 'one shared hole score for the fill player');
+  const homeAfterScore = (scored.teams || []).find((t) => Number(t.id) === Number(t1.id));
+  const fillAfterScore = (scored.teams || []).find((t) => Number(t.id) === Number(t2.id));
+  if (!((homeAfterScore && homeAfterScore.members) || []).some((m) => Number(m.id) === Number(pat.id))) {
+    fail('shared fill score still lists the player on the original team');
+  }
+  if (!((fillAfterScore && fillAfterScore.members) || []).some((m) => Number(m.id) === Number(pat.id))) {
+    fail('shared fill score still lists the player on the short team');
+  }
 
   const createdName = await api(base, 'POST', `/api/rounds/${roundId}/team-fill`, {
     token: host.token,
@@ -1620,7 +1644,7 @@ async function runTeamFillScenario(base) {
   });
   assertEqual(already.status, 400, 'already on target team is 400');
 
-  console.log('PASS team-fill spin Accept moves leftover; joiner 403; new name guest');
+  console.log('PASS team-fill spin Accept adds leftover to short team and keeps original; joiner 403; new name guest');
 
   const twoShort = await api(base, 'POST', '/api/rounds', {
     token: host.token,
@@ -1650,9 +1674,14 @@ async function runTeamFillScenario(base) {
   });
   const t2after = (afterFirst.teams || []).find((t) => t.name === 'Team 2');
   const t1after = (afterFirst.teams || []).find((t) => t.name === 'Team 1');
-  const onT2 = (afterFirst.members || []).filter((m) => Number(m.team_id) === Number(t2after.id) && m.role !== 'follower');
-  const onT1 = (afterFirst.members || []).filter((m) => Number(m.team_id) === Number(t1after.id) && m.role !== 'follower' && m.display_name !== 'Fill Host');
+  const onTeam = (members, teamId) => (members || []).filter((m) => {
+    if (m.role === 'follower') return false;
+    return Number(m.team_id) === Number(teamId) || Number(m.fill_team_id ?? m.fillTeamId) === Number(teamId);
+  });
+  const onT2 = onTeam(afterFirst.members, t2after.id);
+  const onT1 = onTeam(afterFirst.members, t1after.id).filter((m) => m.display_name !== 'Fill Host');
   assertEqual(onT2.length >= 2, true, 'first Accept fills Team 2');
+  assertEqual(onT1.some((m) => m.display_name === 'Floater'), true, 'Floater stays on Team 1 after filling Team 2');
   assertEqual(onT1.length < 4, true, 'Team 1 stays short after filling Team 2');
   console.log('PASS team-fill works when more than one team is short');
 }

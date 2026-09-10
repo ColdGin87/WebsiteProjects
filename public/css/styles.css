@@ -4550,6 +4550,13 @@ input.score-input[readonly] {
   background: #C8E6C9;
 }
 
+.fill-seat {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-style: normal;
+  color: var(--text-muted);
+}
+
 .fill-spin-winner {
   margin: 0 0 10px;
   font-size: 1.1rem;
