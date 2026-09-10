@@ -320,15 +320,15 @@ const dashboard = {
           <label class="check-row" id="create-team-race-row">
             <input type="checkbox" name="teamRace" checked>
             Sunday game
-            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Sunday game is the default team vs-par race. 1G+2N or 1G+1N (or another format). OFF hides the Sunday game; side games can still run.') : ''}
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-race', 'Sunday game is the default team vs-par race. Pick 1G+2N or 1G+1N.') : ''}
           </label>
           <label class="check-row" id="create-show-other-row">
             <input type="checkbox" name="showOtherScores">
             Show other teams’ scores
-            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-show-other', 'Default OFF. Each team sees only its own scores on the live card. ON shows other teams read-only. Nobody can edit the other team.') : ''}
+            ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always enter every team’s scores.') : ''}
           </label>
           <div class="form-group" id="create-game-wrap">
-            <label>Sunday game format ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1G+2N. Also 1G+1N, 3G, 3N, 1G+3N, 2G+2N.') : ''}</label>
+            <label>Sunday game format ${typeof scorecard !== 'undefined' && scorecard.infoTip ? scorecard.infoTip('create-format', 'Best-combo vs-par. Goldendale default is 1G+2N. Also 1G+1N.') : ''}</label>
             <p class="game-rule" id="create-game-rule">${_esc(dashboard.gameRule('1G2N'))}</p>
             <select class="form-input" name="gameKey" id="create-game">
               ${dashboard.gameOptionsHtml('1G2N')}
@@ -348,12 +348,6 @@ const dashboard = {
           </div>
           <p class="card-subtitle">Handicap = Index only. Round at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap. You start on Team 1. Joiners pick Team 2+.</p>
           <label class="check-row" id="create-dual-row"><input type="checkbox" name="dualCount"> Dual-count (same player can count as gross and net)</label>
-          <div class="form-group" id="create-side-games">
-            <label>Side games</label>
-            ${typeof scorecard !== 'undefined' && scorecard.sideGamesFieldsInner
-              ? scorecard.sideGamesFieldsInner((window.sideGames && window.sideGames.parseSideGames(null)) || {})
-              : ''}
-          </div>
           <div class="card-footer">
             <button class="btn btn-primary" type="submit">Create round</button>
           </div>
@@ -366,7 +360,6 @@ const dashboard = {
       const dualRow = document.getElementById('create-dual-row');
       const raceRow = document.getElementById('create-team-race-row');
       const showOtherRow = document.getElementById('create-show-other-row');
-      const sideWrap = document.getElementById('create-side-games');
       const syncGameUi = () => {
         const teamMode = formatSel.value === 'team_net';
         const standard = formatSel.value === 'standard';
@@ -374,9 +367,8 @@ const dashboard = {
         if (dualRow) dualRow.hidden = !teamMode;
         if (raceRow) raceRow.hidden = !teamMode;
         if (showOtherRow) showOtherRow.hidden = formatSel.value === 'match_play';
-        if (sideWrap) sideWrap.hidden = !teamMode;
         if (gameRule && gameSel) gameRule.textContent = standard
-          ? 'Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race or side games.'
+          ? 'Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race.'
           : dashboard.gameRule(gameSel.value);
       };
       if (gameSel) gameSel.addEventListener('change', syncGameUi);
@@ -412,11 +404,8 @@ const dashboard = {
             teamRace: standard ? false : fd.get('teamRace') === 'on',
             showOtherScores: fd.get('showOtherScores') === 'on',
             team1Nickname: fd.get('team1Nickname') || '',
-            sideGames: standard
-              ? ((window.sideGames && window.sideGames.quietSideGames && window.sideGames.quietSideGames()) || { birdieSlots: { on: false } })
-              : (typeof scorecard !== 'undefined' && scorecard.readSideGamesForm
-                ? scorecard.readSideGamesForm(fd)
-                : undefined),
+            sideGames: (window.sideGames && window.sideGames.quietSideGames && window.sideGames.quietSideGames())
+              || { skins: { on: false }, vegas: { on: false }, nassau: { on: false }, wolf: { on: false }, nines: { on: false }, birdieSlots: { on: false } },
           });
           app.navigate('#round/' + state.round.id);
         } catch (err) {
