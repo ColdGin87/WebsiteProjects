@@ -44,9 +44,10 @@ const scorecard = {
   fillSpin: null,
   stepperOpen: false,
   pressEditOpen: false,
+  focusedTeamId: null,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260910c',
+  ASSET_V: '20260919a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -100,6 +101,7 @@ const scorecard = {
     if (!sameRound) {
       this.addPlayerOpen = false;
       this.addPlayerDraft = { name: '', handicap: '', teamName: 'Team 1' };
+      this.focusedTeamId = null;
     }
     const container = document.getElementById('app');
     const cached = this.readCache(id);
@@ -430,25 +432,72 @@ const scorecard = {
   },
 
   canSeeOtherTeams(state) {
-    if (this.isPrivilegedViewer(state)) return true;
     if (this.isFollowAlong(state)) {
       return this.isShowOtherScoresOn(state) && this.followShowOtherOn(state);
     }
     return this.isShowOtherScoresOn(state);
   },
 
+  defaultFocusedTeamId(state) {
+    const me = this.myMember(state);
+    const home = me && (me.team_id ?? me.teamId);
+    if (home != null && home !== '' && Number.isFinite(Number(home))) return Number(home);
+    const teams = [...((state && state.teams) || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
+    return teams[0] ? Number(teams[0].id) : null;
+  },
+
+  ensureFocusedTeam(state) {
+    const teams = (state && state.teams) || [];
+    if (this.focusedTeamId != null && teams.some((t) => this.sameTeamIds(t.id, this.focusedTeamId))) {
+      return this.focusedTeamId;
+    }
+    this.focusedTeamId = this.defaultFocusedTeamId(state);
+    return this.focusedTeamId;
+  },
+
+  focusedTeam(state) {
+    const id = this.ensureFocusedTeam(state);
+    return ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, id)) || null;
+  },
+
+  isSharedBoard(state) {
+    return this.canSeeOtherTeams(state);
+  },
+
+  memberOnFocusedTeam(state, member) {
+    const focused = this.focusedTeam(state);
+    if (!focused) return this.shareAnyTeam(this.myMember(state), member);
+    return this.memberOnTeam(member, focused.id);
+  },
+
+  canSeeTeamLane(state, team) {
+    if (!team) return false;
+    if (this.canSeeOtherTeams(state)) return true;
+    return this.sameTeamIds(team.id, this.ensureFocusedTeam(state));
+  },
+
+  focusTeam(teamId) {
+    const id = Number(teamId);
+    if (!Number.isFinite(id)) return;
+    this.focusedTeamId = id;
+    const team = ((this.state && this.state.teams) || []).find((t) => this.sameTeamIds(t.id, id));
+    if (team) {
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: team.name };
+      else this.addPlayerDraft.teamName = team.name;
+    }
+    if (this.state) this.draw(this.state);
+  },
+
   canSeeMemberScores(state, member) {
     if (!member) return false;
     if (this.canSeeOtherTeams(state)) return true;
+    if (this.memberOnFocusedTeam(state, member)) return true;
     const me = this.myMember(state);
     return this.shareAnyTeam(me, member);
   },
 
   canSeeTeamScores(state, team) {
-    if (!team) return false;
-    if (this.canSeeOtherTeams(state)) return true;
-    const me = this.myMember(state);
-    return this.memberOnTeam(me, team.id);
+    return this.canSeeTeamLane(state, team);
   },
 
   canManageRosterMember(state, member) {
@@ -1651,7 +1700,9 @@ const scorecard = {
   },
 
   manageableMembers(state) {
-    return ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+    const rows = ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+    if (this.screen === 'settings' || this.canSeeOtherTeams(state)) return rows;
+    return rows.filter((m) => this.memberOnFocusedTeam(state, m));
   },
 
   setupRosterHtml(state) {
@@ -1659,7 +1710,7 @@ const scorecard = {
     if (!rows.length) return '';
     return `<div class="setup-roster card" id="setup-roster">
       <div class="card-title">Team roster</div>
-      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. ${this.isOrganizer(state) ? 'Host / organizer can manage teams they run.' : 'Own team only.'}</p>
+      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. ${this.isOrganizer(state) ? 'This team’s roster. Open another team to edit that roster.' : 'Own team only.'}</p>
       <ul class="setup-roster-list">
         ${rows.map((m) => {
           const hcp = m.playing_handicap ?? m.handicap ?? '';
@@ -1686,8 +1737,12 @@ const scorecard = {
     }
     const organizer = this.isOrganizer(state);
     const mine = this.myTeamName(state);
-    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: organizer ? 'Team 1' : mine };
-    const teamName = organizer ? (draft.teamName || 'Team 1') : mine;
+    const focused = this.focusedTeam(state);
+    const focusedName = (focused && focused.name) || (organizer ? 'Team 1' : mine);
+    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: focusedName };
+    const teamName = organizer
+      ? (this.canSeeOtherTeams(state) ? (draft.teamName || focusedName) : focusedName)
+      : mine;
     const subtitle = organizer
       ? 'Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.'
       : 'Name, HCP, then your team. Guests you add stay on your team.';
@@ -1739,15 +1794,22 @@ const scorecard = {
   addTeamChipsHtml(selected) {
     const organizer = this.isOrganizer(this.state);
     const mine = this.myTeamName(this.state);
-    const current = organizer ? (selected || 'Team 1') : mine;
-    const names = organizer ? this.addTeamNames(this.state) : [mine];
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || mine;
+    const shared = this.canSeeOtherTeams(this.state);
+    const current = organizer
+      ? (shared ? (selected || focusedName) : focusedName)
+      : mine;
+    const names = organizer
+      ? (shared ? this.addTeamNames(this.state) : [focusedName])
+      : [mine];
     return `<div class="add-team-picks" role="group" aria-label="Team">
       ${names.map((n) => {
         const team = ((this.state && this.state.teams) || []).find((t) => t.name === n);
         const label = team ? this.teamDisplay(team) : n;
         return `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${_esc(label)}</button>`;
       }).join('')}
-      ${organizer ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
+      ${organizer && shared ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
       <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
     </div>`;
   },
@@ -1790,7 +1852,11 @@ const scorecard = {
   },
 
   pickAddTeam(teamName) {
-    const name = this.isOrganizer(this.state) ? (teamName || 'Team 1') : this.myTeamName(this.state);
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || 'Team 1';
+    const name = this.isOrganizer(this.state)
+      ? (this.canSeeOtherTeams(this.state) ? (teamName || focusedName) : focusedName)
+      : this.myTeamName(this.state);
     if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name };
     this.addPlayerDraft.teamName = name;
     const hidden = document.getElementById('live-add-guest-team');
@@ -2168,7 +2234,7 @@ const scorecard = {
         organizer: this.isOrganizer(this.state),
       });
     }
-    const roster = (this.state && this.state.members || []).filter((m) => this.canWriteMember(this.state, m));
+    const roster = (this.visibleHoleMembers(this.state) || []).filter((m) => this.canWriteMember(this.state, m));
     const idx = roster.findIndex((m) => Number(m.id) === Number(memberId));
     if (roster[idx + 1]) return { memberId: roster[idx + 1].id, holeNumber };
     const hIdx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
@@ -2528,6 +2594,7 @@ const scorecard = {
     this.bindOverlay();
     this.bindScoreInputs();
     this.bindAddPlayerPanel();
+    this.bindTeamPicker();
     this.bindHoleBack();
     this.syncAddPlayerChrome();
     this.bindInfoTips();
@@ -2673,7 +2740,7 @@ const scorecard = {
   },
 
   ballLineText(state, holeNumber) {
-    return (state.teams || []).map((team) => {
+    return (state.teams || []).filter((team) => this.canSeeTeamScores(state, team)).map((team) => {
       const balls = this.teamBallsText(team, holeNumber);
       return balls ? `${this.teamDisplay(team)} ${balls}` : '';
     }).filter(Boolean).join(' · ');
@@ -3009,7 +3076,10 @@ const scorecard = {
   raceStripText(state) {
     if (this.isStandardScorecard(state)) return '';
     if (!this.isTeamRaceOn(state)) return '';
-    const teams = state.teams || [];
+    const all = state.teams || [];
+    const teams = this.screen === 'play'
+      ? all.filter((t) => this.canSeeTeamScores(state, t))
+      : all;
     if (!teams.length) return '';
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
@@ -3188,6 +3258,7 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
@@ -3396,8 +3467,8 @@ const scorecard = {
   },
 
   endTotalsHtml(state) {
-    const teams = (state.teams || []).map((t) => {
-      const total = this.canSeeTeamScores(state, t) ? this.fmtTeam(t.total) : '—';
+    const teams = (state.teams || []).filter((t) => this.canSeeTeamScores(state, t)).map((t) => {
+      const total = this.fmtTeam(t.total);
       return `${this.teamDisplay(t)} ${total}`;
     }).join(' · ');
     return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
@@ -3485,6 +3556,7 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
       ${this.writeErrorBanner()}
@@ -3659,7 +3731,7 @@ const scorecard = {
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race (1G+2N or 1G+1N).')}</label>`}
-        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Scorekeepers see only their team. ON shows other teams read-only for them. The host can always see and enter every team’s scores. Non-hosts stay own-team write only.')}</label>
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Each scorecard stays on one team. ON is the shared board — other teams are visible. The host can still enter every team’s scores after opening that team’s card. Non-hosts stay own-team write only.')}</label>
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
@@ -3721,7 +3793,38 @@ const scorecard = {
     }
     const rest = (state.members || []).filter((m) => !used.has(m.id));
     if (rest.length) groups.push({ team: null, members: rest });
-    return groups;
+    if (this.canSeeOtherTeams(state)) return groups;
+    return groups.filter((g) => g.team && this.canSeeTeamLane(state, g.team));
+  },
+
+  teamPickerHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    const teams = state.teams || [];
+    if (teams.length < 2) return '';
+    this.ensureFocusedTeam(state);
+    const focused = this.focusedTeam(state);
+    const shared = this.canSeeOtherTeams(state);
+    return `<div class="team-picker-row" id="team-picker-row">
+      <div class="team-picker" id="team-picker" role="tablist" aria-label="Team scorecard">
+        ${teams.map((t) => {
+          const on = !shared && this.sameTeamIds(t.id, focused && focused.id);
+          return `<button type="button" class="team-pick-chip${on ? ' is-on' : ''}${shared ? ' is-shared' : ''}" data-focus-team="${t.id}" role="tab" aria-selected="${on || shared ? 'true' : 'false'}">${_esc(this.teamDisplay(t))}</button>`;
+        }).join('')}
+      </div>
+      ${shared
+        ? '<p class="team-picker-note">Shared board on — every team is visible.</p>'
+        : '<p class="team-picker-note">Your card only. Open another team to see that roster.</p>'}
+    </div>`;
+  },
+
+  bindTeamPicker() {
+    document.querySelectorAll('#team-picker [data-focus-team]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.focusTeam(btn.getAttribute('data-focus-team'));
+      };
+    });
   },
 
   playerRows(state, holes, outHoles, inHoles, showOut, showIn) {
@@ -4656,9 +4759,9 @@ const scorecard = {
         <h3>Join code teams</h3>
         <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>The host / organizer may enter hole scores for every team while staying in the live card. Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide read gate for non-hosts. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes.</p>
+        <p>The host / organizer may enter hole scores for every team after opening that team’s card. Own-card view does not show another team being built. Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the shared-board read gate. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes.</p>
         <h3>Score entry</h3>
-        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Scorekeepers stay on their own team. The host walks every writable team on that hole.</p>
+        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Scorekeepers stay on their own team. The host walks the team card they have open.</p>
         <h3>Score marks</h3>
         <p>On the Sunday live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
         <h3>19th hole</h3>

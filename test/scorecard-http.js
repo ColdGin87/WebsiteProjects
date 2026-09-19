@@ -1425,6 +1425,13 @@ async function runHardeningScenario(base) {
   const hostSeesSelf = (hostGet.members || []).find((m) => Number(m.id) === Number(hostMember.id));
   const hostHole = hostSeesSelf && (hostSeesSelf.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(hostHole && hostHole.gross, 4, 'organizer still sees own team scores');
+  const hostSeesJoiner = (hostGet.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  if (!hostSeesJoiner || !hostSeesJoiner.display_name) fail('host GET still has Team 2 roster so opening that card can show it');
+  const hostLive = await api(base, 'GET', `/api/rounds/${roundId}/live`, { token: host.token });
+  const hostLiveSelf = (hostLive.memberTotals || []).find((m) => Number(m.id) === Number(hostMember.id));
+  const hostLiveJoiner = (hostLive.memberTotals || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  if (!hostLiveSelf || !String(hostLiveSelf.display_name || '').trim()) fail('host live keeps own-team names');
+  assertEqual(hostLiveJoiner && hostLiveJoiner.display_name, '', 'host live blanks other-team setup names when show-other is OFF');
 
   const withGuest = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
     token: joiner.token,

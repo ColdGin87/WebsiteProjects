@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260910c/);
-    assert.match(html, /js\/formats\.js\?v=20260910c/);
-    assert.match(html, /js\/sideGames\.js\?v=20260910c/);
-    assert.match(html, /js\/nineteen\.js\?v=20260910c/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260910c/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260910c/);
-    assert.match(src, /ASSET_V:\s*'20260910c'/);
+    assert.match(html, /20260919a/);
+    assert.match(html, /js\/formats\.js\?v=20260919a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260919a/);
+    assert.match(html, /js\/nineteen\.js\?v=20260919a/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260919a/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260919a/);
+    assert.match(src, /ASSET_V:\s*'20260919a'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -396,6 +396,30 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /Sunday game · /);
     assert.match(src, /<h3>Sunday game<\/h3>/);
     assert.match(css, /\.info-pop:not\(\[hidden\]\)/);
+  });
+
+  it('keeps own-lane scorecard off other-team setup until that card is opened', () => {
+    const see = sliceFn('canSeeOtherTeams(state) {', 'defaultFocusedTeamId(state)');
+    assert.doesNotMatch(see, /isPrivilegedViewer/);
+    assert.match(see, /isShowOtherScoresOn/);
+    assert.match(src, /focusedTeamId/);
+    assert.match(src, /memberOnFocusedTeam/);
+    assert.match(src, /canSeeTeamLane/);
+    assert.match(src, /focusTeam\(/);
+    assert.match(src, /teamPickerHtml/);
+    assert.match(src, /bindTeamPicker/);
+    const groups = sliceFn('groupedMembers(state) {', 'teamPickerHtml(state)');
+    assert.match(groups, /canSeeTeamLane/);
+    const roster = sliceFn('manageableMembers(state) {', 'setupRosterHtml(state)');
+    assert.match(roster, /memberOnFocusedTeam/);
+    const hole = sliceFn('drawHoleView(state) {', 'holeNavButtonsHtml(holeNumber)');
+    const full = sliceFn('drawFullCard(state) {', 'scoreTable(state, holes, outHoles, inHoles)');
+    assert.match(hole, /teamPickerHtml/);
+    assert.match(full, /teamPickerHtml/);
+    assert.match(css, /\.team-picker-row/);
+    assert.match(css, /\.team-pick-chip/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.match(routes, /livePatch\(state, myRoundMember/);
   });
 
   it('does not show press or side-game chrome on the live card', () => {

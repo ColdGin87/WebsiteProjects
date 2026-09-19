@@ -36,7 +36,7 @@ const {
   coldGinIsStrokesReceived,
 } = require('../lib/seed/demoTeam1VsPar');
 const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
-const { computePlayingHandicap, isTeamRaceOn, isShowOtherScoresOn, redactOtherTeamScores } = require('../lib/compute/roundState');
+const { computePlayingHandicap, isTeamRaceOn, isShowOtherScoresOn, redactOtherTeamScores, redactLiveOtherTeamSetup } = require('../lib/compute/roundState');
 const { computeFunFacts, segmentLeaders } = require('../lib/compute/funFacts');
 
 describe('playingHandicap', () => {
@@ -130,6 +130,23 @@ describe('show other teams scores', () => {
     assert.equal(state.members[0].holes[0].gross, null);
     assert.equal(state.members[1].holes[0].gross, 5);
     assert.equal(state.teams[0].total, null);
+  });
+
+  it('blanks other-team setup names on live when show-other is off', () => {
+    const patch = redactLiveOtherTeamSetup({
+      memberTotals: [
+        { id: 1, display_name: 'Host', team_id: 10 },
+        { id: 2, display_name: 'Joiner', team_id: 20 },
+      ],
+      teams: [
+        { id: 10, holes: [{ holeNumber: 1, balls: [{ name: 'Host', score: 4 }] }] },
+        { id: 20, holes: [{ holeNumber: 1, balls: [{ name: 'Joiner', score: 5 }] }] },
+      ],
+    }, { id: 1, team_id: 10 }, false);
+    assert.equal(patch.memberTotals[0].display_name, 'Host');
+    assert.equal(patch.memberTotals[1].display_name, '');
+    assert.equal(patch.teams[0].holes[0].balls.length, 1);
+    assert.equal(patch.teams[1].holes[0].balls.length, 0);
   });
 });
 

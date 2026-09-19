@@ -3593,6 +3593,39 @@ input.score-input[readonly] {
   color: #333;
 }
 
+.team-picker-row {
+  margin: 0 0 10px;
+}
+
+.team-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-pick-chip {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  font-weight: 800;
+  font-size: 0.9rem;
+}
+
+.team-pick-chip.is-on,
+.team-pick-chip.is-shared {
+  border-color: var(--accent);
+  background: #E8F5E9;
+  color: #1B5E20;
+}
+
+.team-picker-note {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: #555;
+}
+
 .add-team-picks {
   display: flex;
   flex-wrap: wrap;
