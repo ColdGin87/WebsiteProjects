@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260919a/);
-    assert.match(html, /js\/formats\.js\?v=20260919a/);
-    assert.match(html, /js\/sideGames\.js\?v=20260919a/);
-    assert.match(html, /js\/nineteen\.js\?v=20260919a/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260919a/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260919a/);
-    assert.match(src, /ASSET_V:\s*'20260919a'/);
+    assert.match(html, /20260919b/);
+    assert.match(html, /js\/formats\.js\?v=20260919b/);
+    assert.match(html, /js\/sideGames\.js\?v=20260919b/);
+    assert.match(html, /js\/nineteen\.js\?v=20260919b/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260919b/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260919b/);
+    assert.match(src, /ASSET_V:\s*'20260919b'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -420,6 +420,28 @@ describe('Combined PR3 hole view', () => {
     assert.match(css, /\.team-pick-chip/);
     const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
     assert.match(routes, /livePatch\(state, myRoundMember/);
+  });
+
+  it('shows Host or Leader under the score runner and keeps self on the team when guests clear', () => {
+    assert.match(src, /runnerBadgeHtml/);
+    assert.match(src, /name-badge-\$\{label\.toLowerCase\(\)\}/);
+    assert.match(src, /return 'Host'/);
+    assert.match(src, /return 'Leader'/);
+    assert.match(src, /return 'Guest'/);
+    assert.match(src, /canRemoveRosterMember/);
+    assert.match(src, /clearGuests\(/);
+    assert.match(src, /id="clear-guests"/);
+    assert.match(src, /You cannot remove yourself from the card/);
+    assert.match(css, /\.name-badge/);
+    const holeRow = sliceFn('holePlayerRowHtml(state, member, holeNumber, team)', 'playerNinesLineHtml');
+    assert.match(holeRow, /runnerBadgeHtml/);
+    const roster = sliceFn('setupRosterHtml(state) {', 'addPlayerPanelInner(state)');
+    assert.match(roster, /runnerBadgeHtml/);
+    assert.match(roster, /canRemoveRosterMember/);
+    assert.match(roster, /Clear guests/);
+    const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
+    assert.match(routes, /clear-guests/);
+    assert.match(routes, /You cannot remove yourself from the card/);
   });
 
   it('does not show press or side-game chrome on the live card', () => {

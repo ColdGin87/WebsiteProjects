@@ -47,7 +47,7 @@ const scorecard = {
   focusedTeamId: null,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260919a',
+  ASSET_V: '20260919b',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -1430,6 +1430,47 @@ const scorecard = {
     return !!(me && ((me.team_id != null && me.team_id !== '') || (me.teamId != null && me.teamId !== '')));
   },
 
+  isGuestMember(member) {
+    return !!(member && (member.is_guest === 1 || member.is_guest === true || member.isGuest === true || member.is_guest === '1'));
+  },
+
+  isSignedInMember(member) {
+    const id = member && (member.player_id ?? member.playerId);
+    return id != null && id !== '' && Number.isFinite(Number(id));
+  },
+
+  isSelfMember(state, member) {
+    const me = this.myMember(state);
+    return !!(me && member && Number(me.id) === Number(member.id));
+  },
+
+  isMemberHost(state, member) {
+    if (!member) return false;
+    if (String(member.role || '').toLowerCase() === 'organizer') return true;
+    const oid = state && state.round && (state.round.organizer_id ?? state.round.organizerId);
+    return oid != null && Number(member.player_id ?? member.playerId) === Number(oid);
+  },
+
+  runnerBadge(state, member) {
+    if (!member || this.isFollowAlongMember(member)) return '';
+    if (this.isGuestMember(member)) return 'Guest';
+    if (this.isMemberHost(state, member)) return 'Host';
+    if (this.isSignedInMember(member)) return 'Leader';
+    return '';
+  },
+
+  runnerBadgeHtml(state, member) {
+    const label = this.runnerBadge(state, member);
+    if (!label) return '';
+    return `<div class="name-badge name-badge-${label.toLowerCase()}">${label}</div>`;
+  },
+
+  canRemoveRosterMember(state, member) {
+    if (!this.canManageRosterMember(state, member)) return false;
+    if (this.isSelfMember(state, member)) return false;
+    return true;
+  },
+
   myTeamName(state) {
     const me = this.myMember(state);
     if (!me) return 'Team 1';
@@ -1708,14 +1749,18 @@ const scorecard = {
   setupRosterHtml(state) {
     const rows = this.manageableMembers(state);
     if (!rows.length) return '';
+    const guests = rows.filter((m) => this.isGuestMember(m));
     return `<div class="setup-roster card" id="setup-roster">
       <div class="card-title">Team roster</div>
-      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. ${this.isOrganizer(state) ? 'This team’s roster. Open another team to edit that roster.' : 'Own team only.'}</p>
+      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. Clearing guests leaves you on the team. ${this.isOrganizer(state) ? 'This team’s roster. Open another team to edit that roster.' : 'Own team only.'}</p>
       <ul class="setup-roster-list">
         ${rows.map((m) => {
           const hcp = m.playing_handicap ?? m.handicap ?? '';
+          const remove = this.canRemoveRosterMember(state, m)
+            ? `<button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>`
+            : '';
           return `<li class="setup-roster-row" data-roster-member="${m.id}">
-            <span class="setup-roster-name">${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}${this.rosterFillNote(state, m)}</span>
+            <span class="setup-roster-name">${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</span>
             <label class="setup-roster-index">
               <span>Index</span>
               <input class="form-input setup-roster-hcp-input" inputmode="decimal" autocomplete="off"
@@ -1723,10 +1768,11 @@ const scorecard = {
                 aria-label="Handicap Index for ${_esc(m.display_name)}">
             </label>
             <button type="button" class="btn btn-sm btn-accent setup-roster-set" onclick="scorecard.saveRosterHcp(${m.id})">Set</button>
-            <button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>
+            ${remove}
           </li>`;
         }).join('')}
       </ul>
+      ${guests.length ? '<button type="button" class="btn btn-sm btn-secondary" id="clear-guests">Clear guests</button>' : ''}
     </div>`;
   },
 
@@ -1938,6 +1984,14 @@ const scorecard = {
         e.preventDefault();
         e.stopPropagation();
         this.closeAddPlayer();
+      };
+    }
+    const clear = document.getElementById('clear-guests');
+    if (clear) {
+      clear.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.clearGuests();
       };
     }
     ['live-add-guest-name', 'live-add-guest-hcp'].forEach((id) => {
@@ -3120,7 +3174,7 @@ const scorecard = {
     const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
     const writable = this.canWriteMember(state, member);
     return `<div class="hole-player-row${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
-      <span class="hole-player-name">${_esc(member.display_name)}${this.fillSeatLabel(member, team)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
+      <span class="hole-player-name">${_esc(member.display_name)}${this.fillSeatLabel(member, team)}${this.runnerBadgeHtml(state, member)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
       <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
           <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
@@ -3654,7 +3708,7 @@ const scorecard = {
               ${(state.members || []).filter((m) => m.team_id).map((m) => {
                 const team = (state.teams || []).find((t) => t.id === m.team_id);
                 return `<tr>
-                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}</td>
                   <td>${_esc(this.teamNameFor(state, m))}</td>
                   <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
                   <td>${m.totalGross ?? '—'}</td>
@@ -3765,12 +3819,12 @@ const scorecard = {
             <tbody>
               ${state.members.map((m) => `
                 <tr>
-                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}${this.rosterFillNote(state, m)}</td>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</td>
                   <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
                   <td>${this.teamSelectHtml(state, m)}</td>
                   <td>
                     <button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button>
-                    <button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>
+                    ${this.canRemoveRosterMember(state, m) ? `<button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>` : ''}
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -3857,7 +3911,7 @@ const scorecard = {
     const showTot = this.showTot(state);
     return `
       <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${m.id}">
-        <td class="row-label">${_esc(m.display_name)}${this.fillSeatLabel(m, team)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
+        <td class="row-label">${_esc(m.display_name)}${this.fillSeatLabel(m, team)}${this.runnerBadgeHtml(state, m)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
         ${this.joinCardRow(
           holes,
           showOut,
@@ -4696,14 +4750,30 @@ const scorecard = {
 
   async removeMember(memberId) {
     const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
-    if (!this.canManageRosterMember(this.state, member)) {
-      this.showWriteError('You can only remove players from your own team.');
+    if (!this.canRemoveRosterMember(this.state, member)) {
+      this.showWriteError(this.isSelfMember(this.state, member)
+        ? 'You cannot remove yourself from the card. Clear guests instead.'
+        : 'You can only remove players from your own team.');
       return;
     }
     const name = member && member.display_name ? member.display_name : 'this player';
     if (!await this.confirmRemoveMember(name)) return;
     try {
       const state = await svcApi('del', `/api/rounds/${this.state.round.id}/members/${memberId}`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async clearGuests() {
+    if (!this.state || this.isFollowAlong(this.state)) return;
+    const guests = this.manageableMembers(this.state).filter((m) => this.isGuestMember(m));
+    if (!guests.length) return;
+    const ok = await this.confirmRemoveMember(guests.length + ' guest' + (guests.length === 1 ? '' : 's') + ' (you stay on the team)');
+    if (!ok) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/clear-guests`, {});
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);

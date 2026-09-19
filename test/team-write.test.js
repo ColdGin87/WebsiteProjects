@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { sameTeamIds, canWriteTeamScore, canAddGuestToTeam, canManageRosterMember, isFollowAlong, isFollowShowOtherOn, memberOnTeam, shareAnyTeam } = require('../lib/scoring/teamWrite');
+const { sameTeamIds, canWriteTeamScore, canAddGuestToTeam, canManageRosterMember, isFollowAlong, isFollowShowOtherOn, memberOnTeam, shareAnyTeam, runnerBadge } = require('../lib/scoring/teamWrite');
 
 describe('Team write lock', () => {
   it('requires both sides to share a numeric team id', () => {
@@ -82,5 +82,14 @@ describe('Team write lock', () => {
     assert.equal(canWriteTeamScore(home, fill, false), true);
     assert.equal(canWriteTeamScore(short, fill, false), true);
     assert.equal(canWriteTeamScore(short, home, false), false);
+  });
+
+  it('labels Host, Leader, and Guest so phones can see who runs the card', () => {
+    const round = { organizer_id: 1 };
+    assert.equal(runnerBadge({ role: 'organizer', player_id: 1 }, round), 'Host');
+    assert.equal(runnerBadge({ role: 'player', player_id: 2 }, round), 'Leader');
+    assert.equal(runnerBadge({ role: 'player', player_id: 1 }, round), 'Host');
+    assert.equal(runnerBadge({ role: 'player', is_guest: 1, player_id: null }, round), 'Guest');
+    assert.equal(runnerBadge({ role: 'follower', player_id: 4 }, round), '');
   });
 });

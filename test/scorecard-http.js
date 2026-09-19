@@ -1490,6 +1490,39 @@ async function runHardeningScenario(base) {
   if ((removed.members || []).some((m) => m.display_name === 'Roster Pal')) {
     fail('joiner own-team remove must drop the player');
   }
+  const selfDel = await apiStatus(base, 'DELETE', `/api/rounds/${roundId}/members/${joinerMember.id}`, {
+    token: joiner.token,
+  });
+  assertEqual(selfDel.status, 403, 'scorekeeper cannot remove themselves');
+  const stillMe = (removed.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  if (!stillMe || stillMe.team_id == null || stillMe.team_id === '') {
+    fail('clearing the last guest must leave the scorekeeper on the team');
+  }
+  const guestA = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Clear Me A', handicap: 9, playingHandicap: 9 },
+  });
+  const guestB = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Clear Me B', handicap: 10, playingHandicap: 10 },
+  });
+  if (!(guestA.members || []).some((m) => m.display_name === 'Clear Me A')) fail('guest A missing');
+  if (!(guestB.members || []).some((m) => m.display_name === 'Clear Me B')) fail('guest B missing');
+  const cleared = await api(base, 'POST', `/api/rounds/${roundId}/clear-guests`, { token: joiner.token });
+  if ((cleared.members || []).some((m) => m.display_name === 'Clear Me A' || m.display_name === 'Clear Me B')) {
+    fail('clear guests must drop guest rows');
+  }
+  const keeperAfterClear = (cleared.members || []).find((m) => Number(m.id) === Number(joinerMember.id));
+  if (!keeperAfterClear || keeperAfterClear.team_id == null || keeperAfterClear.team_id === '') {
+    fail('clear guests must not eject the scorekeeper');
+  }
+  const afterClearAdd = await api(base, 'POST', `/api/rounds/${roundId}/guests`, {
+    token: joiner.token,
+    body: { name: 'Still Can Add', handicap: 7, playingHandicap: 7 },
+  });
+  if (!(afterClearAdd.members || []).some((m) => m.display_name === 'Still Can Add')) {
+    fail('Add player must stay available after clearing guests');
+  }
   const leftoverPal = (removed.members || []).some((m) => Number(m.id) === Number(pal.id));
   if (leftoverPal) fail('removed player must not remain on the roster');
   const leftoverScore = (removed.members || []).some((m) =>
