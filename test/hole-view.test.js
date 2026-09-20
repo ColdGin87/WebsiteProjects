@@ -68,13 +68,13 @@ describe('Combined PR3 hole view', () => {
     const fallbackAt = html.indexOf('function rawGet');
     const apiTagAt = html.indexOf('js/api.js');
     assert.ok(fallbackAt >= 0 && fallbackAt < apiTagAt);
-    assert.match(html, /20260919c/);
-    assert.match(html, /js\/formats\.js\?v=20260919c/);
-    assert.match(html, /js\/sideGames\.js\?v=20260919c/);
-    assert.match(html, /js\/nineteen\.js\?v=20260919c/);
-    assert.match(html, /js\/scoreAdvance\.js\?v=20260919c/);
-    assert.match(html, /js\/teamFillSpin\.js\?v=20260919c/);
-    assert.match(src, /ASSET_V:\s*'20260919c'/);
+    assert.match(html, /20260920a/);
+    assert.match(html, /js\/formats\.js\?v=20260920a/);
+    assert.match(html, /js\/sideGames\.js\?v=20260920a/);
+    assert.match(html, /js\/nineteen\.js\?v=20260920a/);
+    assert.match(html, /js\/scoreAdvance\.js\?v=20260920a/);
+    assert.match(html, /js\/teamFillSpin\.js\?v=20260920a/);
+    assert.match(src, /ASSET_V:\s*'20260920a'/);
   });
 
   it('shows the shared join code at the top of hole view and full card', () => {
@@ -290,6 +290,8 @@ describe('Combined PR3 hole view', () => {
     const down = sliceFn('focusNextHole(memberId, holeNumber) {', 'paintCurrentHoleChrome()');
     assert.match(down, /nextAdvanceTarget/);
     assert.match(down, /retargetHoleView/);
+    assert.match(down, /preventScroll/);
+    assert.match(down, /behavior: 'smooth'/);
     assert.doesNotMatch(down, /if \(!next\) return;/);
     assert.match(src, /Gross must be 1–19/);
     assert.match(src, /readGrossTyping/);
@@ -368,6 +370,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, />ON</);
     assert.match(src, />OFF</);
     assert.match(src, /you chose to see other teams/);
+    assert.match(src, /Host is hiding other teams/);
+    assert.match(src, /Turn ON to see other teams/);
     assert.match(css, /\.show-other-bar/);
     assert.match(css, /\.show-other-btn\.is-on/);
     assert.match(src, /is-score-hidden/);
@@ -423,9 +427,10 @@ describe('Combined PR3 hole view', () => {
   });
 
   it('keeps own-lane scorecard off other-team setup until that card is opened', () => {
-    const see = sliceFn('canSeeOtherTeams(state) {', 'defaultFocusedTeamId(state)');
+    const see = sliceFn('canSeeOtherTeams(state) {', 'homeTeamId(state)');
     assert.doesNotMatch(see, /isPrivilegedViewer/);
     assert.match(see, /isShowOtherScoresOn/);
+    assert.match(see, /followShowOtherOn/);
     assert.match(src, /focusedTeamId/);
     assert.match(src, /memberOnFocusedTeam/);
     assert.match(src, /canSeeTeamLane/);
@@ -442,10 +447,36 @@ describe('Combined PR3 hole view', () => {
     assert.match(full, /teamPickerHtml/);
     assert.match(hole, /showOtherTeamsBarHtml/);
     assert.match(full, /showOtherTeamsBarHtml/);
+    const results = sliceFn('drawResults(state) {', 'teamChoices(state)');
+    assert.match(results, /showOtherTeamsBarHtml/);
+    assert.match(results, /canSeeTeamLane/);
     assert.match(css, /\.team-picker-row/);
     assert.match(css, /\.team-pick-chip/);
     const routes = fs.readFileSync(path.join(ROOT, 'lib/routes/scoreRounds.js'), 'utf8');
     assert.match(routes, /livePatch\(state, myRoundMember/);
+  });
+
+  it('lands a non-Team-1 scorekeeper on their own team without a navigate-away reset', () => {
+    const home = sliceFn('homeTeamId(state) {', 'defaultFocusedTeamId(state)');
+    assert.match(home, /team_id/);
+    const sync = sliceFn('syncJoinerFocus(state) {', 'ensureFocusedTeam(state)');
+    assert.match(sync, /homeTeamId/);
+    assert.match(sync, /focusedTeamId = home/);
+    const ensure = sliceFn('ensureFocusedTeam(state) {', 'focusedTeam(state)');
+    assert.match(ensure, /syncJoinerFocus/);
+    assert.match(ensure, /!this\.isOrganizer/);
+    const lane = sliceFn('canSeeTeamLane(state, team) {', 'focusTeam(teamId)');
+    assert.match(lane, /homeTeamId/);
+    assert.match(lane, /!this\.isOrganizer/);
+    const load = sliceFn('async renderRound(id, screen) {', 'pickCurrentHole(state)');
+    assert.match(load, /syncJoinerFocus/);
+    assert.match(load, /cacheMine/);
+    const dash = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
+    assert.match(dash, /scorecard\.focusedTeamId = null/);
+    const app = fs.readFileSync(path.join(ROOT, 'public/js/app.js'), 'utf8');
+    assert.match(app, /scorecard\.focusedTeamId = null/);
+    const onFocus = sliceFn('memberOnFocusedTeam(state, member) {', 'canSeeTeamLane(state, team)');
+    assert.match(onFocus, /homeTeamId/);
   });
 
   it('shows Host or Leader under the score runner and keeps self on the team when guests clear', () => {
@@ -453,6 +484,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /name-badge-\$\{label\.toLowerCase\(\)\}/);
     assert.match(src, /return 'Host'/);
     assert.match(src, /return 'Leader'/);
+    assert.match(src, /Host badge is the round organizer only/);
+    assert.match(src, /Sunday default advance is <strong>Down<\/strong>/);
     assert.match(src, /return 'Guest'/);
     assert.match(src, /canRemoveRosterMember/);
     assert.match(src, /clearGuests\(/);

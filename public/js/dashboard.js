@@ -267,6 +267,10 @@ const dashboard = {
           teamNickname: (document.getElementById('join-team-nick') || {}).value || '',
           displayName: (document.getElementById('join-display-name') || {}).value || '',
         });
+        if (window.scorecard) {
+          scorecard.state = null;
+          scorecard.focusedTeamId = null;
+        }
         app.navigate('#round/' + state.round.id);
       } catch (err) {
         if (errEl) errEl.textContent = err.message;

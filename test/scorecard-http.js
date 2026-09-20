@@ -1180,11 +1180,20 @@ async function runFollowerScenario(base) {
   const keeperHostOnHole = keeperSeesHostOn && (keeperSeesHostOn.holes || []).find((h) => h.holeNumber === 1);
   assertEqual(keeperHostOnHole && keeperHostOnHole.gross, 5, 'scorekeeper still follows the host show-other setting');
 
-  const steal = await apiStatus(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+  const keeperHide = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
+    token: keeper.token,
+    body: { showOtherScores: false },
+  });
+  assertEqual(!!(keeperHide.round && keeperHide.round.showOtherScores), true, 'scorekeeper personal hide does not flip host show-other');
+  const keeperMeAfter = (keeperHide.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  assertEqual(!!(keeperMeAfter && (keeperMeAfter.followShowOther || keeperMeAfter.follow_show_other === 1)), false, 'scorekeeper personal hide persisted');
+  const keeperSee = await api(base, 'PUT', `/api/rounds/${roundId}/follow-view`, {
     token: keeper.token,
     body: { showOtherScores: true },
   });
-  assertEqual(steal.status, 403, 'scorekeeper cannot use follow-view');
+  const keeperMeSee = (keeperSee.members || []).find((m) => Number(m.id) === Number(keeperMe.id));
+  assertEqual(!!(keeperMeSee && (keeperMeSee.followShowOther || keeperMeSee.follow_show_other === 1)), true, 'scorekeeper can turn personal See ON');
+  assertEqual(!!(keeperSee.round && keeperSee.round.showOtherScores), true, 'scorekeeper See does not change host show-other');
 
   const still403 = await apiStatus(base, 'POST', `/api/rounds/${roundId}/scores`, {
     token: follower.token,
