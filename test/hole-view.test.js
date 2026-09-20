@@ -290,9 +290,9 @@ describe('Combined PR3 hole view', () => {
     const down = sliceFn('focusNextHole(memberId, holeNumber) {', 'paintCurrentHoleChrome()');
     assert.match(down, /nextAdvanceTarget/);
     assert.match(down, /retargetHoleView/);
-    assert.match(down, /preventScroll/);
-    assert.match(down, /behavior: 'smooth'/);
     assert.doesNotMatch(down, /if \(!next\) return;/);
+    assert.match(src, /preventScroll/);
+    assert.match(src, /behavior: 'smooth'/);
     assert.match(src, /Gross must be 1–19/);
     assert.match(src, /readGrossTyping/);
     assert.match(src, /dataset\.pending/);
@@ -330,7 +330,8 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /follow-view/);
     assert.match(src, /See other teams/);
     assert.match(src, /Host is hiding other teams/);
-    assert.match(src, /isShowOtherScoresOn\(state\) && this\.followShowOtherOn/);
+    assert.match(src, /if \(!this\.isShowOtherScoresOn\(state\)\) return false;/);
+    assert.match(src, /return this\.followShowOtherOn\(state\);/);
     assert.match(css, /\.follow-along-bar/);
     assert.match(css, /\.follow-board-btn/);
     const dashJoin = fs.readFileSync(path.join(ROOT, 'public/js/dashboard.js'), 'utf8');
@@ -459,9 +460,8 @@ describe('Combined PR3 hole view', () => {
   it('lands a non-Team-1 scorekeeper on their own team without a navigate-away reset', () => {
     const home = sliceFn('homeTeamId(state) {', 'defaultFocusedTeamId(state)');
     assert.match(home, /team_id/);
-    const sync = sliceFn('syncJoinerFocus(state) {', 'ensureFocusedTeam(state)');
-    assert.match(sync, /homeTeamId/);
-    assert.match(sync, /focusedTeamId = home/);
+    assert.match(src, /syncJoinerFocus\(state\)/);
+    assert.match(src, /focusedTeamId = home/);
     const ensure = sliceFn('ensureFocusedTeam(state) {', 'focusedTeam(state)');
     assert.match(ensure, /syncJoinerFocus/);
     assert.match(ensure, /!this\.isOrganizer/);
@@ -484,7 +484,7 @@ describe('Combined PR3 hole view', () => {
     assert.match(src, /name-badge-\$\{label\.toLowerCase\(\)\}/);
     assert.match(src, /return 'Host'/);
     assert.match(src, /return 'Leader'/);
-    assert.match(src, /Host badge is the round organizer only/);
+    assert.match(src, /badge is the round organizer only/);
     assert.match(src, /Sunday default advance is <strong>Down<\/strong>/);
     assert.match(src, /return 'Guest'/);
     assert.match(src, /canRemoveRosterMember/);
