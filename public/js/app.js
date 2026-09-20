@@ -142,6 +142,10 @@ const app = {
       const info = await svcApi('get', '/api/rounds/join-info?code=' + encodeURIComponent(code));
       if (info && info.alreadyJoined) {
         const state = await svcApi('post', '/api/rounds/join', { code });
+        if (window.scorecard) {
+          scorecard.state = null;
+          scorecard.focusedTeamId = null;
+        }
         this.navigate('#round/' + state.round.id);
         return;
       }

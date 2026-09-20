@@ -43,9 +43,11 @@ const scorecard = {
   _preserveAddDraft: false,
   fillSpin: null,
   stepperOpen: false,
+  pressEditOpen: false,
+  focusedTeamId: null,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260907h',
+  ASSET_V: '20260920a',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -99,13 +101,18 @@ const scorecard = {
     if (!sameRound) {
       this.addPlayerOpen = false;
       this.addPlayerDraft = { name: '', handicap: '', teamName: 'Team 1' };
+      this.focusedTeamId = null;
     }
     const container = document.getElementById('app');
     const cached = this.readCache(id);
     if (cached) {
       this.state = cached;
       this.currentHole = this.pickCurrentHole(cached);
-      if (!this.shouldHoldAddPlayer()) this.draw(cached);
+      const cacheMine = this.myMember(cached) || this.isOrganizer(cached);
+      if (cacheMine && !this.shouldHoldAddPlayer()) {
+        this.syncJoinerFocus(cached);
+        this.draw(cached);
+      }
     } else {
       container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading scorecard...</div>';
     }
@@ -114,6 +121,7 @@ const scorecard = {
       this.state = state;
       this.writeCache(id, state);
       this.currentHole = this.pickCurrentHole(state);
+      this.syncJoinerFocus(state);
       if (!this.shouldHoldAddPlayer()) this.draw(state);
       this.pollTimer = setInterval(() => this.refresh(id), 5000);
     } catch (err) {
@@ -149,6 +157,7 @@ const scorecard = {
       const patch = await svcApi('getLive', '/api/rounds/' + id + '/live', this.state && this.state.updatedAt);
       if (!patch || patch.notModified) return;
       if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
+      if (this.state && patch.updatedAt && this.state.updatedAt && String(patch.updatedAt) < String(this.state.updatedAt)) return;
       if (this.rosterChanged(patch)) {
         if (this.shouldHoldAddPlayer()) return;
         const full = await svcApi('get', '/api/rounds/' + id);
@@ -170,10 +179,26 @@ const scorecard = {
     const next = patch.memberTotals || [];
     const cur = (this.state && this.state.members) || [];
     if (next.length !== cur.length) return true;
+    if (this.teamLabelsChanged(patch)) return true;
     return next.some((t) => {
       const m = cur.find((x) => Number(x.id) === Number(t.id));
       if (!m) return true;
-      return Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap);
+      if (Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap)) return true;
+      if (!this.sameTeamOrEmpty(m.team_id ?? m.teamId, t.team_id ?? t.teamId)) return true;
+      return !this.sameTeamOrEmpty(m.fill_team_id ?? m.fillTeamId, t.fill_team_id ?? t.fillTeamId);
+    });
+  },
+
+  teamLabelsChanged(patch) {
+    const nextTeams = (patch && patch.teams) || [];
+    const curTeams = (this.state && this.state.teams) || [];
+    if (nextTeams.length !== curTeams.length) return true;
+    return nextTeams.some((nt) => {
+      const ct = curTeams.find((x) => Number(x.id) === Number(nt.id));
+      if (!ct) return true;
+      if (String(ct.name || '') !== String(nt.name || '')) return true;
+      if (nt.nickname != null && String(ct.nickname || '') !== String(nt.nickname || '')) return true;
+      return false;
     });
   },
 
@@ -204,19 +229,34 @@ const scorecard = {
       member.inNet = tot.inNet;
       member.totalNet = tot.totalNet;
       member.playing_handicap = tot.playing_handicap;
-      member.team_id = tot.team_id;
+      if (tot.team_id != null || tot.teamId != null) {
+        member.team_id = tot.team_id ?? tot.teamId;
+        member.teamId = tot.teamId ?? tot.team_id;
+      }
+      if (tot.fill_team_id !== undefined || tot.fillTeamId !== undefined) {
+        member.fill_team_id = tot.fill_team_id ?? tot.fillTeamId;
+        member.fillTeamId = tot.fillTeamId ?? tot.fill_team_id;
+      }
       if (tot.follow_show_other != null || tot.followShowOther != null) {
         member.follow_show_other = tot.follow_show_other ?? (tot.followShowOther ? 1 : 0);
         member.followShowOther = !!(tot.followShowOther || tot.follow_show_other === 1);
       }
     }
     if (patch.teams) {
+      const paintTeam = (team, next) => {
+        const merged = next ? { ...team, ...next } : { ...team };
+        const nick = next && next.nickname != null ? next.nickname : (merged.nickname || '');
+        merged.nickname = nick;
+        const name = String(merged.name || '').trim() || 'Team';
+        merged.displayName = nick ? `${name} · ${nick}` : name;
+        return merged;
+      };
       this.state.teams = (this.state.teams || []).map((t) => {
         const next = patch.teams.find((x) => x.id === t.id);
-        return next ? { ...t, ...next } : t;
+        return next ? paintTeam(t, next) : t;
       });
       for (const team of patch.teams) {
-        if (!(this.state.teams || []).some((t) => t.id === team.id)) this.state.teams.push(team);
+        if (!(this.state.teams || []).some((t) => t.id === team.id)) this.state.teams.push(paintTeam({}, team));
       }
     }
     if (patch.matches && this.state.matches) {
@@ -419,25 +459,99 @@ const scorecard = {
   },
 
   canSeeOtherTeams(state) {
-    if (this.isPrivilegedViewer(state)) return true;
-    if (this.isFollowAlong(state)) {
-      return this.isShowOtherScoresOn(state) && this.followShowOtherOn(state);
+    if (!this.isShowOtherScoresOn(state)) return false;
+    if (this.isOrganizer(state)) return true;
+    return this.followShowOtherOn(state);
+  },
+
+  homeTeamId(state) {
+    const me = this.myMember(state);
+    const home = me && (me.team_id ?? me.teamId);
+    if (home != null && home !== '' && Number.isFinite(Number(home))) return Number(home);
+    return null;
+  },
+
+  defaultFocusedTeamId(state) {
+    const home = this.homeTeamId(state);
+    if (home != null) return home;
+    const teams = [...((state && state.teams) || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
+    return teams[0] ? Number(teams[0].id) : null;
+  },
+
+  syncJoinerFocus(state) {
+    if (this.isOrganizer(state)) return this.ensureFocusedTeam(state);
+    const home = this.homeTeamId(state);
+    if (home != null) this.focusedTeamId = home;
+    else this.focusedTeamId = this.defaultFocusedTeamId(state);
+    const team = ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, this.focusedTeamId));
+    if (team) {
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: team.name };
+      else this.addPlayerDraft.teamName = team.name;
     }
-    return this.isShowOtherScoresOn(state);
+    return this.focusedTeamId;
+  },
+
+  ensureFocusedTeam(state) {
+    if (!this.isOrganizer(state)) return this.syncJoinerFocus(state);
+    const teams = (state && state.teams) || [];
+    if (this.focusedTeamId != null && teams.some((t) => this.sameTeamIds(t.id, this.focusedTeamId))) {
+      return this.focusedTeamId;
+    }
+    this.focusedTeamId = this.defaultFocusedTeamId(state);
+    return this.focusedTeamId;
+  },
+
+  focusedTeam(state) {
+    const id = this.ensureFocusedTeam(state);
+    return ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, id)) || null;
+  },
+
+  isSharedBoard(state) {
+    return this.canSeeOtherTeams(state);
+  },
+
+  memberOnFocusedTeam(state, member) {
+    if (!this.isOrganizer(state)) {
+      const home = this.homeTeamId(state);
+      if (home != null) return this.memberOnTeam(member, home);
+    }
+    const focused = this.focusedTeam(state);
+    if (!focused) return this.shareAnyTeam(this.myMember(state), member);
+    return this.memberOnTeam(member, focused.id);
+  },
+
+  canSeeTeamLane(state, team) {
+    if (!team) return false;
+    if (this.canSeeOtherTeams(state)) return true;
+    if (!this.isOrganizer(state)) {
+      const home = this.homeTeamId(state);
+      if (home != null) return this.sameTeamIds(team.id, home);
+    }
+    return this.sameTeamIds(team.id, this.ensureFocusedTeam(state));
+  },
+
+  focusTeam(teamId) {
+    const id = Number(teamId);
+    if (!Number.isFinite(id)) return;
+    this.focusedTeamId = id;
+    const team = ((this.state && this.state.teams) || []).find((t) => this.sameTeamIds(t.id, id));
+    if (team) {
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: team.name };
+      else this.addPlayerDraft.teamName = team.name;
+    }
+    if (this.state) this.draw(this.state);
   },
 
   canSeeMemberScores(state, member) {
     if (!member) return false;
     if (this.canSeeOtherTeams(state)) return true;
+    if (this.memberOnFocusedTeam(state, member)) return true;
     const me = this.myMember(state);
-    return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
+    return this.shareAnyTeam(me, member);
   },
 
   canSeeTeamScores(state, team) {
-    if (!team) return false;
-    if (this.canSeeOtherTeams(state)) return true;
-    const me = this.myMember(state);
-    return this.sameTeamIds(me && (me.team_id ?? me.teamId), team.id);
+    return this.canSeeTeamLane(state, team);
   },
 
   canManageRosterMember(state, member) {
@@ -448,19 +562,12 @@ const scorecard = {
     return this.canWriteMember(state, member);
   },
 
-  isVegasOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    const cfg = this.sideConfig(state);
-    return !!(cfg.vegas && cfg.vegas.on);
+  isVegasOn(_state) {
+    return false;
   },
 
-  isWolfOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.wolf && this.flagOn(cfg.wolf.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    return !!(games && games.wolf);
+  isWolfOn(_state) {
+    return false;
   },
 
   vegasGame(state) {
@@ -512,9 +619,8 @@ const scorecard = {
     return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${run}`;
   },
 
-  vegasBoardHtml(state) {
-    if (!this.isVegasOn(state)) return '';
-    return `<div class="vegas-board" id="vegas-board">${this.vegasBoardInner(state)}</div>`;
+  vegasBoardHtml(_state) {
+    return '';
   },
 
   vegasPresses(state) {
@@ -573,33 +679,130 @@ const scorecard = {
       <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v, hn))}</div>`;
   },
 
-  vegasPressButtonHtml(state, holeNumber) {
-    if (!this.isVegasOn(state)) return '';
-    const n = this.vegasGamesRunning(state, holeNumber);
-    return `<div class="vegas-press-wrap" id="vegas-press-wrap">
-      <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game.">
-        <span class="vegas-press-label">Press</span>
-        <span class="vegas-press-badge">${n}</span>
-        <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running</span>
-      </button>
-    </div>`;
+  vegasPressButtonHtml(_state, _holeNumber) {
+    return '';
+  },
+
+  latestPress(state) {
+    const list = ((state && state.presses) || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+    return list.length ? list[list.length - 1] : null;
+  },
+
+  pressUndoLabel(press) {
+    if (!press) return 'Press';
+    const key = String(press.game_key || press.gameKey || '');
+    if (key === 'vegas') return 'Vegas';
+    if (key === 'nassau') {
+      const seg = String(press.segment || '');
+      if (seg === 'front') return 'Nassau Front';
+      if (seg === 'back') return 'Nassau Back';
+      return 'Nassau Overall';
+    }
+    if (key === 'wolf') return 'Wolf';
+    if (key === 'nines') return 'Nines';
+    return 'Press';
+  },
+
+  undoLastPressHtml(_state) {
+    return '';
+  },
+
+  canManagePresses(_state) {
+    return false;
+  },
+
+  pressEditButtonHtml() {
+    return '';
+  },
+
+  pressEditSummary(state) {
+    const bits = [];
+    if (this.isVegasOn(state)) {
+      bits.push(`Vegas ${this.vegasGamesRunning(state, this.currentHole || 1)} games running`);
+    }
+    if (this.isNassauOn(state)) {
+      const parts = this.nassauSegmentsForHole(this.currentHole || 1).map((seg) => {
+        const c = this.nassauPressCount(state, seg.key);
+        return `${seg.label}${c ? ` ×${c}` : ''}`;
+      });
+      bits.push('Nassau ' + parts.join(' · '));
+    }
+    const last = this.latestPress(state);
+    if (last) bits.push('Newest ' + this.pressUndoLabel(last));
+    return bits.join(' · ') || 'No presses yet';
+  },
+
+  pressEditAddButtonsHtml(state) {
+    const hn = this.currentHole || 1;
+    const btns = [];
+    if (this.isVegasOn(state)) {
+      btns.push(`<button type="button" class="press-edit-add" onclick="scorecard.pressVegasFromHole(${hn})">Add Vegas press</button>`);
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>');
+    }
+    if (this.isNassauOn(state)) {
+      this.nassauSegmentsForHole(hn).forEach((seg) => {
+        const disabled = seg.enabled === false ? ' disabled' : '';
+        btns.push(`<button type="button" class="press-edit-add" data-nassau-press="${seg.key}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')">Add Nassau ${_esc(seg.label)}</button>`);
+      });
+    }
+    if (this.pressableGames(state).some((g) => g.key === 'wolf' || g.key === 'nines')) {
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.confirmPress()">Add Wolf / Nines press</button>');
+    }
+    return btns.join('');
+  },
+
+  pressEditPanelHtml(_state) {
+    return '';
+  },
+
+  togglePressEdit() {
+    this.pressEditOpen = !this.pressEditOpen;
+    if (!this.state) return;
+    if (this.screen === 'play') this.paintPressChrome();
+    else this.draw(this.state);
+  },
+
+  async confirmUndoPress(label) {
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Undo last press (' + label + ')? Only the newest press is removed.',
+        submitLabel: 'Undo',
+        fields: [],
+      });
+      return !!ok;
+    }
+    if (typeof window !== 'undefined' && window.confirm) {
+      return window.confirm('Undo last press (' + label + ')?');
+    }
+    return false;
+  },
+
+  async undoLastPress() {
+    if (!this.state || !this.state.round) return;
+    const last = this.latestPress(this.state);
+    if (!last) {
+      _toast('No press to undo.', 'error');
+      return;
+    }
+    if (!await this.confirmUndoPress(this.pressUndoLabel(last))) return;
+    try {
+      const state = await svcApi('del', `/api/rounds/${this.state.round.id}/presses/last`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      if (this.screen === 'play') this.paintPressChrome();
+      else this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
   },
 
   flagOn(value) {
     return value === true || value === 1 || value === '1' || value === 'on' || value === 'true' || value === 'yes';
   },
 
-  isNassauOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.nassau && this.flagOn(cfg.nassau.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    if (games && (games.nassau || (games.nassauPresses && games.nassauPresses.length))) return true;
-    const presses = state.presses || [];
-    if (presses.some((p) => (p.game_key || p.gameKey) === 'nassau')) return true;
-    const strip = state.sideGames && (state.sideGames.stripText || '');
-    return /\bNassau\b/i.test(strip);
+  isNassauOn(_state) {
+    return false;
   },
 
   nassauPresses(state) {
@@ -648,7 +851,7 @@ const scorecard = {
 
   nassauTeamName(team, fallback) {
     if (!team) return fallback;
-    return team.displayName || team.name || fallback;
+    return this.teamDisplay(team) || fallback;
   },
 
   nassauRunThrough(seg, holeNumber, teamA, teamB) {
@@ -690,18 +893,12 @@ const scorecard = {
     </div>`;
   },
 
-  nassauBoardHtml(state, boardId) {
-    if (!this.isNassauOn(state)) return '';
-    return `<div class="nassau-board" id="${boardId || 'nassau-board'}">${this.nassauBoardInner(state)}</div>`;
+  nassauBoardHtml(_state, _boardId) {
+    return '';
   },
 
-  nassauLiveDockHtml(state, holeNumber) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-live-dock" id="nassau-live-dock">
-      ${this.nassauPressButtonsHtml(state, hn)}
-      ${this.nassauBoardHtml(state)}
-    </div>`;
+  nassauLiveDockHtml(_state, _holeNumber) {
+    return '';
   },
 
   nassauBoardInner(state) {
@@ -734,17 +931,8 @@ const scorecard = {
     return `${badge}${original}${pressLines}`;
   },
 
-  nassauPressButtonsHtml(state, holeNumber, wrapId) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-press-wrap" id="${wrapId || 'nassau-press-wrap'}">
-      <div class="nassau-press-heading">Nassau Press</div>
-      <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
-        const c = this.nassauPressCount(state, seg.key);
-        const disabled = seg.enabled === false ? ' disabled' : '';
-        return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
-      }).join('')}</div>
-    </div>`;
+  nassauPressButtonsHtml(_state, _holeNumber, _wrapId) {
+    return '';
   },
 
   async pressNassauFromHole(holeNumber, segment) {
@@ -789,22 +977,147 @@ const scorecard = {
     }
   },
 
-  isNinesOn(state) {
-    if (this.isStandardScorecard(state)) return false;
-    if (!state) return false;
-    const cfg = this.sideConfig(state);
-    if (cfg && cfg.nines && this.flagOn(cfg.nines.on)) return true;
-    const games = state.sideGames && state.sideGames.games;
-    return !!(games && games.nines);
+  vegasPressStartHoles(state) {
+    const starts = [];
+    const seen = new Set();
+    this.vegasPresses(state).forEach((press) => {
+      const start = Number(press.start_hole ?? press.startHole);
+      if (!Number.isInteger(start) || start < 1 || start > 18 || seen.has(start)) return;
+      seen.add(start);
+      starts.push(start);
+    });
+    return starts.sort((a, b) => a - b);
+  },
+
+  isVegasPressStartHole(state, holeNumber) {
+    return this.vegasPressStartHoles(state).indexOf(Number(holeNumber)) !== -1;
+  },
+
+  holeNumberLabelHtml(state, holeNumber) {
+    const hn = Number(holeNumber) || 1;
+    const pip = this.isVegasOn(state) && this.isVegasPressStartHole(state, hn)
+      ? ' <span class="hole-pressed-pip">Pressed</span>'
+      : '';
+    return 'Hole ' + hn + pip;
+  },
+
+  pressedChipItems(state) {
+    const items = [];
+    const presses = ((state && state.presses) || []).slice().sort((a, b) => {
+      const sa = Number(a.start_hole ?? a.startHole ?? 0);
+      const sb = Number(b.start_hole ?? b.startHole ?? 0);
+      if (sa !== sb) return sa - sb;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+    presses.forEach((press) => {
+      const key = String(press.game_key || press.gameKey || '');
+      const start = Number(press.start_hole ?? press.startHole);
+      let end = Number(press.end_hole ?? press.endHole);
+      if (!Number.isInteger(start) || start < 1) return;
+      if (!Number.isInteger(end) || end < start) end = 18;
+      if (key === 'vegas') {
+        items.push({
+          kind: 'vegas',
+          hole: start,
+          label: 'V ' + start + '→' + end,
+          title: 'Vegas press holes ' + start + ' through ' + end,
+        });
+      } else if (key === 'nassau') {
+        const side = String(press.segment || '');
+        let label = 'Nassau ' + start + '→' + end;
+        if (side === 'front') label = 'Front ' + start + '–' + end;
+        else if (side === 'back') label = 'Back ' + start + '–' + end;
+        else if (side === 'overall') label = 'Overall ' + start + '→' + end;
+        items.push({
+          kind: 'nassau',
+          hole: start,
+          label,
+          title: label + ' press',
+        });
+      }
+    });
+    return items;
+  },
+
+  pressedHolesBarHtml(_state) {
+    return '';
+  },
+
+  goToPressedHole(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    if (this.screen === 'play' && this.cardMode === 'full') {
+      this.paintCurrentHoleChrome();
+      return;
+    }
+    this.cardMode = 'hole';
+    if (this.state) this.draw(this.state);
+  },
+
+  async offerMissedVegasPress(preferredHole) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    let defaultHole = Number(preferredHole);
+    if (!Number.isInteger(defaultHole) || defaultHole < 1 || defaultHole > 18) {
+      defaultHole = Number(this.currentHole) || 1;
+    }
+    const options = [];
+    for (let h = 1; h <= 18; h += 1) {
+      options.push({ value: String(h), label: 'Hole ' + h + ' → 18' });
+    }
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (!prompt) return;
+    const values = await prompt({
+      title: 'Missed a press — start at an earlier hole. Running Vegas updates from that hole through 18.',
+      submitLabel: 'Add press',
+      fields: [{
+        name: 'startHole',
+        label: 'Start Vegas press at',
+        type: 'select',
+        options,
+        value: String(defaultHole),
+      }],
+    });
+    if (!values) return;
+    await this.pressVegasFromHole(Number(values.startHole));
+  },
+
+  async offerVegasPressFromHole(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Add missed Vegas press from hole ' + hole + ' through 18?',
+        submitLabel: 'Add press',
+        fields: [],
+      });
+      if (!ok) return;
+    } else if (typeof window !== 'undefined' && window.confirm) {
+      if (!window.confirm('Add missed Vegas press from hole ' + hole + ' through 18?')) return;
+    }
+    await this.pressVegasFromHole(hole);
+  },
+
+  async onFullCardHoleTap(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    this.paintCurrentHoleChrome();
+    if (this.isVegasOn(this.state)) await this.offerVegasPressFromHole(hole);
+  },
+
+  isNinesOn(_state) {
+    return false;
   },
 
   ninesGame(state) {
     return state && state.sideGames && state.sideGames.games && state.sideGames.games.nines;
   },
 
-  ninesBoardHtml(state) {
-    if (!this.isNinesOn(state)) return '';
-    return `<div class="nines-board" id="nines-board">${this.ninesBoardInner(state)}</div>`;
+  ninesBoardHtml(_state) {
+    return '';
   },
 
   ninesPtsLine(players, key) {
@@ -1171,6 +1484,47 @@ const scorecard = {
     return !!(me && ((me.team_id != null && me.team_id !== '') || (me.teamId != null && me.teamId !== '')));
   },
 
+  isGuestMember(member) {
+    return !!(member && (member.is_guest === 1 || member.is_guest === true || member.isGuest === true || member.is_guest === '1'));
+  },
+
+  isSignedInMember(member) {
+    const id = member && (member.player_id ?? member.playerId);
+    return id != null && id !== '' && Number.isFinite(Number(id));
+  },
+
+  isSelfMember(state, member) {
+    const me = this.myMember(state);
+    return !!(me && member && Number(me.id) === Number(member.id));
+  },
+
+  isMemberHost(state, member) {
+    if (!member) return false;
+    if (String(member.role || '').toLowerCase() === 'organizer') return true;
+    const oid = state && state.round && (state.round.organizer_id ?? state.round.organizerId);
+    return oid != null && Number(member.player_id ?? member.playerId) === Number(oid);
+  },
+
+  runnerBadge(state, member) {
+    if (!member || this.isFollowAlongMember(member)) return '';
+    if (this.isGuestMember(member)) return 'Guest';
+    if (this.isMemberHost(state, member)) return 'Host';
+    if (this.isSignedInMember(member)) return 'Leader';
+    return '';
+  },
+
+  runnerBadgeHtml(state, member) {
+    const label = this.runnerBadge(state, member);
+    if (!label) return '';
+    return `<div class="name-badge name-badge-${label.toLowerCase()}">${label}</div>`;
+  },
+
+  canRemoveRosterMember(state, member) {
+    if (!this.canManageRosterMember(state, member)) return false;
+    if (this.isSelfMember(state, member)) return false;
+    return true;
+  },
+
   myTeamName(state) {
     const me = this.myMember(state);
     if (!me) return 'Team 1';
@@ -1184,6 +1538,27 @@ const scorecard = {
     const spin = this.fillSpinButtonHtml(state);
     if (!add && !roster && !spin) return '';
     return `<div id="add-player-panel" class="add-player-panel">${roster}${spin}${add}</div>`;
+  },
+
+  stillLeaderLineHtml(state) {
+    if (!this._stillLeaderCue) return '';
+    if (this.isFollowAlong(state)) return '';
+    return '<p class="still-leader-line" id="still-leader-line">You are still Leader on this team.</p>';
+  },
+
+  fireStillLeaderToast() {
+    if (typeof _toast === 'function') _toast('You are still Leader on this team.', 'success');
+  },
+
+  maybeFireAddPlayerLeaderCue() {
+    if (!this._pendingAddPlayerLeaderCue) return;
+    if (!this.state || !this.canAddPlayer(this.state)) return;
+    const shown = document.getElementById('add-player-toggle') || document.getElementById('add-player-card');
+    if (!shown) return;
+    this._pendingAddPlayerLeaderCue = false;
+    if (this._stillLeaderToastAt && Date.now() - this._stillLeaderToastAt < 2500) return;
+    this.fireStillLeaderToast();
+    this._stillLeaderToastAt = Date.now();
   },
 
   fillSpinButtonHtml(state) {
@@ -1234,6 +1609,7 @@ const scorecard = {
       excluded: new Set(),
       extraNames: [],
       winner: null,
+      reelOrder: [],
       spinning: false,
       fromNineteenth: !!(opts && opts.fromNineteenth),
     };
@@ -1265,6 +1641,9 @@ const scorecard = {
       : 'No team is short of 4';
     const items = this.fillSpinItems(state);
     const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const reelNames = (this.fillSpin.reelOrder && this.fillSpin.reelOrder.length)
+      ? this.fillSpin.reelOrder
+      : included;
     const winner = this.fillSpin.winner;
     let host = document.getElementById('fill-spin-overlay');
     if (!host) {
@@ -1289,11 +1668,14 @@ const scorecard = {
         <em>${_esc(where)}</em>
       </label>`;
     }).join('') || '<p class="fill-spin-empty">No leftover names. Add a name or pick another team.</p>';
-    const reel = (included.length ? included : [{ name: '—' }]).map((item) => `<div class="fill-spin-cell">${_esc(item.name)}</div>`).join('');
+    const reel = (reelNames.length ? reelNames : [{ name: '—' }]).map((item) => {
+      const landed = !!(winner && !this.fillSpin.spinning && item && item.name === winner.name);
+      return `<div class="fill-spin-cell${landed ? ' is-landed' : ''}">${_esc(item.name)}</div>`;
+    }).join('');
     host.innerHTML = `
       <div class="fill-spin-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-spin-title">
         <h2 id="fill-spin-title">Fill a short team</h2>
-        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Spin is random. Accept is what adds them.</p>
+        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Each Spin shuffles every eligible name with equal chance. Accept adds them to the short team and leaves them on their original team. One score counts for both.</p>
         <p class="fill-spin-need" id="fill-spin-short-list">${_esc(shortLine)}</p>
         <label class="tiny-label">Target team
           <select class="form-input" id="fill-spin-team" ${this.fillSpin.spinning ? 'disabled' : ''}>${teamOpts}</select>
@@ -1322,6 +1704,7 @@ const scorecard = {
       teamEl.onchange = () => {
         this.fillSpin.teamName = teamEl.value;
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     }
@@ -1331,6 +1714,7 @@ const scorecard = {
         if (box.checked) this.fillSpin.excluded.delete(key);
         else this.fillSpin.excluded.add(key);
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     });
@@ -1342,6 +1726,7 @@ const scorecard = {
         if (!raw) return;
         if (!this.fillSpin.extraNames.includes(raw)) this.fillSpin.extraNames.push(raw);
         this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
         this.drawFillSpin();
       };
     }
@@ -1364,20 +1749,42 @@ const scorecard = {
     if (!this.fillSpin || this.fillSpin.spinning) return;
     const api = this.fillSpinApi();
     const items = this.fillSpinItems(this.state);
-    const winner = api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null;
+    const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const shuffled = api.shuffleFillPool ? api.shuffleFillPool(included) : included.slice();
+    const winner = shuffled[0] || (api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null);
     if (!winner) {
       _toast('Include at least one name', 'error');
       return;
     }
     this.fillSpin.spinning = true;
     this.fillSpin.winner = null;
+    this.fillSpin.reelOrder = shuffled;
     this.drawFillSpin();
     window.setTimeout(() => {
       if (!this.fillSpin) return;
       this.fillSpin.spinning = false;
       this.fillSpin.winner = winner;
+      this.fillSpin.reelOrder = [winner];
       this.drawFillSpin();
     }, 1100);
+  },
+
+  applyAcceptedFill(next) {
+    this.state = next;
+    if (next && next.round && next.round.id) this.writeCache(next.round.id, next);
+  },
+
+  showFilledScorecard(next) {
+    this.screen = 'play';
+    const id = next && next.round && next.round.id;
+    if (id && typeof app !== 'undefined' && typeof app.navigate === 'function') {
+      const hash = '#round/' + id;
+      if (String(window.location.hash || '') !== hash) {
+        app.navigate(hash);
+        return;
+      }
+    }
+    this.draw(next);
   },
 
   async acceptFillSpin() {
@@ -1390,10 +1797,9 @@ const scorecard = {
       else body.name = winner.name;
       const fromNineteenth = !!(this.fillSpin && this.fillSpin.fromNineteenth);
       const next = await svcApi('post', `/api/rounds/${this.state.round.id}/team-fill`, body);
-      this.state = next;
-      this.writeCache(next.round.id, next);
+      if (!next || !next.round || !next.members) throw new Error('Could not add the winner');
+      this.applyAcceptedFill(next);
       this.closeFillSpin();
-      this.draw(next);
       _toast((winner.name || 'Winner') + ' is on ' + teamName, 'success');
       if (fromNineteenth) {
         if (this.shouldOfferFillBeforeNineteenth(this.state)) {
@@ -1401,27 +1807,35 @@ const scorecard = {
         } else {
           this.openNineteenth({ skipFill: true });
         }
+        return;
       }
+      this.showFilledScorecard(next);
     } catch (err) {
       _toast(err.message || 'Could not add the winner', 'error');
     }
   },
 
   manageableMembers(state) {
-    return ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+    const rows = ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+    if (this.screen === 'settings' || this.canSeeOtherTeams(state)) return rows;
+    return rows.filter((m) => this.memberOnFocusedTeam(state, m));
   },
 
   setupRosterHtml(state) {
     const rows = this.manageableMembers(state);
     if (!rows.length) return '';
+    const guests = rows.filter((m) => this.isGuestMember(m));
     return `<div class="setup-roster card" id="setup-roster">
       <div class="card-title">Team roster</div>
-      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. ${this.isOrganizer(state) ? 'Host / organizer can manage teams they run.' : 'Own team only.'}</p>
+      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. Clearing guests leaves you on the team. ${this.isOrganizer(state) ? 'This team’s roster. Open another team to edit that roster.' : 'Own team only.'}</p>
       <ul class="setup-roster-list">
         ${rows.map((m) => {
           const hcp = m.playing_handicap ?? m.handicap ?? '';
+          const remove = this.canRemoveRosterMember(state, m)
+            ? `<button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>`
+            : '';
           return `<li class="setup-roster-row" data-roster-member="${m.id}">
-            <span class="setup-roster-name">${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</span>
+            <span class="setup-roster-name">${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</span>
             <label class="setup-roster-index">
               <span>Index</span>
               <input class="form-input setup-roster-hcp-input" inputmode="decimal" autocomplete="off"
@@ -1429,28 +1843,35 @@ const scorecard = {
                 aria-label="Handicap Index for ${_esc(m.display_name)}">
             </label>
             <button type="button" class="btn btn-sm btn-accent setup-roster-set" onclick="scorecard.saveRosterHcp(${m.id})">Set</button>
-            <button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>
+            ${remove}
           </li>`;
         }).join('')}
       </ul>
+      ${guests.length ? '<button type="button" class="btn btn-sm btn-secondary" id="clear-guests">Clear guests</button>' : ''}
+      ${this.stillLeaderLineHtml(state)}
     </div>`;
   },
 
   addPlayerPanelInner(state) {
     const count = (state.members || []).filter((m) => !this.isFollowAlongMember(m)).length;
     if (count >= 2 && !this.addPlayerOpen) {
-      return `<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
+      return `${this.stillLeaderLineHtml(state)}<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
     }
     const organizer = this.isOrganizer(state);
     const mine = this.myTeamName(state);
-    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: organizer ? 'Team 1' : mine };
-    const teamName = organizer ? (draft.teamName || 'Team 1') : mine;
+    const focused = this.focusedTeam(state);
+    const focusedName = (focused && focused.name) || (organizer ? 'Team 1' : mine);
+    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: focusedName };
+    const teamName = organizer
+      ? (this.canSeeOtherTeams(state) ? (draft.teamName || focusedName) : focusedName)
+      : mine;
     const subtitle = organizer
       ? 'Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.'
       : 'Name, HCP, then your team. Guests you add stay on your team.';
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player ${this.infoTip('add-player', 'Name, handicap index, and an explicit team. Strokes follow the rounded index on the scorecard SI. Auto-balance is only a helper.')}</h3>
+        ${this.stillLeaderLineHtml(state)}
         <p class="card-subtitle">${subtitle}</p>
         <form class="add-guest-row add-player-form" id="live-add-player-form">
           <label class="add-field">
@@ -1496,15 +1917,22 @@ const scorecard = {
   addTeamChipsHtml(selected) {
     const organizer = this.isOrganizer(this.state);
     const mine = this.myTeamName(this.state);
-    const current = organizer ? (selected || 'Team 1') : mine;
-    const names = organizer ? this.addTeamNames(this.state) : [mine];
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || mine;
+    const shared = this.canSeeOtherTeams(this.state);
+    const current = organizer
+      ? (shared ? (selected || focusedName) : focusedName)
+      : mine;
+    const names = organizer
+      ? (shared ? this.addTeamNames(this.state) : [focusedName])
+      : [mine];
     return `<div class="add-team-picks" role="group" aria-label="Team">
       ${names.map((n) => {
         const team = ((this.state && this.state.teams) || []).find((t) => t.name === n);
         const label = team ? this.teamDisplay(team) : n;
         return `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${_esc(label)}</button>`;
       }).join('')}
-      ${organizer ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
+      ${organizer && shared ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
       <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
     </div>`;
   },
@@ -1547,7 +1975,11 @@ const scorecard = {
   },
 
   pickAddTeam(teamName) {
-    const name = this.isOrganizer(this.state) ? (teamName || 'Team 1') : this.myTeamName(this.state);
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || 'Team 1';
+    const name = this.isOrganizer(this.state)
+      ? (this.canSeeOtherTeams(this.state) ? (teamName || focusedName) : focusedName)
+      : this.myTeamName(this.state);
     if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name };
     this.addPlayerDraft.teamName = name;
     const hidden = document.getElementById('live-add-guest-team');
@@ -1629,6 +2061,14 @@ const scorecard = {
         e.preventDefault();
         e.stopPropagation();
         this.closeAddPlayer();
+      };
+    }
+    const clear = document.getElementById('clear-guests');
+    if (clear) {
+      clear.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.clearGuests();
       };
     }
     ['live-add-guest-name', 'live-add-guest-hcp'].forEach((id) => {
@@ -1718,9 +2158,9 @@ const scorecard = {
 
   teamDisplay(team) {
     if (!team) return '—';
-    if (team.displayName) return team.displayName;
-    const nick = (team.nickname || '').trim();
-    return nick ? `${team.name} · ${nick}` : (team.name || '—');
+    const name = String(team.name || '').trim() || 'Team';
+    const nick = String(team.nickname || '').trim();
+    return nick ? `${name} · ${nick}` : name;
   },
 
   commitScore(memberId, holeNumber, gross) {
@@ -1922,9 +2362,10 @@ const scorecard = {
         holes,
         memberId,
         holeNumber,
+        organizer: this.isOrganizer(this.state),
       });
     }
-    const roster = (this.state && this.state.members || []).filter((m) => this.canWriteMember(this.state, m));
+    const roster = (this.visibleHoleMembers(this.state) || []).filter((m) => this.canWriteMember(this.state, m));
     const idx = roster.findIndex((m) => Number(m.id) === Number(memberId));
     if (roster[idx + 1]) return { memberId: roster[idx + 1].id, holeNumber };
     const hIdx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
@@ -1946,18 +2387,30 @@ const scorecard = {
     }
     const el = document.querySelector(`input.score-input[data-member="${target.memberId}"][data-hole="${target.holeNumber}"]`);
     if (el && !el.disabled) {
-      el.focus();
-      el.select();
+      try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+      if (typeof el.select === 'function') el.select();
+      if (this.loadScoreAdvance() === 'across' && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      } else if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
     }
   },
 
   paintCurrentHoleChrome() {
     const n = this.currentHole;
     document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
-      th.classList.toggle('is-current-hole', Number(th.dataset.holeH) === n);
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-current-hole', hn === n);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
     });
     const label = document.getElementById('hole-number');
-    if (label) label.textContent = 'Hole ' + n;
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, n);
     const nav = document.querySelector('.hole-nav-label');
     if (nav) nav.textContent = 'Hole ' + n;
     const meta = document.getElementById('hole-meta');
@@ -2163,6 +2616,35 @@ const scorecard = {
     return Number(a) === Number(b) && Number.isFinite(Number(a));
   },
 
+  sameTeamOrEmpty(a, b) {
+    const empty = (x) => x == null || x === '';
+    if (empty(a) && empty(b)) return true;
+    return this.sameTeamIds(a, b);
+  },
+
+  memberTeamIds(member) {
+    const api = this.fillSpinApi();
+    if (api.memberTeamIds) return api.memberTeamIds(member);
+    const ids = [];
+    const home = member && (member.team_id ?? member.teamId);
+    const fill = member && (member.fill_team_id ?? member.fillTeamId);
+    if (home != null && home !== '' && Number.isFinite(Number(home))) ids.push(Number(home));
+    if (fill != null && fill !== '' && Number.isFinite(Number(fill)) && !this.sameTeamIds(fill, home)) {
+      ids.push(Number(fill));
+    }
+    return ids;
+  },
+
+  memberOnTeam(member, teamId) {
+    const api = this.fillSpinApi();
+    if (api.memberOnTeam) return api.memberOnTeam(member, teamId);
+    return this.memberTeamIds(member).some((id) => this.sameTeamIds(id, teamId));
+  },
+
+  shareAnyTeam(a, b) {
+    return this.memberTeamIds(a).some((id) => this.memberOnTeam(b, id));
+  },
+
   isFollowAlongMember(member) {
     const role = String((member && member.role) || '').toLowerCase();
     return role === 'follower' || role === 'follow' || role === 'follow_along';
@@ -2175,8 +2657,9 @@ const scorecard = {
   canWriteMember(state, member) {
     if (!state || !member) return false;
     if (this.isFollowAlong(state) || this.isFollowAlongMember(member)) return false;
+    if (this.isOrganizer(state)) return true;
     const me = this.myMember(state);
-    return this.sameTeamIds(me && (me.team_id ?? me.teamId), member.team_id ?? member.teamId);
+    return this.shareAnyTeam(me, member);
   },
 
   lockScoreInputs() {
@@ -2224,11 +2707,13 @@ const scorecard = {
     this._preserveAddDraft = false;
     if (this.screen === 'settings') {
       this.drawSettings(state);
+      this.bindShowOtherBar();
       this.bindInfoTips();
       return;
     }
     if (this.screen === 'results') {
       this.drawResults(state);
+      this.bindShowOtherBar();
       this.bindInfoTips();
       return;
     }
@@ -2240,9 +2725,6 @@ const scorecard = {
     if (this.screen === 'nineteenth') {
       this.drawNineteenth(state);
       this.bindInfoTips();
-      if (window.wyrmCoil && typeof window.wyrmCoil.onNineteenthDrawn === 'function') {
-        window.wyrmCoil.onNineteenthDrawn(state);
-      }
       return;
     }
     if (this.isHoleView()) this.drawHoleView(state);
@@ -2250,7 +2732,10 @@ const scorecard = {
     this.bindOverlay();
     this.bindScoreInputs();
     this.bindAddPlayerPanel();
+    this.bindTeamPicker();
+    this.bindShowOtherBar();
     this.bindHoleBack();
+    this.maybeFireAddPlayerLeaderCue();
     this.syncAddPlayerChrome();
     this.bindInfoTips();
     this.lockScoreInputs();
@@ -2276,7 +2761,7 @@ const scorecard = {
     if (!this.isFollowAlong(state)) return '';
     const me = this.myMember(state);
     const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me && (me.team_id ?? me.teamId)));
-    const label = (team && (team.displayName || team.name)) || this.myTeamName(state);
+    const label = (team && this.teamDisplay(team)) || this.myTeamName(state);
     const prefOn = this.followShowOtherOn(state);
     const hostAllows = this.isShowOtherScoresOn(state);
     return `<div class="follow-along-bar" id="follow-along-bar">
@@ -2290,7 +2775,7 @@ const scorecard = {
   },
 
   async setFollowShowOther(on) {
-    if (!this.state || !this.isFollowAlong(this.state)) return;
+    if (!this.state || this.isOrganizer(this.state)) return;
     const want = !!on;
     const me = this.myMember(this.state);
     if (me) {
@@ -2395,7 +2880,7 @@ const scorecard = {
   },
 
   ballLineText(state, holeNumber) {
-    return (state.teams || []).map((team) => {
+    return (state.teams || []).filter((team) => this.canSeeTeamScores(state, team)).map((team) => {
       const balls = this.teamBallsText(team, holeNumber);
       return balls ? `${this.teamDisplay(team)} ${balls}` : '';
     }).filter(Boolean).join(' · ');
@@ -2465,22 +2950,10 @@ const scorecard = {
 
   liveGameTitle(state) {
     if (this.isStandardScorecard(state)) return 'Standard scorecard';
-    const bits = [];
     if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
-      bits.push('Sunday game · ' + this.shortRaceTitle(state.round));
+      return 'Sunday game · ' + this.shortRaceTitle(state.round);
     }
-    const cfg = this.sideConfig(state);
-    const labels = [
-      ['vegas', 'Vegas'],
-      ['wolf', 'Wolf'],
-      ['nassau', 'Nassau'],
-      ['nines', 'Nines'],
-      ['skins', 'Skins'],
-    ];
-    for (const [key, label] of labels) {
-      if (cfg[key] && this.flagOn(cfg[key].on)) bits.push(label);
-    }
-    return bits.join(' + ') || 'Scorecard';
+    return 'Scorecard';
   },
 
   liveGameTitleHtml(state) {
@@ -2546,11 +3019,8 @@ const scorecard = {
     return fromSide || {};
   },
 
-  pressableGames(state) {
-    if (this.isStandardScorecard(state)) return [];
-    const cfg = this.sideConfig(state);
-    const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
-    return defs.filter((g) => g.pressable && cfg[g.key] && this.flagOn(cfg[g.key].on));
+  pressableGames(_state) {
+    return [];
   },
 
   async confirmPress() {
@@ -2704,218 +3174,57 @@ const scorecard = {
     };
   },
 
-  wolfBarHtml(state, holeNumber) {
-    const cfg = this.sideConfig(state);
-    if (!cfg.wolf || !cfg.wolf.on) return '';
-    const wolf = this.wolfForHole(state, holeNumber);
-    if (!wolf) return '';
-    const pick = this.wolfPickFor(state, holeNumber);
-    const sides = this.wolfSides(state, holeNumber);
-    if (sides) {
-      const wolfNames = sides.wolfSide.map((m) => m.display_name).join(' + ');
-      const fieldNames = sides.field.map((m) => m.display_name).join(' / ') || 'field';
-      const vals = this.wolfPointValues(state);
-      const kind = sides.blind
-        ? `Blind Lone Wolf ±${vals.blind}`
-        : (sides.lone ? `Lone Wolf ±${vals.lone}` : `Wolf + partner ±${vals.partnered}`);
-      return `<div class="wolf-bar" id="wolf-bar">
-        <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
-        <div class="wolf-sides">${_esc(kind)} · ${_esc(wolfNames)} vs ${_esc(fieldNames)}</div>
-      </div>`;
-    }
-    const passed = this.wolfPassedIds(pick);
-    const others = this.wolfOthers(state, holeNumber);
-    const current = others.find((m) => !passed.includes(Number(m.id)));
-    const canBlind = passed.length === 0;
-    const rows = others.map((m) => {
-      if (passed.includes(Number(m.id))) {
-        return `<div class="wolf-tee is-passed">Passed ${_esc(m.display_name)}</div>`;
-      }
-      if (current && current.id === m.id) {
-        return `<div class="wolf-tee is-up">${_esc(m.display_name)} teed
-          <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { partnerId: ${m.id}, locked: true })">Pick partner</button>
-          <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.wolfPass(${holeNumber}, ${m.id})">Pass</button>
-        </div>`;
-      }
-      return `<div class="wolf-tee">Waiting to tee: ${_esc(m.display_name)}</div>`;
-    }).join('');
-    return `<div class="wolf-bar" id="wolf-bar">
-      <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
-      <p class="card-subtitle">After each tee, pick that player or pass. Lock Wolf sides before scoring this hole for points — you can still enter gross now. Next hole is a new Wolf.</p>
-      ${canBlind ? `<button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, blind: true, locked: true })">Blind Lone Wolf ±${this.wolfPointValues(state).blind}</button>` : ''}
-      ${rows}
-      <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, locked: true })">Lone Wolf ±${this.wolfPointValues(state).lone}</button>
-    </div>`;
+  wolfBarHtml(_state, _holeNumber) {
+    return '';
   },
 
-  sideGamesFieldsInner(cfg) {
-    cfg = cfg || {};
-    const skinsOn = !!(cfg.skins && cfg.skins.on);
-    const vegasOn = !!(cfg.vegas && cfg.vegas.on);
-    const nassauOn = !!(cfg.nassau && cfg.nassau.on);
-    const wolfOn = !!(cfg.wolf && cfg.wolf.on);
-    const ninesOn = !!(cfg.nines && cfg.nines.on);
-    return `
-      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off. ${this.infoTip('side-games', 'Turn on any mix. Sunday game is a separate setup toggle. Side games can run alone.')}</p>
-      <label class="check-row"><input type="checkbox" name="skinsOn" ${skinsOn ? 'checked' : ''}> Skins</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('skins')) || '')}</p>
-      <div class="form-group"><label>Skins pot</label><input class="form-input" name="skinsPot" type="number" min="0" step="1" value="${cfg.skins && cfg.skins.pot != null ? cfg.skins.pot : 20}"></div>
-      <label class="check-row"><input type="checkbox" name="vegasOn" ${vegasOn ? 'checked' : ''}> Vegas</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('vegas')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Vegas scoring</label><select class="form-input" name="vegasScoring"><option value="gross" ${cfg.vegas && cfg.vegas.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.vegas && cfg.vegas.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="vegasDollars" type="number" min="0" step="0.5" value="${cfg.vegas && cfg.vegas.dollarsPerPoint != null ? cfg.vegas.dollarsPerPoint : 1}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="nassauOn" ${nassauOn ? 'checked' : ''}> Nassau (NASA)</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nassau')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Nassau scoring</label><select class="form-input" name="nassauScoring"><option value="net" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
-        <div class="form-group"><label>Front $</label><input class="form-input" name="nassauFront" type="number" min="0" value="${cfg.nassau && cfg.nassau.front != null ? cfg.nassau.front : 2}"></div>
-        <div class="form-group"><label>Back $</label><input class="form-input" name="nassauBack" type="number" min="0" value="${cfg.nassau && cfg.nassau.back != null ? cfg.nassau.back : 2}"></div>
-        <div class="form-group"><label>Overall $</label><input class="form-input" name="nassauOverall" type="number" min="0" value="${cfg.nassau && cfg.nassau.overall != null ? cfg.nassau.overall : 2}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="wolfOn" ${wolfOn ? 'checked' : ''}> Wolf</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('wolf')) || '')}</p>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Wolf scoring</label><select class="form-input" name="wolfScoring"><option value="gross" ${cfg.wolf && cfg.wolf.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.wolf && cfg.wolf.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
-        <div class="form-group"><label>Partnered ±</label><input class="form-input" name="wolfPartnered" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.partnered != null ? cfg.wolf.partnered : 1}"></div>
-        <div class="form-group"><label>Lone ±</label><input class="form-input" name="wolfLone" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.lone != null ? cfg.wolf.lone : 2}"></div>
-        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 4}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
-      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
-      <label class="check-row"><input type="checkbox" name="ninesBlitz" ${!cfg.nines || cfg.nines.blitz !== false ? 'checked' : ''}> Blitz 9-0-0</label>
-      <div class="grid grid-2">
-        <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
-        <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
-      </div>
-      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (one player 29 · another 50). 19th hole shows the fun board. Longer reel before it settles.')}</label>
-      <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
-      <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
-        <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
-      </div>`;
+  sideGamesFieldsInner(_cfg) {
+    return '';
   },
 
-  sideGamesSettingsHtml(state) {
-    if (this.isStandardScorecard(state)) return '';
-    const cfg = this.sideConfig(state);
-    return `<form class="card" id="side-games-settings" onsubmit="event.preventDefault();scorecard.saveSideGames()">
-      <div class="card-title">Side games</div>
-      ${this.sideGamesFieldsInner(cfg)}
-      <button class="btn btn-secondary btn-sm" type="submit">Save side games</button>
-    </form>`;
+  sideGamesSettingsHtml(_state) {
+    return '';
   },
 
   saveSideGames() {
-    const form = document.getElementById('side-games-settings');
-    if (!form) return;
-    const fd = new FormData(form);
-    this.updateSettings({ sideGames: this.readSideGamesForm(fd) });
+    return;
   },
 
-  readSideGamesForm(fd) {
+  readSideGamesForm(_fd) {
+    if (window.sideGames && typeof window.sideGames.quietSideGames === 'function') {
+      return window.sideGames.quietSideGames();
+    }
     return {
-      skins: { on: fd.get('skinsOn') === 'on', pot: Number(fd.get('skinsPot') || 0) },
-      vegas: { on: fd.get('vegasOn') === 'on', scoring: fd.get('vegasScoring') || 'gross', dollarsPerPoint: Number(fd.get('vegasDollars') || 1) },
-      nassau: {
-        on: fd.get('nassauOn') === 'on',
-        scoring: fd.get('nassauScoring') || 'net',
-        front: Number(fd.get('nassauFront') || 0),
-        back: Number(fd.get('nassauBack') || 0),
-        overall: Number(fd.get('nassauOverall') || 0),
-      },
-      wolf: {
-        on: fd.get('wolfOn') === 'on',
-        scoring: fd.get('wolfScoring') || 'gross',
-        dollarsPerPoint: Number(fd.get('wolfDollars') || 1),
-        partnered: Number(fd.get('wolfPartnered') || 1),
-        lone: Number(fd.get('wolfLone') || 2),
-        blind: Number(fd.get('wolfBlind') || 4),
-      },
-      nines: {
-        on: fd.get('ninesOn') === 'on',
-        scoring: fd.get('ninesScoring') || 'net',
-        blitz: fd.get('ninesBlitz') === 'on',
-        dollarsPerPoint: Number(fd.get('ninesDollars') || 1),
-      },
-      birdieSlots: { on: fd.get('birdieSlotsOn') === 'on' },
-      kps: {
-        on: fd.get('kpsOn') === 'on',
-        holes: String(fd.get('kpsHoles') || '').split(/[\s,]+/).map(Number).filter((n) => n >= 1 && n <= 18),
-        winners: (this.state && this.sideConfig(this.state).kps && this.sideConfig(this.state).kps.winners) || {},
-      },
+      skins: { on: false },
+      vegas: { on: false },
+      nassau: { on: false },
+      wolf: { on: false },
+      nines: { on: false },
+      birdieSlots: { on: false },
+      kps: { on: false, holes: [], winners: {} },
     };
   },
 
   sideGamesResultsHtml(state) {
-    const side = state.sideGames;
-    if (!side || !side.games) return '';
-    const blocks = [];
-    const g = side.games;
     const raceTeams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
     if (this.isTeamRaceOn(state) && raceTeams) {
-      blocks.push(`<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`);
+      return `<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`;
     }
-    if (g.skins) {
-      const s = g.skins;
-      const gross = (s.grossWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
-      const net = (s.netWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
-      blocks.push(`<div class="card"><h3 class="card-title">Skins</h3>
-        <p>Pot ${s.pot} · ${s.skinCount} skins · ${s.valuePerSkin ? s.valuePerSkin.toFixed(2) : '0'} each</p>
-        <p>Gross skins: ${_esc(gross)}</p>
-        <p>Net skins: ${_esc(net)}</p></div>`);
-    }
-    if (g.vegas && g.vegas.teamA) {
-      blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
-        <p>${_esc(g.vegas.teamA.name)} ${this.fmtVegasPts(g.vegas.teamA.points)} · ${_esc(g.vegas.teamB.name)} ${this.fmtVegasPts(g.vegas.teamB.points)} <span class="tiny-label">zero-sum</span></p></div>`);
-    }
-    if (g.nassau && g.nassau.front) {
-      const presses = g.nassauPresses || [];
-      const pressBits = presses.map((p, i) =>
-        `Press ${i + 1} ${this.nassauSegLabel(p.segment)} H${p.startHole}–${p.endHole}: ${p.status}`
-      ).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Nassau (NASA)</h3>
-        <p>Original · Front ${ _esc(g.nassau.front.status) } · Back ${ _esc(g.nassau.back.status) } · 18 ${ _esc(g.nassau.overall.status) }</p>
-        ${pressBits ? `<p>${_esc(pressBits)}</p>` : ''}
-        <p class="card-subtitle">Three bets. Presses die at the end of that segment. Original stays live.</p></div>`);
-    }
-    if (g.wolf) {
-      const pts = (g.wolf.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Wolf</h3><p>${_esc(pts || 'No holes decided')}</p></div>`);
-    }
-    if (g.nines) {
-      const pts = (g.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
-      blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
-    }
-    if (g.birdieSlots && g.birdieSlots.on) {
-      const board = g.birdieSlots.funBoard || (g.birdieSlots.leader ? g.birdieSlots.leader.name + ' ' + g.birdieSlots.leader.points : '');
-      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil fun board</h3><p>${_esc(board || 'No birdies yet')} · fun only, not team money</p></div>`);
-    }
-    if (side.stripText) {
-      blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
-    }
-    if (!blocks.length) return '';
-    return `<h3 class="section-title">Side games</h3>${blocks.join('')}`;
+    return '';
   },
 
   raceStripText(state) {
     if (this.isStandardScorecard(state)) return '';
-    const extra = state.sideGames && state.sideGames.stripText;
-    const vegasBit = this.isVegasOn(state) ? this.vegasStripText(state) : '';
-    const extraSansVegas = extra
-      ? extra.split(' · ').filter((bit) => !/^Vegas\b/.test(bit)).join(' · ')
-      : '';
-    if (!this.isTeamRaceOn(state)) {
-      return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
-    }
-    const teams = state.teams || [];
-    if (!teams.length) return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    if (!this.isTeamRaceOn(state)) return '';
+    const all = state.teams || [];
+    const teams = this.screen === 'play'
+      ? all.filter((t) => this.canSeeTeamScores(state, t))
+      : all;
+    if (!teams.length) return '';
     const completed = state.round.status === 'completed';
     const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
     if (completed && leader) {
-      const win = `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
-      return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
+      return `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
     }
     const teamBits = teams.map((t) => {
       const seen = this.canSeeTeamScores(state, t);
@@ -2925,10 +3234,24 @@ const scorecard = {
       }
       return bit;
     }).join(' · ');
-    return [vegasBit, `Sunday game ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
+    return `Sunday game ${teamBits}`;
   },
 
-  holePlayerRowHtml(state, member, holeNumber) {
+  fillSeatLabel(member, team) {
+    if (!team || !this.memberOnTeam(member, team.id)) return '';
+    if (this.sameTeamIds(member.team_id ?? member.teamId, team.id)) return '';
+    return ' <em class="fill-seat">fill</em>';
+  },
+
+  rosterFillNote(state, member) {
+    const fillId = member && (member.fill_team_id ?? member.fillTeamId);
+    if (fillId == null || fillId === '') return '';
+    const team = ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, fillId));
+    const name = team ? this.teamDisplay(team) : 'fill team';
+    return ` <em class="fill-seat">also ${_esc(name)}</em>`;
+  },
+
+  holePlayerRowHtml(state, member, holeNumber, team) {
     const hole = this.holeMeta(state, holeNumber);
     const raw = (member.holes || []).find((x) => x.holeNumber === holeNumber);
     const seen = this.canSeeMemberScores(state, member);
@@ -2937,7 +3260,7 @@ const scorecard = {
     const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
     const writable = this.canWriteMember(state, member);
     return `<div class="hole-player-row${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
-      <span class="hole-player-name">${_esc(member.display_name)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
+      <span class="hole-player-name">${_esc(member.display_name)}${this.fillSeatLabel(member, team)}${this.runnerBadgeHtml(state, member)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
       <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${holeNumber}">
         <div class="gross-box">
           <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
@@ -3013,20 +3336,15 @@ const scorecard = {
     }
     const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team));
     return `<div class="hole-players" id="hole-players">${groups.map((group) => {
-      const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
+      const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber, group.team)).join('');
       const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
       const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
       return `<section class="hole-team-group" data-team-group="${group.team.id}"><div class="hole-team-head">${_esc(this.teamDisplay(group.team))}</div>${rows}${vegasHtml}${raceHtml}</section>`;
     }).join('')}</div>`;
   },
 
-  nassauToolbarPressHtml(state, holeNumber) {
-    if (!this.isNassauOn(state)) return '';
-    const hn = Number(holeNumber) || this.currentHole || 1;
-    return `<div class="nassau-toolbar-press" id="nassau-toolbar-press">
-      ${this.nassauPressButtonsHtml(state, hn, 'nassau-press-wrap-toolbar')}
-      ${this.nassauBoardHtml(state, 'nassau-board-toolbar')}
-    </div>`;
+  nassauToolbarPressHtml(_state, _holeNumber) {
+    return '';
   },
 
   holeToolbar(state) {
@@ -3039,12 +3357,10 @@ const scorecard = {
         <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
         <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
           <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
-          ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
           <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
           ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
         </div>
-      </div>
-      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}`;
+      </div>`;
   },
 
   toggleHoleOverflow(e) {
@@ -3082,28 +3398,21 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
+      ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.holeToolbar(state)}
       ${this.writeErrorBanner()}
-      ${this.nassauLiveDockHtml(state, holeNumber)}
       <div class="card hole-view" id="hole-view">
         <div class="hole-chrome">
-          ${this.nassauPressButtonsHtml(state, holeNumber, 'nassau-press-wrap-card')}
-          ${this.nassauBoardHtml(state, 'nassau-board-card')}
           ${this.liveGameTitleHtml(state)}
           <div class="hole-number-row">
-            <div class="hole-number" id="hole-number">Hole ${holeNumber}</div>
+            <div class="hole-number" id="hole-number">${this.holeNumberLabelHtml(state, holeNumber)}</div>
             <button type="button" class="btn btn-sm btn-accent hole-full-card-btn" onclick="scorecard.setCardMode('full')">Full card</button>
           </div>
-          ${this.vegasBoardHtml(state)}
-          ${this.vegasPressButtonHtml(state, holeNumber)}
-          ${this.ninesBoardHtml(state)}
           <div class="race-strip" id="race-strip">${_esc(race)}</div>
-          ${this.pressableGames(state).filter((g) => g.key !== 'nassau' && g.key !== 'vegas').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'Vegas Press increments games running (not a new ledger). Wolf / Nines press from this hole to 18. Nassau uses Front / Back / Overall on the live card.')}` : ''}
         </div>
         ${this.nineTotalsBarHtml(state)}
-        ${this.wolfBarHtml(state, holeNumber)}
-        ${this.kpPickerHtml(state, holeNumber)}
         ${this.addPlayerPanel(state)}
         ${this.holePlayersHtml(state, holeNumber)}
       </div>
@@ -3299,8 +3608,8 @@ const scorecard = {
   },
 
   endTotalsHtml(state) {
-    const teams = (state.teams || []).map((t) => {
-      const total = this.canSeeTeamScores(state, t) ? this.fmtTeam(t.total) : '—';
+    const teams = (state.teams || []).filter((t) => this.canSeeTeamScores(state, t)).map((t) => {
+      const total = this.fmtTeam(t.total);
       return `${this.teamDisplay(t)} ${total}`;
     }).join(' · ');
     return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
@@ -3388,16 +3697,14 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
+      ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
-      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
       ${this.writeErrorBanner()}
       ${this.addPlayerPanel(state)}
-      ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
       <div class="card">
         ${this.liveGameTitleHtml(state)}
-        ${this.vegasBoardHtml(state)}
-        ${this.vegasPressButtonHtml(state, this.currentHole || 1)}
         <h2 class="card-title">${_esc(r.name)}</h2>
         <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
       </div>
@@ -3417,7 +3724,10 @@ const scorecard = {
     const showOut = this.showOut(state);
     const showIn = this.showIn(state);
     const showTot = this.showTot(state);
-    const holeHead = (h) => `<th data-hole-h="${h.hole_number}" class="${h.hole_number === this.currentHole ? 'is-current-hole' : ''}">${h.hole_number}</th>`;
+    const holeHead = (h) => {
+      const pressed = this.isVegasOn(state) && this.isVegasPressStartHole(state, h.hole_number);
+      return `<th data-hole-h="${h.hole_number}" class="sc-hole-head${h.hole_number === this.currentHole ? ' is-current-hole' : ''}${pressed ? ' is-vegas-pressed' : ''}" onclick="scorecard.onFullCardHoleTap(${h.hole_number})"><button type="button" class="sc-hole-head-btn" aria-label="Hole ${h.hole_number}${pressed ? ', Vegas press starts here' : ''}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}${pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : ''}</button></th>`;
+    };
     const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
     const outPar = outHoles.reduce((s, h) => s + h.par, 0);
     const inPar = inHoles.reduce((s, h) => s + h.par, 0);
@@ -3447,13 +3757,14 @@ const scorecard = {
     container.innerHTML = `
         ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card">
-        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game, format, and side games. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
+        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game and format. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
         <p class="card-subtitle">${_esc(r.name)} · join <strong>${_esc(r.joinCode || r.join_code)}</strong></p>
         <p class="join-row">
           <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.joinUrl || '')}')">Copy join link</button>
           <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.publicUrl || '')}')">Copy public board</button>
         </p>
       </div>
+        ${this.showOtherTeamsBarHtml(state)}
         ${organizer ? this.settingsBar(state) : this.joinerRosterSettings(state)}
     `;
     svcApi('updateBadge');
@@ -3464,8 +3775,15 @@ const scorecard = {
     const r = state.round;
     const teamFormat = r.format === 'team_net';
     const standard = this.isStandardScorecard(state);
+    const resultMembers = (state.members || []).filter((m) => {
+      if (!m.team_id) return false;
+      const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, m.team_id));
+      return this.canSeeTeamLane(state, team);
+    });
     container.innerHTML = `
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
+      ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
       <div class="card results-board" id="results-board">
         <h2 class="card-title">Round results</h2>
         <p class="card-subtitle">${_esc(r.name)} · ${_esc(r.course?.name || 'Goldendale Golf Club')} · ${standard ? 'Standard scorecard' : (teamFormat ? _esc(this.teamFormatLabel(r)) : 'Match play')}</p>
@@ -3483,10 +3801,10 @@ const scorecard = {
               </tr>
             </thead>
             <tbody>
-              ${(state.members || []).filter((m) => m.team_id).map((m) => {
+              ${resultMembers.map((m) => {
                 const team = (state.teams || []).find((t) => t.id === m.team_id);
                 return `<tr>
-                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}</td>
                   <td>${_esc(this.teamNameFor(state, m))}</td>
                   <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
                   <td>${m.totalGross ?? '—'}</td>
@@ -3552,22 +3870,22 @@ const scorecard = {
         ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
         <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
         <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
-        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N and friends). Standard scorecard is dots plus OUT/IN/TOT only — no side games.')}
+        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N or 1G+1N). Standard scorecard is dots plus OUT/IN/TOT only.')}
           <select onchange="scorecard.changeRoundFormat(this.value)">
             <option value="team_net" ${r.format === 'team_net' ? 'selected' : ''}>Team vs par</option>
             <option value="standard" ${r.format === 'standard' || r.format === 'standard_scorecard' ? 'selected' : ''}>Standard scorecard</option>
             <option value="match_play" ${r.format === 'match_play' ? 'selected' : ''}>Match play</option>
           </select>
         </label>
-        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par when Sunday game is ON. Pick 1G+2N (default) or 1G+1N, plus 3G, 3N, 1G+3N, 2G+2N.')}
+        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par. Pick 1G+2N (default) or 1G+1N.')}
           <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
         </label>` : ''}
-        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race. OFF hides it. Vegas, Wolf, Nassau, Nines, and Skins can still run alone or stacked.')}</label>`}
-        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. The live card shows only your team’s scores. ON shows other teams read-only. Write lock stays — you cannot enter the other team’s scores.')}</label>
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race (1G+2N or 1G+1N).')}</label>`}
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Each scorecard stays on one team. ON is the shared board — other teams are visible. The host can still enter every team’s scores after opening that team’s card. Non-hosts stay own-team write only.')}</label>
         ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
       </div>
       ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
-      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race, Vegas, Skins, Nassau, Wolf, Nines, presses, or birdie slots.</p>' : ''}
+      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race.</p>' : ''}
       ${this.sideGamesSettingsHtml(state)}
       <div class="card">
         <div class="card-title">Players (${state.members.length}/20)</div>
@@ -3597,12 +3915,12 @@ const scorecard = {
             <tbody>
               ${state.members.map((m) => `
                 <tr>
-                  <td>${_esc(m.display_name)}${m.is_guest ? ' · guest' : ''}</td>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</td>
                   <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
                   <td>${this.teamSelectHtml(state, m)}</td>
                   <td>
                     <button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button>
-                    <button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>
+                    ${this.canRemoveRosterMember(state, m) ? `<button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>` : ''}
                   </td>
                 </tr>`).join('')}
             </tbody>
@@ -3619,13 +3937,94 @@ const scorecard = {
     const groups = [];
     const teams = [...(state.teams || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
     for (const team of teams) {
-      const members = (state.members || []).filter((m) => m.team_id === team.id && !this.isFollowAlongMember(m));
+      const members = (state.members || []).filter((m) => this.memberOnTeam(m, team.id) && !this.isFollowAlongMember(m));
       members.forEach((m) => used.add(m.id));
       groups.push({ team, members });
     }
     const rest = (state.members || []).filter((m) => !used.has(m.id));
     if (rest.length) groups.push({ team: null, members: rest });
-    return groups;
+    if (this.canSeeOtherTeams(state)) return groups;
+    return groups.filter((g) => g.team && this.canSeeTeamLane(state, g.team));
+  },
+
+  showOtherTeamsBarHtml(state) {
+    if (this.isFollowAlong(state)) return '';
+    const organizer = this.isOrganizer(state);
+    const hostOn = this.isShowOtherScoresOn(state);
+    const on = organizer ? hostOn : (hostOn && this.followShowOtherOn(state));
+    const note = organizer
+      ? (on
+        ? 'ON — you chose to see other teams’ cards.'
+        : 'OFF — your card only. Other-team setup stays off this scorecard.')
+      : (hostOn
+        ? (on
+          ? 'ON — you chose to see other teams’ cards.'
+          : 'OFF — your card only. Turn ON to see other teams.')
+        : 'Host is hiding other teams. ON applies when they turn that on.');
+    return `<div class="show-other-bar" id="show-other-bar" data-show-other="${on ? 'on' : 'off'}">
+      <div class="show-other-label">Show other teams</div>
+      <div class="show-other-switch" role="group" aria-label="Show other teams">
+        <button type="button" class="show-other-btn${on ? ' is-on' : ''}" data-show-other="1" aria-pressed="${on ? 'true' : 'false'}">ON</button>
+        <button type="button" class="show-other-btn${!on ? ' is-on is-off' : ''}" data-show-other="0" aria-pressed="${on ? 'false' : 'true'}">OFF</button>
+      </div>
+      <p class="show-other-note">${note}</p>
+    </div>`;
+  },
+
+  bindShowOtherBar() {
+    document.querySelectorAll('#show-other-bar [data-show-other]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setShowOtherTeams(btn.getAttribute('data-show-other') === '1');
+      };
+    });
+  },
+
+  async setShowOtherTeams(on) {
+    if (!this.state) return;
+    const want = !!on;
+    if (this.isOrganizer(this.state)) {
+      if (this.isShowOtherScoresOn(this.state) === want) return;
+      if (this.state.round) {
+        this.state.round.showOtherScores = want;
+        this.state.round.show_other_scores = want ? 1 : 0;
+      }
+      this.draw(this.state);
+      await this.updateSettings({ showOtherScores: want });
+      return;
+    }
+    await this.setFollowShowOther(want);
+  },
+
+  teamPickerHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    const teams = state.teams || [];
+    if (teams.length < 2) return '';
+    this.ensureFocusedTeam(state);
+    const focused = this.focusedTeam(state);
+    const shared = this.canSeeOtherTeams(state);
+    return `<div class="team-picker-row" id="team-picker-row">
+      <div class="team-picker" id="team-picker" role="tablist" aria-label="Team scorecard">
+        ${teams.map((t) => {
+          const on = !shared && this.sameTeamIds(t.id, focused && focused.id);
+          return `<button type="button" class="team-pick-chip${on ? ' is-on' : ''}${shared ? ' is-shared' : ''}" data-focus-team="${t.id}" role="tab" aria-selected="${on || shared ? 'true' : 'false'}">${_esc(this.teamDisplay(t))}</button>`;
+        }).join('')}
+      </div>
+      ${shared
+        ? '<p class="team-picker-note">Shared board on — every team is visible.</p>'
+        : '<p class="team-picker-note">Your card only. Open another team to see that roster.</p>'}
+    </div>`;
+  },
+
+  bindTeamPicker() {
+    document.querySelectorAll('#team-picker [data-focus-team]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.focusTeam(btn.getAttribute('data-focus-team'));
+      };
+    });
   },
 
   playerRows(state, holes, outHoles, inHoles, showOut, showIn) {
@@ -3642,14 +4041,14 @@ const scorecard = {
     return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
       const label = this.teamDisplay(group.team);
       const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
-      const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
+      const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn, group.team)).join('');
       const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
       const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
       return head + rows + vegasRow + teamRow;
     }).join('');
   },
 
-  onePlayerRow(state, m, holes, showOut, showIn) {
+  onePlayerRow(state, m, holes, showOut, showIn, team) {
     const seen = this.canSeeMemberScores(state, m);
     const holeCell = (h) => {
       const hs = seen ? (m.holes || []).find((x) => x.holeNumber === h.hole_number) : null;
@@ -3658,7 +4057,7 @@ const scorecard = {
     const showTot = this.showTot(state);
     return `
       <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${m.id}">
-        <td class="row-label">${_esc(m.display_name)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
+        <td class="row-label">${_esc(m.display_name)}${this.fillSeatLabel(m, team)}${this.runnerBadgeHtml(state, m)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
         ${this.joinCardRow(
           holes,
           showOut,
@@ -3854,7 +4253,8 @@ const scorecard = {
 
   vsParClass(gross, par) {
     if (gross == null || par == null) return '';
-    const d = gross - par;
+    const d = Number(gross) - Number(par);
+    if (!Number.isFinite(d)) return '';
     if (d <= -2) return 'vs-eagle';
     if (d === -1) return 'vs-birdie';
     if (d === 0) return 'vs-par';
@@ -3862,10 +4262,22 @@ const scorecard = {
     return 'vs-double';
   },
 
+  scoreMarkKind(gross, par, standard) {
+    if (standard) return '';
+    const vs = this.vsParClass(gross, par);
+    if (vs === 'vs-eagle') return 'eagle';
+    if (vs === 'vs-birdie') return 'birdie';
+    if (vs === 'vs-bogey') return 'bogey';
+    if (vs === 'vs-double') return 'double';
+    return '';
+  },
+
   cellClassList(hs, par) {
     const cls = ['sc-cell-editable'];
     const vs = this.vsParClass(hs?.gross, par);
     if (vs) cls.push(vs);
+    const mark = this.scoreMarkKind(hs?.gross, par, this.isStandardScorecard(this.state));
+    if (mark) cls.push('has-score-mark', 'mark-' + mark);
     const dots = Math.max(0, hs?.strokes || 0);
     if (dots) cls.push('dots-' + Math.min(dots, 3));
     if ((hs?.strokes || 0) < 0) cls.push('dots-plus');
@@ -4005,6 +4417,21 @@ const scorecard = {
     if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
   },
 
+  paintPressedHoleMarks() {
+    if (!this.state) return;
+    const label = document.getElementById('hole-number');
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, this.currentHole || 1);
+    document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
+    });
+  },
+
   paintPressChrome() {
     if (!this.state) return;
     const hn = this.currentHole || 1;
@@ -4014,6 +4441,19 @@ const scorecard = {
       document.getElementById('vegas-press-wrap') || document.querySelector('.vegas-press-wrap'),
       this.vegasPressButtonHtml(this.state, hn)
     );
+    const pressedBar = document.getElementById('pressed-holes-bar');
+    const pressedHtml = this.pressedHolesBarHtml(this.state);
+    if (pressedBar) this.replaceNode(pressedBar, pressedHtml);
+    else if (pressedHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = pressedHtml;
+      const node = tmp.firstElementChild;
+      const toolbar = document.getElementById('hole-toolbar');
+      const nassauBar = document.getElementById('nassau-toolbar-press');
+      if (node && toolbar && toolbar.parentNode) toolbar.insertAdjacentElement('beforebegin', node);
+      else if (node && nassauBar && nassauBar.parentNode) nassauBar.insertAdjacentElement('beforebegin', node);
+    }
+    this.paintPressedHoleMarks();
     this.ensureNassauLiveDock(hn);
     const ninesBoard = document.getElementById('nines-board');
     if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);
@@ -4260,6 +4700,8 @@ const scorecard = {
       });
       this.state = state;
       this.writeCache(state.round.id, state);
+      this._stillLeaderCue = false;
+      this._pendingAddPlayerLeaderCue = false;
       if (which === 'live') {
         this.addPlayerOpen = (state.members || []).length >= 2 ? true : this.addPlayerOpen;
         this.addPlayerDraft = {
@@ -4456,8 +4898,10 @@ const scorecard = {
 
   async removeMember(memberId) {
     const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
-    if (!this.canManageRosterMember(this.state, member)) {
-      this.showWriteError('You can only remove players from your own team.');
+    if (!this.canRemoveRosterMember(this.state, member)) {
+      this.showWriteError(this.isSelfMember(this.state, member)
+        ? 'You cannot remove yourself from the card. Clear guests instead.'
+        : 'You can only remove players from your own team.');
       return;
     }
     const name = member && member.display_name ? member.display_name : 'this player';
@@ -4467,6 +4911,24 @@ const scorecard = {
       this.state = state;
       this.writeCache(state.round.id, state);
       this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async clearGuests() {
+    if (!this.state || this.isFollowAlong(this.state)) return;
+    const guests = this.manageableMembers(this.state).filter((m) => this.isGuestMember(m));
+    if (!guests.length) return;
+    const ok = await this.confirmRemoveMember(guests.length + ' guest' + (guests.length === 1 ? '' : 's') + ' (you stay on the team)');
+    if (!ok) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/clear-guests`, {});
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this._stillLeaderCue = true;
+      this._pendingAddPlayerLeaderCue = true;
+      this.draw(state);
+      this.fireStillLeaderToast();
+      this._stillLeaderToastAt = Date.now();
     } catch (err) { _toast(err.message, 'error'); }
   },
 
@@ -4513,33 +4975,19 @@ const scorecard = {
         <h2 class="card-title">Game Rules</h2>
         <p class="card-subtitle">House rules. Short and plain. Tap ℹ on the live card for one-line help.</p>
         <h3>Sunday game</h3>
-        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
+        <p>The Sunday game is the team vs-par race. Default ON. Each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net). Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18.</p>
         <h3>Handicap index</h3>
         <p>No course handicap. Round the index at 0.5 (2.4→2, 2.5→3, 18.7→19, 1.3→1). That integer is applied by scorecard stroke index for every net game.</p>
-        <h3>Skins</h3>
-        <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
-        <h3>Vegas</h3>
-        <p>2v2. Pair numbers, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104, 4 and 11 = 114). Not the Sunday game vs-par total. Press is a games-running count that starts at 1; each tap adds a game from that hole on. This-hole swing = difference × games running (5-point hole × 3 games = +15/−15). Two lines: this-hole difference, then RUNNING that names who is up and who is down (e.g. Team B up 20 · Team A down 20). Flip on gross birdie+. Both sides birdie+ flips both.</p>
-        <h3>Nassau (NASA)</h3>
-        <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
-        <h3>Wolf</h3>
-        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles: Partnered ±, Lone ±, and Blind Lone ±. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
         <h3>Join code teams</h3>
         <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
         <h3>Live card write lock</h3>
-        <p>Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams’ scores</strong> (default OFF) is the round-wide gate. Followers have a personal See / Hide other teams toggle: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins — no leak. The personal toggle does not change the host setting or unlock writes.</p>
+        <p>The host / organizer may enter hole scores for every team after opening that team’s card. Own-card view does not show another team being built. Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams</strong> (default OFF) is the shared-board read gate. Scorekeepers and followers have the same ON/OFF bar on the live card, results, and settings: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes. <strong>Host</strong> badge is the round organizer only. A joined scorekeeper shows <strong>Leader</strong> (guests show Guest).</p>
         <h3>Score entry</h3>
-        <p>Gross is 1–19. Default advance is <strong>Down</strong> (next writable player, same hole). After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4 for catch-up. Down never jumps to an opposing team.</p>
-        <h3>Nines</h3>
-        <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
-        <h3>Presses</h3>
-        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press.</p>
-        <h3>Birdie dragon slots (Wyrm Coil)</h3>
-        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
-        <h3>Optional KPs</h3>
-        <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
+        <p>Gross is 1–19. Sunday default advance is <strong>Down</strong> (next writable player, same hole) — Across is opt-in catch-up, not the default. After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4. Across keeps the next cell in view with a smooth scroll instead of a jump. Scorekeepers stay on their own team. The host walks the team card they have open.</p>
+        <h3>Score marks</h3>
+        <p>On the Sunday live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
         <h3>19th hole</h3>
-        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
+        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st. Tap Front / Back / Overall to reveal Sunday team vs-par winners. Share strip is one-tap summary plus a screenshot card.</p>
         <h3>OUT / IN / TOT</h3>
         <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
       </div>`;
@@ -4587,11 +5035,9 @@ const scorecard = {
   nineteenthShareText(state) {
     const ranked = this.nineteenthRankedTeams(state);
     const winner = ranked[0];
-    const vegas = this.vegasGame(state);
     const bits = [
       `Sunday game · ${state.round && state.round.name ? state.round.name : 'Goldendale'}`,
       winner ? `Winner ${winner.name} ${this.fmtTeam(winner.total)}` : '',
-      vegas && vegas.teamA ? this.vegasNamedRun(vegas) : '',
     ].filter(Boolean);
     return bits.join(' · ');
   },
@@ -4677,17 +5123,6 @@ const scorecard = {
       ? rows.map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ')
       : '—';
     const facts = state.funFacts || {};
-    const cfg = this.sideConfig(state);
-    const kps = !standard && cfg.kps && cfg.kps.on
-      ? (cfg.kps.holes || []).map((hn) => {
-        const win = cfg.kps.winners && cfg.kps.winners[String(hn)];
-        return `Hole ${hn}: ${win && win.name ? win.name : '—'}`;
-      }).join(' · ')
-      : '';
-    const skins = state.sideGames && state.sideGames.games && state.sideGames.games.skins;
-    const skinsBody = skins
-      ? `Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}`
-      : 'Skins off';
     const standardRows = (state.members || []).filter((m) => m.team_id && !this.isFollowAlongMember(m)).map((m) => {
       return `<p><strong>${_esc(m.display_name)}</strong> · OUT ${m.outGross ?? '—'} / ${m.outNet ?? '—'} · IN ${m.inGross ?? '—'} / ${m.inNet ?? '—'} · TOT ${m.totalGross ?? '—'} / ${m.totalNet ?? '—'}</p>`;
     }).join('') || '<p>No scores yet.</p>';
@@ -4695,24 +5130,19 @@ const scorecard = {
       ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
       <div class="card nineteenth" id="nineteenth">
         <h2 class="card-title">19th hole</h2>
-        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'confirmed card · sound off'}</p>
+        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'Sunday game'}</p>
         ${standard ? '' : this.podiumHtml(state)}
         ${standard ? '' : `<div class="reveal-row">
           ${this.revealCardHtml('front', 'Front', _esc(fmt(state.frontLeaders)))}
           ${this.revealCardHtml('back', 'Back', _esc(fmt(state.backLeaders)))}
           ${this.revealCardHtml('overall', 'Overall', _esc(fmt(state.overallLeaders)))}
-          ${this.revealCardHtml('skins', 'Skins', _esc(skinsBody))}
         </div>`}
         <div class="share-strip" id="share-strip">
           <span>${_esc(this.nineteenthShareText(state))}</span>
           <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
         </div>
-        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : '')}
-        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : '')}
         ${standard ? `<h3>Standard scorecard</h3>${standardRows}` : `<h3>Sunday game</h3>
         ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}`}
-        ${standard ? '' : this.sideGamesResultsHtml(state)}
-        ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
         <h3>Fun facts</h3>
         <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
         <p>Hardest hole: ${facts.hardest ? ('#' + facts.hardest.hole + ' (' + (facts.hardest.avg > 0 ? '+' : '') + facts.hardest.avg.toFixed(1) + ' vs par)') : '—'}</p>

@@ -20,10 +20,11 @@ const {
   teamDisplayName,
   nextTeamLabel,
   sanitizeNickname,
+  joinTeamNickname,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
-const { resultsText } = require('../lib/compute/roundState');
+const { resultsText, livePatch } = require('../lib/compute/roundState');
 const { DEMO_FOURSOME, demoGrossTotal } = require('../lib/seed/demoFoursome');
 const {
   DEMO_TEAM1_VS_PAR,
@@ -36,7 +37,7 @@ const {
   coldGinIsStrokesReceived,
 } = require('../lib/seed/demoTeam1VsPar');
 const { formatVsPar, holeTeamVsPar, runningTeamVsPar, strokeDotMarks } = require('../lib/compute/vsPar');
-const { computePlayingHandicap, isTeamRaceOn, isShowOtherScoresOn, redactOtherTeamScores } = require('../lib/compute/roundState');
+const { computePlayingHandicap, isTeamRaceOn, isShowOtherScoresOn, redactOtherTeamScores, redactLiveOtherTeamSetup } = require('../lib/compute/roundState');
 const { computeFunFacts, segmentLeaders } = require('../lib/compute/funFacts');
 
 describe('playingHandicap', () => {
@@ -130,6 +131,23 @@ describe('show other teams scores', () => {
     assert.equal(state.members[0].holes[0].gross, null);
     assert.equal(state.members[1].holes[0].gross, 5);
     assert.equal(state.teams[0].total, null);
+  });
+
+  it('blanks other-team setup names on live when show-other is off', () => {
+    const patch = redactLiveOtherTeamSetup({
+      memberTotals: [
+        { id: 1, display_name: 'Host', team_id: 10 },
+        { id: 2, display_name: 'Joiner', team_id: 20 },
+      ],
+      teams: [
+        { id: 10, holes: [{ holeNumber: 1, balls: [{ name: 'Host', score: 4 }] }] },
+        { id: 20, holes: [{ holeNumber: 1, balls: [{ name: 'Joiner', score: 5 }] }] },
+      ],
+    }, { id: 1, team_id: 10 }, false);
+    assert.equal(patch.memberTotals[0].display_name, 'Host');
+    assert.equal(patch.memberTotals[1].display_name, '');
+    assert.equal(patch.teams[0].holes[0].balls.length, 1);
+    assert.equal(patch.teams[1].holes[0].balls.length, 0);
   });
 });
 
@@ -661,6 +679,33 @@ describe('team identity', () => {
     assert.equal(teamDisplayName({ name: 'Team 1', nickname: 'Birds' }), 'Team 1 · Birds');
     assert.equal(nextTeamLabel([{ name: 'Team 1' }]), 'Team 2');
     assert.equal(nextTeamLabel([{ name: 'Team 1' }, { name: 'Team 2' }]), 'Team 3');
+  });
+
+  it('join team nickname ignores player nickname and demo-style aliases', () => {
+    assert.equal(joinTeamNickname({ displayName: 'Ace', nickname: 'Ace' }), '');
+    assert.equal(joinTeamNickname({ nickname: 'Birds', displayName: 'Kurt' }), '');
+    assert.equal(joinTeamNickname({ teamNickname: 'Carts', nickname: 'Ace' }), 'Carts');
+    assert.equal(joinTeamNickname({ team_nickname: '  Wolves  ' }), 'Wolves');
+    assert.equal(joinTeamNickname({}), '');
+  });
+
+  it('live patch carries team nickname so host and joiner paint the same label', () => {
+    const patch = livePatch({
+      updatedAt: '1',
+      round: { status: 'live', showOtherScores: false },
+      members: [],
+      teams: [{
+        id: 2,
+        name: 'Team 2',
+        nickname: 'Carts',
+        displayName: 'Team 2 · Carts',
+        total: null,
+        holes: [],
+      }],
+      matches: [],
+    });
+    assert.equal(patch.teams[0].nickname, 'Carts');
+    assert.equal(patch.teams[0].displayName, 'Team 2 · Carts');
   });
 });
 

@@ -8,8 +8,10 @@ function sameTeamIds(a, b) {
   return Number(a) === Number(b) && Number.isFinite(Number(a));
 }
 
-function canWriteMember(me, target) {
-  if (!me || !target) return false;
+function canWriteMember(me, target, organizer) {
+  if (!target) return false;
+  if (organizer) return true;
+  if (!me) return false;
   return sameTeamIds(me.team_id ?? me.teamId, target.team_id ?? target.teamId);
 }
 
@@ -17,17 +19,17 @@ function holeNumberOf(hole) {
   return Number(hole && (hole.hole_number ?? hole.holeNumber));
 }
 
-function writableAdvanceMembers(members, me, orderIds) {
+function writableAdvanceMembers(members, me, orderIds, organizer) {
   const list = members || [];
   const byId = new Map(list.map((m) => [Number(m.id), m]));
   const ordered = (orderIds && orderIds.length)
     ? orderIds.map((id) => byId.get(Number(id))).filter(Boolean)
     : list;
-  return ordered.filter((m) => canWriteMember(me, m));
+  return ordered.filter((m) => canWriteMember(me, m, organizer));
 }
 
-function nextDownTarget({ members, me, orderIds, holes, memberId, holeNumber }) {
-  const roster = writableAdvanceMembers(members, me, orderIds);
+function nextDownTarget({ members, me, orderIds, holes, memberId, holeNumber, organizer }) {
+  const roster = writableAdvanceMembers(members, me, orderIds, organizer);
   if (!roster.length) return null;
   const idx = roster.findIndex((m) => Number(m.id) === Number(memberId));
   const at = idx < 0 ? 0 : idx;

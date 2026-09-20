@@ -58,6 +58,30 @@ describe('Down score advance wrap', () => {
     assert.deepEqual(afterLast, { memberId: 1, holeNumber: 2 });
   });
 
+  it('lets the host walk both teams on the same hole', () => {
+    const mixed = [player(1, 10), player(2, 10), player(8, 20), player(9, 20)];
+    const afterOwn = nextDownTarget({
+      members: mixed,
+      me,
+      orderIds: [1, 2, 8, 9],
+      holes: eighteen,
+      memberId: 2,
+      holeNumber: 1,
+      organizer: true,
+    });
+    assert.deepEqual(afterOwn, { memberId: 8, holeNumber: 1 });
+    const afterOther = nextDownTarget({
+      members: mixed,
+      me,
+      orderIds: [1, 2, 8, 9],
+      holes: eighteen,
+      memberId: 9,
+      holeNumber: 1,
+      organizer: true,
+    });
+    assert.deepEqual(afterOther, { memberId: 1, holeNumber: 2 });
+  });
+
   it('leaves Across on the same player, next hole', () => {
     const next = nextAcrossTarget({ holes: eighteen, memberId: 4, holeNumber: 1 });
     assert.deepEqual(next, { memberId: 4, holeNumber: 2 });
