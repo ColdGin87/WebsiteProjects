@@ -20,10 +20,11 @@ const {
   teamDisplayName,
   nextTeamLabel,
   sanitizeNickname,
+  joinTeamNickname,
 } = require('../lib/scoring');
 const { estimateRedYards, WHITE_TOTAL, RED_TOTAL, WHITE_HOLES } = require('../lib/seed/goldendale');
 const { appBaseUrl } = require('../lib/tokens');
-const { resultsText } = require('../lib/compute/roundState');
+const { resultsText, livePatch } = require('../lib/compute/roundState');
 const { DEMO_FOURSOME, demoGrossTotal } = require('../lib/seed/demoFoursome');
 const {
   DEMO_TEAM1_VS_PAR,
@@ -678,6 +679,33 @@ describe('team identity', () => {
     assert.equal(teamDisplayName({ name: 'Team 1', nickname: 'Birds' }), 'Team 1 · Birds');
     assert.equal(nextTeamLabel([{ name: 'Team 1' }]), 'Team 2');
     assert.equal(nextTeamLabel([{ name: 'Team 1' }, { name: 'Team 2' }]), 'Team 3');
+  });
+
+  it('join team nickname ignores player nickname and demo-style aliases', () => {
+    assert.equal(joinTeamNickname({ displayName: 'Ace', nickname: 'Ace' }), '');
+    assert.equal(joinTeamNickname({ nickname: 'Birds', displayName: 'Kurt' }), '');
+    assert.equal(joinTeamNickname({ teamNickname: 'Carts', nickname: 'Ace' }), 'Carts');
+    assert.equal(joinTeamNickname({ team_nickname: '  Wolves  ' }), 'Wolves');
+    assert.equal(joinTeamNickname({}), '');
+  });
+
+  it('live patch carries team nickname so host and joiner paint the same label', () => {
+    const patch = livePatch({
+      updatedAt: '1',
+      round: { status: 'live', showOtherScores: false },
+      members: [],
+      teams: [{
+        id: 2,
+        name: 'Team 2',
+        nickname: 'Carts',
+        displayName: 'Team 2 · Carts',
+        total: null,
+        holes: [],
+      }],
+      matches: [],
+    });
+    assert.equal(patch.teams[0].nickname, 'Carts');
+    assert.equal(patch.teams[0].displayName, 'Team 2 · Carts');
   });
 });
 

@@ -866,9 +866,17 @@ async function runJoinIdentityScenario(base) {
   assertEqual(ace.team_id, team2.id, 'joiner is on Team 2 not Team 1');
   const hostSees = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
   const hostT2 = (hostSees.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(hostT2 && hostT2.nickname, 'Wolves', 'host GET Team 2 nickname');
   assertEqual(hostT2 && hostT2.displayName, 'Team 2 · Wolves', 'host sees same Team 2 name');
   const hostAce = (hostSees.members || []).find((m) => m.display_name === 'Ace');
   if (!hostAce) fail('host does not see joiner name Ace');
+  const hostLive = await api(base, 'GET', `/api/rounds/${created.round.id}/live`, { token: host.token });
+  const liveT2 = (hostLive.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(liveT2 && liveT2.nickname, 'Wolves', 'host live Team 2 nickname');
+  assertEqual(liveT2 && liveT2.displayName, 'Team 2 · Wolves', 'host live Team 2 display');
+  const joinerLive = await api(base, 'GET', `/api/rounds/${created.round.id}/live`, { token: joiner.token });
+  const joinerLiveT2 = (joinerLive.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(joinerLiveT2 && joinerLiveT2.displayName, 'Team 2 · Wolves', 'joiner live Team 2 display');
 
   const added = await api(base, 'POST', `/api/rounds/${created.round.id}/guests`, {
     token: joiner.token,
@@ -940,6 +948,92 @@ async function runJoinIdentityScenario(base) {
   assertEqual(stillLocked.status, 403, 'visible other-team scores stay read-only');
 
   console.log('PASS join-code Team 1 · Birds / Team 2 · Wolves; joiner Add player own team only; other-team scores hidden until toggle');
+}
+
+async function runNicknameBleedScenario(base) {
+  const stamp = Date.now();
+  const host = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Nick Host',
+      email: `scorecard.nickhost.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const created = await api(base, 'POST', '/api/rounds', {
+    token: host.token,
+    body: {
+      name: 'Nickname bleed Sunday game',
+      format: 'team_net',
+      holes: '18',
+    },
+  });
+  const team1 = (created.teams || []).find((t) => t.name === 'Team 1');
+  assertEqual(team1 && (team1.nickname || ''), '', 'create without nick stays blank');
+  assertEqual(team1 && team1.displayName, 'Team 1', 'create does not apply demo Birds');
+  if (/Birds|Wolves|Kurt|Chase|Brian/i.test((team1 && team1.displayName) || '')) {
+    fail('demo name bled into new Team 1 label');
+  }
+
+  const joiner = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Nick Friend',
+      email: `scorecard.nickfriend.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const bleed = await api(base, 'POST', '/api/rounds/join', {
+    token: joiner.token,
+    body: {
+      code: created.round.join_code || created.round.joinCode,
+      addTeam: true,
+      displayName: 'Ace',
+      nickname: 'Birds',
+    },
+  });
+  const team2 = (bleed.teams || []).find((t) => t.name === 'Team 2');
+  if (!team2) fail('bleed join should create Team 2');
+  assertEqual(team2.nickname || '', '', 'player nickname must not become team nick');
+  assertEqual(team2.displayName, 'Team 2', 'new team label stays Team 2');
+  if (/Ace|Birds|Wolves|Kurt|Chase|Brian/i.test(team2.displayName || '')) {
+    fail('default/demo/player name bled into new Team 2 label');
+  }
+  const hostBlank = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
+  const hostT2 = (hostBlank.teams || []).find((t) => t.name === 'Team 2');
+  assertEqual(hostT2 && hostT2.displayName, 'Team 2', 'host sees blank Team 2, not a demo nick');
+
+  const namer = await api(base, 'POST', '/api/auth/register', {
+    body: {
+      name: 'Nick Namer',
+      email: `scorecard.nicknamer.${stamp}@example.com`,
+      password: 'tester-pass-1',
+    },
+  });
+  const named = await api(base, 'POST', '/api/rounds/join', {
+    token: namer.token,
+    body: {
+      code: created.round.join_code || created.round.joinCode,
+      addTeam: true,
+      teamNickname: 'Carts',
+      displayName: 'Pat',
+      nickname: 'Kurt',
+    },
+  });
+  const team3 = (named.teams || []).find((t) => t.name === 'Team 3');
+  if (!team3) fail('named join should create Team 3');
+  assertEqual(team3.nickname, 'Carts', 'joiner Team 3 nickname');
+  assertEqual(team3.displayName, 'Team 3 · Carts', 'joiner Team 3 display');
+  const hostNamed = await api(base, 'GET', `/api/rounds/${created.round.id}`, { token: host.token });
+  const hostT3 = (hostNamed.teams || []).find((t) => t.name === 'Team 3');
+  assertEqual(hostT3 && hostT3.nickname, 'Carts', 'host GET same Team 3 nick');
+  assertEqual(hostT3 && hostT3.displayName, 'Team 3 · Carts', 'host GET same Team 3 display');
+  const hostLive = await api(base, 'GET', `/api/rounds/${created.round.id}/live`, { token: host.token });
+  const liveT3 = (hostLive.teams || []).find((t) => t.name === 'Team 3');
+  assertEqual(liveT3 && liveT3.nickname, 'Carts', 'host live same Team 3 nick');
+  assertEqual(liveT3 && liveT3.displayName, 'Team 3 · Carts', 'host live same Team 3 display');
+  const namerLive = await api(base, 'GET', `/api/rounds/${created.round.id}/live`, { token: namer.token });
+  const namerLiveT3 = (namerLive.teams || []).find((t) => t.name === 'Team 3');
+  assertEqual(namerLiveT3 && namerLiveT3.displayName, 'Team 3 · Carts', 'joiner live same Team 3 display');
+  console.log('PASS team nickname sticks across devices; demo/player defaults do not bleed into a new team label');
 }
 
 async function runFollowerScenario(base) {
@@ -1987,6 +2081,7 @@ async function main() {
     await runWolfScenario(base);
     await runNinesScenario(base);
     await runJoinIdentityScenario(base);
+    await runNicknameBleedScenario(base);
     await runFollowerScenario(base);
     await runTeamFillScenario(base);
     await runStandardScorecardScenario(base);

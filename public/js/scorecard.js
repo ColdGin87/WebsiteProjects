@@ -47,7 +47,7 @@ const scorecard = {
   focusedTeamId: null,
   _oneTimer: null,
   CACHE_PREFIX: 'goldendale_last_round_',
-  ASSET_V: '20260919b',
+  ASSET_V: '20260919c',
   scoreAdvance: 'down',
   SCORE_ADVANCE_KEY: 'goldendale_score_advance',
   ONE_DIGIT_MS: 1400,
@@ -174,12 +174,26 @@ const scorecard = {
     const next = patch.memberTotals || [];
     const cur = (this.state && this.state.members) || [];
     if (next.length !== cur.length) return true;
+    if (this.teamLabelsChanged(patch)) return true;
     return next.some((t) => {
       const m = cur.find((x) => Number(x.id) === Number(t.id));
       if (!m) return true;
       if (Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap)) return true;
       if (!this.sameTeamOrEmpty(m.team_id ?? m.teamId, t.team_id ?? t.teamId)) return true;
       return !this.sameTeamOrEmpty(m.fill_team_id ?? m.fillTeamId, t.fill_team_id ?? t.fillTeamId);
+    });
+  },
+
+  teamLabelsChanged(patch) {
+    const nextTeams = (patch && patch.teams) || [];
+    const curTeams = (this.state && this.state.teams) || [];
+    if (nextTeams.length !== curTeams.length) return true;
+    return nextTeams.some((nt) => {
+      const ct = curTeams.find((x) => Number(x.id) === Number(nt.id));
+      if (!ct) return true;
+      if (String(ct.name || '') !== String(nt.name || '')) return true;
+      if (nt.nickname != null && String(ct.nickname || '') !== String(nt.nickname || '')) return true;
+      return false;
     });
   },
 
@@ -224,12 +238,20 @@ const scorecard = {
       }
     }
     if (patch.teams) {
+      const paintTeam = (team, next) => {
+        const merged = next ? { ...team, ...next } : { ...team };
+        const nick = next && next.nickname != null ? next.nickname : (merged.nickname || '');
+        merged.nickname = nick;
+        const name = String(merged.name || '').trim() || 'Team';
+        merged.displayName = nick ? `${name} · ${nick}` : name;
+        return merged;
+      };
       this.state.teams = (this.state.teams || []).map((t) => {
         const next = patch.teams.find((x) => x.id === t.id);
-        return next ? { ...t, ...next } : t;
+        return next ? paintTeam(t, next) : t;
       });
       for (const team of patch.teams) {
-        if (!(this.state.teams || []).some((t) => t.id === team.id)) this.state.teams.push(team);
+        if (!(this.state.teams || []).some((t) => t.id === team.id)) this.state.teams.push(paintTeam({}, team));
       }
     }
     if (patch.matches && this.state.matches) {
@@ -797,7 +819,7 @@ const scorecard = {
 
   nassauTeamName(team, fallback) {
     if (!team) return fallback;
-    return team.displayName || team.name || fallback;
+    return this.teamDisplay(team) || fallback;
   },
 
   nassauRunThrough(seg, holeNumber, teamA, teamB) {
@@ -1486,6 +1508,27 @@ const scorecard = {
     return `<div id="add-player-panel" class="add-player-panel">${roster}${spin}${add}</div>`;
   },
 
+  stillLeaderLineHtml(state) {
+    if (!this._stillLeaderCue) return '';
+    if (this.isFollowAlong(state)) return '';
+    return '<p class="still-leader-line" id="still-leader-line">You are still Leader on this team.</p>';
+  },
+
+  fireStillLeaderToast() {
+    if (typeof _toast === 'function') _toast('You are still Leader on this team.', 'success');
+  },
+
+  maybeFireAddPlayerLeaderCue() {
+    if (!this._pendingAddPlayerLeaderCue) return;
+    if (!this.state || !this.canAddPlayer(this.state)) return;
+    const shown = document.getElementById('add-player-toggle') || document.getElementById('add-player-card');
+    if (!shown) return;
+    this._pendingAddPlayerLeaderCue = false;
+    if (this._stillLeaderToastAt && Date.now() - this._stillLeaderToastAt < 2500) return;
+    this.fireStillLeaderToast();
+    this._stillLeaderToastAt = Date.now();
+  },
+
   fillSpinButtonHtml(state) {
     if (!this.isOrganizer(state)) return '';
     return `<div class="card fill-spin-launch" id="fill-spin-launch">
@@ -1773,13 +1816,14 @@ const scorecard = {
         }).join('')}
       </ul>
       ${guests.length ? '<button type="button" class="btn btn-sm btn-secondary" id="clear-guests">Clear guests</button>' : ''}
+      ${this.stillLeaderLineHtml(state)}
     </div>`;
   },
 
   addPlayerPanelInner(state) {
     const count = (state.members || []).filter((m) => !this.isFollowAlongMember(m)).length;
     if (count >= 2 && !this.addPlayerOpen) {
-      return `<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
+      return `${this.stillLeaderLineHtml(state)}<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
     }
     const organizer = this.isOrganizer(state);
     const mine = this.myTeamName(state);
@@ -1795,6 +1839,7 @@ const scorecard = {
     return `
       <div class="card add-player-card" id="add-player-card">
         <h3 class="card-title">Add a player ${this.infoTip('add-player', 'Name, handicap index, and an explicit team. Strokes follow the rounded index on the scorecard SI. Auto-balance is only a helper.')}</h3>
+        ${this.stillLeaderLineHtml(state)}
         <p class="card-subtitle">${subtitle}</p>
         <form class="add-guest-row add-player-form" id="live-add-player-form">
           <label class="add-field">
@@ -2081,9 +2126,9 @@ const scorecard = {
 
   teamDisplay(team) {
     if (!team) return '—';
-    if (team.displayName) return team.displayName;
-    const nick = (team.nickname || '').trim();
-    return nick ? `${team.name} · ${nick}` : (team.name || '—');
+    const name = String(team.name || '').trim() || 'Team';
+    const nick = String(team.nickname || '').trim();
+    return nick ? `${name} · ${nick}` : name;
   },
 
   commitScore(memberId, holeNumber, gross) {
@@ -2649,7 +2694,9 @@ const scorecard = {
     this.bindScoreInputs();
     this.bindAddPlayerPanel();
     this.bindTeamPicker();
+    this.bindShowOtherBar();
     this.bindHoleBack();
+    this.maybeFireAddPlayerLeaderCue();
     this.syncAddPlayerChrome();
     this.bindInfoTips();
     this.lockScoreInputs();
@@ -2675,7 +2722,7 @@ const scorecard = {
     if (!this.isFollowAlong(state)) return '';
     const me = this.myMember(state);
     const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me && (me.team_id ?? me.teamId)));
-    const label = (team && (team.displayName || team.name)) || this.myTeamName(state);
+    const label = (team && this.teamDisplay(team)) || this.myTeamName(state);
     const prefOn = this.followShowOtherOn(state);
     const hostAllows = this.isShowOtherScoresOn(state);
     return `<div class="follow-along-bar" id="follow-along-bar">
@@ -3312,6 +3359,7 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
       ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.holeToolbar(state)}
@@ -3610,6 +3658,7 @@ const scorecard = {
     container.innerHTML = `
       ${this.joinCodeBarHtml(state)}
       ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
       ${this.teamPickerHtml(state)}
       ${this.eighteenBanner(state)}
       ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
@@ -3849,6 +3898,43 @@ const scorecard = {
     if (rest.length) groups.push({ team: null, members: rest });
     if (this.canSeeOtherTeams(state)) return groups;
     return groups.filter((g) => g.team && this.canSeeTeamLane(state, g.team));
+  },
+
+  showOtherTeamsBarHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    const on = this.isShowOtherScoresOn(state);
+    return `<div class="show-other-bar" id="show-other-bar" data-show-other="${on ? 'on' : 'off'}">
+      <div class="show-other-label">Show other teams</div>
+      <div class="show-other-switch" role="group" aria-label="Show other teams">
+        <button type="button" class="show-other-btn${on ? ' is-on' : ''}" data-show-other="1" aria-pressed="${on ? 'true' : 'false'}">ON</button>
+        <button type="button" class="show-other-btn${!on ? ' is-on is-off' : ''}" data-show-other="0" aria-pressed="${on ? 'false' : 'true'}">OFF</button>
+      </div>
+      <p class="show-other-note">${on
+        ? 'ON — you chose to see other teams’ cards.'
+        : 'OFF — your card only. Other-team setup stays off this scorecard.'}</p>
+    </div>`;
+  },
+
+  bindShowOtherBar() {
+    document.querySelectorAll('#show-other-bar [data-show-other]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setShowOtherTeams(btn.getAttribute('data-show-other') === '1');
+      };
+    });
+  },
+
+  async setShowOtherTeams(on) {
+    if (!this.state || !this.isOrganizer(this.state)) return;
+    const want = !!on;
+    if (this.isShowOtherScoresOn(this.state) === want) return;
+    if (this.state.round) {
+      this.state.round.showOtherScores = want;
+      this.state.round.show_other_scores = want ? 1 : 0;
+    }
+    this.draw(this.state);
+    await this.updateSettings({ showOtherScores: want });
   },
 
   teamPickerHtml(state) {
@@ -4554,6 +4640,8 @@ const scorecard = {
       });
       this.state = state;
       this.writeCache(state.round.id, state);
+      this._stillLeaderCue = false;
+      this._pendingAddPlayerLeaderCue = false;
       if (which === 'live') {
         this.addPlayerOpen = (state.members || []).length >= 2 ? true : this.addPlayerOpen;
         this.addPlayerDraft = {
@@ -4776,7 +4864,11 @@ const scorecard = {
       const state = await svcApi('post', `/api/rounds/${this.state.round.id}/clear-guests`, {});
       this.state = state;
       this.writeCache(state.round.id, state);
+      this._stillLeaderCue = true;
+      this._pendingAddPlayerLeaderCue = true;
       this.draw(state);
+      this.fireStillLeaderToast();
+      this._stillLeaderToastAt = Date.now();
     } catch (err) { _toast(err.message, 'error'); }
   },
 

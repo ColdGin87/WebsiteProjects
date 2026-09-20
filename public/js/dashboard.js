@@ -218,7 +218,7 @@ const dashboard = {
         <p class="card-subtitle join-role-help">Scorekeeper writes this team’s scores. Follow along is read-only for that team.</p>
         <div class="form-group" id="join-card-name-group">
           <label>Your name on the card (optional, Scorekeeper)</label>
-          <input class="form-input" id="join-display-name" name="displayName" maxlength="40" placeholder="${_esc((auth.currentUser && auth.currentUser.name) || 'Nickname')}">
+          <input class="form-input" id="join-display-name" name="displayName" maxlength="40" placeholder="${_esc((auth.currentUser && auth.currentUser.name) || 'Your name')}">
         </div>
         <div class="form-group">
           <label>Team nickname (optional)</label>
