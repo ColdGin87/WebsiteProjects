@@ -1,0 +1,248 @@
+const { parseSideGames, SIDE_GAMES, formatMoney, quietSideGames } = require('../../public/js/sideGames');
+const { scoreSkins } = require('./skins');
+const { scoreVegas } = require('./vegas');
+const { scoreNassau, playSegment } = require('./nassau');
+const { scoreWolf } = require('./wolf');
+const { scoreNines } = require('./nines');
+const { computeBirdieSlots } = require('./birdieSlots');
+
+function stringifySideGames(config) {
+  return JSON.stringify(parseSideGames(config));
+}
+
+function nassauSegmentForHole(holeNumber) {
+  return Number(holeNumber) <= 9 ? 'front' : 'back';
+}
+
+function segmentEnd(segment) {
+  if (segment === 'front') return 9;
+  return 18;
+}
+
+function nassauPressRange(press) {
+  const start = Number(press.start_hole ?? press.startHole) || 1;
+  let segment = press.segment || nassauSegmentForHole(start);
+  if (segment !== 'front' && segment !== 'back' && segment !== 'overall') {
+    segment = nassauSegmentForHole(start);
+  }
+  const end = Math.min(
+    Number(press.end_hole ?? press.endHole) || segmentEnd(segment),
+    segmentEnd(segment)
+  );
+  return { start, end, segment };
+}
+
+function mergeMoney(rows) {
+  const map = new Map();
+  for (const row of rows || []) {
+    const key = String(row.id);
+    const cur = map.get(key) || { id: row.id, name: row.name, dollars: 0 };
+    cur.dollars += Number(row.dollars) || 0;
+    if (row.name) cur.name = row.name;
+    map.set(key, cur);
+  }
+  return [...map.values()];
+}
+
+function computeOne(kind, payload) {
+  if (kind === 'skins') return scoreSkins(payload);
+  if (kind === 'vegas') return scoreVegas(payload);
+  if (kind === 'nassau') return scoreNassau(payload);
+  if (kind === 'wolf') return scoreWolf(payload);
+  if (kind === 'nines') return scoreNines(payload);
+  return null;
+}
+
+function pressNassau(base, press, holes, teams, scoring) {
+  const { start, end, segment } = nassauPressRange(press);
+  const sides = (teams || []).filter((t) => (t.members || []).length).slice(0, 2);
+  if (sides.length < 2) return [];
+  const stake = press.dollars != null ? Number(press.dollars) : (base.stakes && base.stakes[segment]) || 0;
+  const played = playSegment(holes, sides[0], sides[1], scoring, start, end);
+  if (!played.winner || !stake) return [];
+  const winner = played.winner === 'A' ? sides[0] : sides[1];
+  const loser = played.winner === 'A' ? sides[1] : sides[0];
+  return [
+    { id: winner.id, name: winner.name, dollars: stake, press: true, segment },
+    { id: loser.id, name: loser.name, dollars: -stake, press: true, segment },
+  ];
+}
+
+function computeSideGames({ config, holes, members, teams, presses, wolfPicks, roundId } = {}) {
+  const cfg = parseSideGames(config);
+  const games = {};
+  let money = [];
+  const strip = [];
+
+  if (cfg.skins.on) {
+    games.skins = scoreSkins({ holes, players: members, pot: cfg.skins.pot });
+    money = money.concat(games.skins.money || []);
+    const s = games.skins;
+    strip.push(`Skins ${s.grossSkins}G/${s.netSkins}N ${s.skinCount ? formatMoney(s.valuePerSkin) + '/skin' : '—'}`);
+  }
+  if (cfg.vegas.on) {
+    games.vegas = scoreVegas({
+      holes,
+      teams,
+      scoring: cfg.vegas.scoring,
+      dollarsPerPoint: cfg.vegas.dollarsPerPoint,
+      presses: (presses || []).filter((p) => (p.game_key || p.gameKey) === 'vegas'),
+    });
+    money = money.concat(games.vegas.money || []);
+    const v = games.vegas;
+    if (v.teamA && v.teamB) {
+      const last = [...(v.holes || [])].reverse().find((h) => !h.incomplete);
+      const fmt = (n) => (n > 0 ? '+' + n : String(n));
+      strip.push(last
+        ? `Vegas ${last.numA}–${last.numB} · this ${fmt(last.swingA)}/${fmt(last.swingB)} · run ${fmt(v.teamA.points)}/${fmt(v.teamB.points)}`
+        : `Vegas ${v.teamA.name} ${fmt(v.teamA.points)} / ${v.teamB.name} ${fmt(v.teamB.points)}`);
+    } else {
+      strip.push('Vegas —');
+    }
+  }
+  if (cfg.nassau.on) {
+    games.nassau = scoreNassau({
+      holes,
+      teams,
+      scoring: cfg.nassau.scoring,
+      front: cfg.nassau.front,
+      back: cfg.nassau.back,
+      overall: cfg.nassau.overall,
+    });
+    money = money.concat(games.nassau.money || []);
+    const n = games.nassau;
+    if (n.front) {
+      const counts = { front: 0, back: 0, overall: 0 };
+      for (const press of presses || []) {
+        if ((press.game_key || press.gameKey) !== 'nassau') continue;
+        const { segment } = nassauPressRange(press);
+        if (counts[segment] != null) counts[segment] += 1;
+      }
+      const pressBits = ['front', 'back', 'overall']
+        .filter((seg) => counts[seg])
+        .map((seg) => (seg === 'front' ? 'F' : seg === 'back' ? 'B' : '18') + counts[seg]);
+      strip.push(
+        `Nassau F ${n.front.status} · B ${n.back.status} · 18 ${n.overall.status}`
+        + (pressBits.length ? ` · press ${pressBits.join(' ')}` : '')
+      );
+    } else {
+      strip.push('Nassau —');
+    }
+  }
+  if (cfg.wolf.on) {
+    games.wolf = scoreWolf({
+      holes,
+      members,
+      picks: wolfPicks,
+      scoring: cfg.wolf.scoring,
+      dollarsPerPoint: cfg.wolf.dollarsPerPoint,
+      values: cfg.wolf,
+    });
+    money = money.concat(games.wolf.money || []);
+    const lead = [...(games.wolf.points || [])].sort((a, b) => b.points - a.points)[0];
+    strip.push(lead ? `Wolf ${lead.name} ${lead.points > 0 ? '+' : ''}${lead.points}` : 'Wolf —');
+  }
+  if (cfg.nines.on) {
+    games.nines = scoreNines({
+      holes,
+      members,
+      scoring: cfg.nines.scoring,
+      blitz: cfg.nines.blitz,
+      dollarsPerPoint: cfg.nines.dollarsPerPoint,
+    });
+    money = money.concat(games.nines.money || []);
+    if (games.nines.incomplete) strip.push('Nines (need 3)');
+    else {
+      const bits = (games.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
+      strip.push('Nines ' + bits);
+    }
+  }
+
+  for (const press of presses || []) {
+    const key = press.game_key || press.gameKey;
+    if (!cfg[key] || !cfg[key].on) continue;
+    const startHole = press.start_hole ?? press.startHole;
+    const endHole = press.end_hole ?? press.endHole ?? 18;
+    const dollars = press.dollars;
+    if (key === 'nassau') {
+      const { start, end, segment } = nassauPressRange(press);
+      const sides = (teams || []).filter((t) => (t.members || []).length).slice(0, 2);
+      const played = sides.length >= 2
+        ? playSegment(holes, sides[0], sides[1], cfg.nassau.scoring, start, end)
+        : null;
+      games.nassauPresses = games.nassauPresses || [];
+      games.nassauPresses.push({
+        id: press.id,
+        segment,
+        startHole: start,
+        endHole: end,
+        status: played ? played.status : '—',
+        holesWonA: played && played.holesWonA,
+        holesWonB: played && played.holesWonB,
+        played: played && played.played,
+        holeRows: played ? played.holeRows : [],
+        teamA: games.nassau && games.nassau.teamA,
+        teamB: games.nassau && games.nassau.teamB,
+      });
+      money = money.concat(pressNassau(games.nassau || {}, press, holes, teams, cfg.nassau.scoring));
+      continue;
+    }
+    const extra = computeOne(key, {
+      holes,
+      players: members,
+      members,
+      teams,
+      picks: wolfPicks,
+      scoring: cfg[key].scoring,
+      dollarsPerPoint: dollars != null ? dollars : cfg[key].dollarsPerPoint,
+      pot: cfg.skins.pot,
+      blitz: cfg.nines.blitz,
+      front: dollars,
+      back: 0,
+      overall: 0,
+      startHole,
+      endHole,
+    });
+    if (key === 'vegas') continue;
+    if (extra && extra.money) money = money.concat(extra.money.map((row) => ({ ...row, press: true })));
+  }
+
+  const net = mergeMoney(money);
+  const all = net.reduce((s, row) => s + (Number(row.dollars) || 0), 0);
+  const allBits = net
+    .filter((row) => row.dollars)
+    .map((row) => `${row.name} ${formatMoney(row.dollars)}`)
+    .join(' · ');
+  if (cfg.birdieSlots && cfg.birdieSlots.on) {
+    games.birdieSlots = computeBirdieSlots({
+      on: true,
+      holes,
+      members,
+      roundId,
+    });
+    if (games.birdieSlots.strip) strip.push(games.birdieSlots.strip);
+  }
+
+  if (allBits) strip.push('All games ' + allBits);
+
+  return {
+    config: cfg,
+    games,
+    money: net,
+    allGamesNet: all,
+    strip,
+    stripText: strip.join(' · '),
+  };
+}
+
+module.exports = {
+  SIDE_GAMES,
+  parseSideGames,
+  stringifySideGames,
+  formatMoney,
+  quietSideGames,
+  computeSideGames,
+  nassauSegmentForHole,
+  segmentEnd,
+  nassauPressRange,
+};
