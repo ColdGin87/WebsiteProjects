@@ -1,0 +1,25 @@
+{
+  "name": "golf-retreat-match-play",
+  "version": "2.0.0",
+  "description": "Goldendale Scorecard — handicapped team competitions on Vercel + Turso",
+  "private": true,
+  "scripts": {
+    "dev": "node api/index.js",
+    "build": "echo 'No build step required'",
+    "start": "node api/index.js",
+    "test": "node --test test/*.test.js",
+    "test:scorecard": "node test/scorecard-http.js"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.14.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT"
+}

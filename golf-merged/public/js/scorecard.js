@@ -1,0 +1,5489 @@
+function svcApi(method) {
+  const args = Array.prototype.slice.call(arguments, 1);
+  const client = (typeof window !== 'undefined' && typeof window.apiClient === 'function')
+    ? window.apiClient()
+    : ((typeof window !== 'undefined' && window.api) || (typeof api === 'object' ? api : {}) || {});
+  if (client && typeof client[method] === 'function') return client[method].apply(client, args);
+  if (typeof window !== 'undefined' && typeof window.callApi === 'function') {
+    return window.callApi.apply(null, arguments);
+  }
+  if (method === 'updateBadge' || method === 'flushInBackground') return;
+  if (method === 'getToken') {
+    try { return localStorage.getItem('goldendale_scorecard_token'); } catch { return null; }
+  }
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const token = localStorage.getItem('goldendale_scorecard_token');
+    if (token) headers.Authorization = 'Bearer ' + token;
+  } catch { /* ignore */ }
+  const http = method === 'put' ? 'PUT' : (method === 'del' || method === 'delete') ? 'DELETE' : (method === 'get' || method === 'getLive') ? 'GET' : 'POST';
+  const init = { method: http, headers };
+  if (http !== 'GET') init.body = JSON.stringify(args[1] || {});
+  return fetch(args[0], init).then(async (res) => {
+    if (res.status === 304) return { notModified: true };
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+    return data;
+  });
+}
+
+const scorecard = {
+  state: null,
+  pollTimer: null,
+  overlay: null,
+  screen: 'play',
+  cardMode: null,
+  currentHole: 1,
+  expandedHole: null,
+  focusCell: null,
+  writeError: '',
+  addPlayerOpen: false,
+  addPlayerDraft: { name: '', handicap: '', teamName: 'Team 1' },
+  addPlayerSuppressUntil: 0,
+  _preserveAddDraft: false,
+  fillSpin: null,
+  stepperOpen: false,
+  pressEditOpen: false,
+  focusedTeamId: null,
+  _oneTimer: null,
+  CACHE_PREFIX: 'goldendale_last_round_',
+  ASSET_V: '20260920a',
+  scoreAdvance: 'down',
+  SCORE_ADVANCE_KEY: 'goldendale_score_advance',
+  ONE_DIGIT_MS: 1400,
+
+  stopPoll() {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+  },
+
+  isNarrow() {
+    return window.matchMedia('(max-width: 600px)').matches;
+  },
+
+  isHoleView() {
+    if (this.screen !== 'play') return false;
+    if (this.cardMode === 'full') return false;
+    if (this.cardMode === 'hole') return true;
+    return this.isNarrow();
+  },
+
+  cacheKey(id) {
+    return this.CACHE_PREFIX + id;
+  },
+
+  readCache(id) {
+    try {
+      return JSON.parse(localStorage.getItem(this.cacheKey(id)) || 'null');
+    } catch {
+      return null;
+    }
+  },
+
+  writeCache(id, state) {
+    try {
+      localStorage.setItem(this.cacheKey(id), JSON.stringify(state));
+    } catch {
+      /* quota */
+    }
+  },
+
+  async renderRound(id, screen) {
+    this.screen = screen === 'settings' || screen === 'results' || screen === 'dashboard'
+      || screen === 'rules' || screen === 'nineteenth'
+      ? (screen === 'dashboard' ? 'results' : screen)
+      : 'play';
+    this.stopPoll();
+    const incoming = Number(id);
+    const sameRound = this.state && this.state.round && Number(this.state.round.id) === incoming;
+    if (!sameRound) {
+      this.addPlayerOpen = false;
+      this.addPlayerDraft = { name: '', handicap: '', teamName: 'Team 1' };
+      this.focusedTeamId = null;
+    }
+    const container = document.getElementById('app');
+    const cached = this.readCache(id);
+    if (cached) {
+      this.state = cached;
+      this.currentHole = this.pickCurrentHole(cached);
+      const cacheMine = this.myMember(cached) || this.isOrganizer(cached);
+      if (cacheMine && !this.shouldHoldAddPlayer()) {
+        this.syncJoinerFocus(cached);
+        this.draw(cached);
+      }
+    } else {
+      container.innerHTML = '<div class="loading"><div class="loading-spinner"></div>Loading scorecard...</div>';
+    }
+    try {
+      const state = await svcApi('get', '/api/rounds/' + id);
+      this.state = state;
+      this.writeCache(id, state);
+      this.currentHole = this.pickCurrentHole(state);
+      this.syncJoinerFocus(state);
+      if (!this.shouldHoldAddPlayer()) this.draw(state);
+      this.pollTimer = setInterval(() => this.refresh(id), 5000);
+    } catch (err) {
+      if (!cached) {
+        container.innerHTML = `<div class="empty-state"><h3>Error</h3><p>${_esc(err.message)}</p></div>`;
+      }
+    }
+  },
+
+  pickCurrentHole(state) {
+    const holes = state.holes || [];
+    if (!holes.length) return 1;
+    if (holes.some((h) => h.hole_number === this.currentHole)) return this.currentHole;
+    const roster = this.visibleHoleMembers(state);
+    const pool = roster.length ? roster : (state.members || []);
+    for (const hole of holes) {
+      const missing = pool.some((m) => {
+        const hs = (m.holes || []).find((x) => x.holeNumber === hole.hole_number);
+        return !hs || hs.gross == null;
+      });
+      if (missing) return hole.hole_number;
+    }
+    return holes[holes.length - 1].hole_number;
+  },
+
+  refresh(id) {
+    svcApi('flushInBackground');
+    this.refreshLive(id);
+  },
+
+  async refreshLive(id) {
+    try {
+      const patch = await svcApi('getLive', '/api/rounds/' + id + '/live', this.state && this.state.updatedAt);
+      if (!patch || patch.notModified) return;
+      if (this.state && patch.updatedAt && patch.updatedAt === this.state.updatedAt) return;
+      if (this.state && patch.updatedAt && this.state.updatedAt && String(patch.updatedAt) < String(this.state.updatedAt)) return;
+      if (this.rosterChanged(patch)) {
+        if (this.shouldHoldAddPlayer()) return;
+        const full = await svcApi('get', '/api/rounds/' + id);
+        this.state = full;
+        this.writeCache(id, full);
+        this.draw(full);
+        return;
+      }
+      this.applyLivePatch(patch);
+      this.writeCache(id, this.state);
+      if (this.shouldHoldAddPlayer()) return;
+      this.patchUI();
+    } catch {
+      /* keep current view while offline */
+    }
+  },
+
+  rosterChanged(patch) {
+    const next = patch.memberTotals || [];
+    const cur = (this.state && this.state.members) || [];
+    if (next.length !== cur.length) return true;
+    if (this.teamLabelsChanged(patch)) return true;
+    return next.some((t) => {
+      const m = cur.find((x) => Number(x.id) === Number(t.id));
+      if (!m) return true;
+      if (Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap) !== Number(t.playing_handicap)) return true;
+      if (!this.sameTeamOrEmpty(m.team_id ?? m.teamId, t.team_id ?? t.teamId)) return true;
+      return !this.sameTeamOrEmpty(m.fill_team_id ?? m.fillTeamId, t.fill_team_id ?? t.fillTeamId);
+    });
+  },
+
+  teamLabelsChanged(patch) {
+    const nextTeams = (patch && patch.teams) || [];
+    const curTeams = (this.state && this.state.teams) || [];
+    if (nextTeams.length !== curTeams.length) return true;
+    return nextTeams.some((nt) => {
+      const ct = curTeams.find((x) => Number(x.id) === Number(nt.id));
+      if (!ct) return true;
+      if (String(ct.name || '') !== String(nt.name || '')) return true;
+      if (nt.nickname != null && String(ct.nickname || '') !== String(nt.nickname || '')) return true;
+      return false;
+    });
+  },
+
+  applyLivePatch(patch) {
+    if (!this.state) return;
+    this.state.updatedAt = patch.updatedAt;
+    if (patch.status) this.state.round.status = patch.status;
+    this.state.winner = patch.winner;
+    const scored = new Set((patch.scores || []).map((s) => s.memberId + ':' + s.holeNumber));
+    for (const member of this.state.members || []) {
+      for (const hole of member.holes || []) {
+        if (hole.gross != null && !scored.has(member.id + ':' + hole.holeNumber)) {
+          hole.gross = null;
+          hole.net = null;
+        }
+      }
+    }
+    for (const score of patch.scores || []) {
+      this.writeMemberHole(score.memberId, score.holeNumber, score.gross, score.net, score.strokes);
+    }
+    for (const tot of patch.memberTotals || []) {
+      const member = this.state.members.find((m) => m.id === tot.id);
+      if (!member) continue;
+      member.outGross = tot.outGross;
+      member.inGross = tot.inGross;
+      member.totalGross = tot.totalGross;
+      member.outNet = tot.outNet;
+      member.inNet = tot.inNet;
+      member.totalNet = tot.totalNet;
+      member.playing_handicap = tot.playing_handicap;
+      if (tot.team_id != null || tot.teamId != null) {
+        member.team_id = tot.team_id ?? tot.teamId;
+        member.teamId = tot.teamId ?? tot.team_id;
+      }
+      if (tot.fill_team_id !== undefined || tot.fillTeamId !== undefined) {
+        member.fill_team_id = tot.fill_team_id ?? tot.fillTeamId;
+        member.fillTeamId = tot.fillTeamId ?? tot.fill_team_id;
+      }
+      if (tot.follow_show_other != null || tot.followShowOther != null) {
+        member.follow_show_other = tot.follow_show_other ?? (tot.followShowOther ? 1 : 0);
+        member.followShowOther = !!(tot.followShowOther || tot.follow_show_other === 1);
+      }
+    }
+    if (patch.teams) {
+      const paintTeam = (team, next) => {
+        const merged = next ? { ...team, ...next } : { ...team };
+        const nick = next && next.nickname != null ? next.nickname : (merged.nickname || '');
+        merged.nickname = nick;
+        const name = String(merged.name || '').trim() || 'Team';
+        merged.displayName = nick ? `${name} · ${nick}` : name;
+        return merged;
+      };
+      this.state.teams = (this.state.teams || []).map((t) => {
+        const next = patch.teams.find((x) => x.id === t.id);
+        return next ? paintTeam(t, next) : t;
+      });
+      for (const team of patch.teams) {
+        if (!(this.state.teams || []).some((t) => t.id === team.id)) this.state.teams.push(paintTeam({}, team));
+      }
+    }
+    if (patch.matches && this.state.matches) {
+      this.state.matches = this.state.matches.map((m) => {
+        const next = patch.matches.find((x) => x.id === m.id);
+        return next ? { ...m, resultText: next.resultText, score: next.score } : m;
+      });
+    }
+    if (patch.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...patch.sideGames };
+    if (patch.wolfPicks) this.state.wolfPicks = patch.wolfPicks;
+    if (patch.presses) this.state.presses = patch.presses;
+    if (patch.showOtherScores != null && this.state.round) {
+      this.state.round.showOtherScores = !!patch.showOtherScores;
+      this.state.round.show_other_scores = patch.showOtherScores ? 1 : 0;
+    }
+    this._ninesLedger = null;
+  },
+
+  writeMemberHole(memberId, holeNumber, gross, net, strokes) {
+    const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
+    if (!member) return null;
+    const hole = (member.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (!hole) return null;
+    hole.gross = gross;
+    if (strokes != null) hole.strokes = strokes;
+    hole.net = gross == null ? null : (net != null ? net : gross - (hole.strokes || 0));
+    return hole;
+  },
+
+  applyLocalScore(memberId, holeNumber, gross) {
+    if (!this.state) return;
+    this._ninesLedger = null;
+    this.writeMemberHole(memberId, holeNumber, gross, null, null);
+    const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
+    if (member) this.recomputePlayerTotals(member);
+    this.paintScoreCell(memberId, holeNumber);
+    this.paintPlayerTotals(memberId);
+    this.paintNinesBoard();
+    if (this.missingNineCols()) {
+      this.draw(this.state);
+      return;
+    }
+    this.paintNineTotals();
+  },
+
+  recomputePlayerTotals(member) {
+    const holes = member.holes || [];
+    const sum = (arr, key) => {
+      const vals = arr.filter((h) => h[key] != null);
+      return vals.length ? vals.reduce((s, h) => s + h[key], 0) : null;
+    };
+    const outHoles = holes.filter((h) => h.holeNumber <= 9);
+    const inHoles = holes.filter((h) => h.holeNumber >= 10);
+    member.outGross = sum(outHoles, 'gross');
+    member.inGross = sum(inHoles, 'gross');
+    member.totalGross = sum(holes, 'gross');
+    member.outNet = sum(outHoles, 'net');
+    member.inNet = sum(inHoles, 'net');
+    member.totalNet = sum(holes, 'net');
+  },
+
+  showWriteError(message) {
+    this.writeError = message || '';
+    const el = document.getElementById('write-error');
+    if (!el) return;
+    el.hidden = !message;
+    el.textContent = message || '';
+  },
+
+  writeErrorBanner() {
+    return `<div class="write-error" id="write-error" ${this.writeError ? '' : 'hidden'}>${_esc(this.writeError)}</div>`;
+  },
+
+  playerComplete(member, holes) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.playerComplete) return api.playerComplete(member, holes);
+    return (holes || []).every((h) => {
+      const hs = (member.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return hs && hs.gross != null;
+    });
+  },
+
+  groupHasEighteen(state) {
+    return this.canOpenNineteenth(state);
+  },
+
+  canOpenNineteenth(state) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.canOpenNineteenth) {
+      return api.canOpenNineteenth(state, this.myMember(state), this.isOrganizer(state));
+    }
+    const holes = state.holes || [];
+    const writable = (state.members || []).filter((m) => this.canWriteMember(state, m));
+    if (holes.length && writable.length && writable.every((m) => this.playerComplete(m, holes))) return true;
+    if (this.isOrganizer(state)) {
+      return (state.teams || []).some((team) => {
+        const roster = (state.members || []).filter((m) => this.sameTeamIds(m.team_id ?? m.teamId, team.id));
+        return roster.length > 0 && roster.every((m) => this.playerComplete(m, holes));
+      });
+    }
+    return false;
+  },
+
+  nineteenthNeedsConfirm(state) {
+    const api = typeof window !== 'undefined' ? window.nineteen : null;
+    if (api && api.nineteenthNeedsConfirm) {
+      return api.nineteenthNeedsConfirm(state, this.isOrganizer(state));
+    }
+    if (!this.isOrganizer(state)) return false;
+    const holes = state.holes || [];
+    return (state.members || []).filter((m) => m.team_id).some((m) => !this.playerComplete(m, holes));
+  },
+
+  shouldOfferFillBeforeNineteenth(state) {
+    if (!this.isOrganizer(state) || !this.canOpenNineteenth(state)) return false;
+    const api = this.fillSpinApi();
+    return !!(api.hasShortTeam && api.hasShortTeam(state));
+  },
+
+  eighteenBanner(state) {
+    if (!this.canOpenNineteenth(state)) return '';
+    const holes = (state.holes || []).length || 18;
+    const confirm = this.nineteenthNeedsConfirm(state);
+    const offerFill = this.shouldOfferFillBeforeNineteenth(state);
+    const api = this.fillSpinApi();
+    const shorts = (offerFill && api.shortTeams) ? api.shortTeams(state) : [];
+    const copy = offerFill
+      ? `<p><strong>${shorts.length > 1 ? shorts.length + ' teams are still short.' : 'A team is still short.'}</strong> Spin to fill any incomplete team, or skip straight to the 19th.</p>`
+      : confirm
+        ? `<p><strong>A team has all ${holes} in.</strong> Other teams still have blanks. Open the 19th hole anyway?</p>`
+        : `<p><strong>${holes} holes are in.</strong> Go to the 19th hole.</p>`;
+    const go = offerFill
+      ? `<button type="button" class="btn btn-accent eighteen-go" id="eighteen-fill-spin" onclick="scorecard.openFillSpin({fromNineteenth:true})">Fill a short team (spin)</button>
+         <button type="button" class="btn btn-accent" id="eighteen-skip-19th" onclick="scorecard.openNineteenth({skipFill:true})">Skip → 19th</button>`
+      : `<button type="button" class="btn btn-accent eighteen-go" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>`;
+    return `
+      <div class="eighteen-done" id="eighteen-done">
+        ${copy}
+        ${go}
+        <button type="button" class="btn btn-secondary" onclick="scorecard.showScreen('results')">Round results</button>
+      </div>`;
+  },
+
+  async openNineteenth(opts) {
+    const skipFill = !!(opts && opts.skipFill);
+    if (!this.canOpenNineteenth(this.state)) return;
+    if (!skipFill && this.shouldOfferFillBeforeNineteenth(this.state)) {
+      this.openFillSpin({ fromNineteenth: true });
+      return;
+    }
+    if (this.nineteenthNeedsConfirm(this.state)) {
+      const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+      if (prompt) {
+        const ok = await prompt({
+          title: 'Open the 19th hole? Other teams still have blanks.',
+          submitLabel: 'Go to the 19th hole',
+          fields: [],
+        });
+        if (!ok) return;
+      }
+    }
+    this.showScreen('nineteenth');
+  },
+
+  isStandardScorecard(state) {
+    const tf = typeof window !== 'undefined' ? window.teamFormats : null;
+    if (tf && typeof tf.isStandardScorecard === 'function') return tf.isStandardScorecard(state && state.round);
+    const format = state && state.round && state.round.format;
+    return format === 'standard' || format === 'standard_scorecard';
+  },
+
+  isTeamRaceOn(state) {
+    if (this.isStandardScorecard(state)) return false;
+    const r = (state && state.round) || {};
+    if (r.teamRace === false || r.team_race === 0 || r.team_race === false) return false;
+    return true;
+  },
+
+  isShowOtherScoresOn(state) {
+    const r = (state && state.round) || {};
+    return r.showOtherScores === true || r.show_other_scores === 1 || r.show_other_scores === true;
+  },
+
+  isPrivilegedViewer(state) {
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (user && user.is_admin) return true;
+    return this.isOrganizer(state);
+  },
+
+  followShowOtherOn(state) {
+    const me = this.myMember(state);
+    if (me && (me.followShowOther === true || me.follow_show_other === 1 || me.follow_show_other === true)) return true;
+    if (me && (me.followShowOther === false || me.follow_show_other === 0)) return false;
+    try {
+      const id = state && state.round && state.round.id;
+      return !!(id && localStorage.getItem('goldendale_follow_show_' + id) === '1');
+    } catch {
+      return false;
+    }
+  },
+
+  canSeeOtherTeams(state) {
+    if (!this.isShowOtherScoresOn(state)) return false;
+    if (this.isOrganizer(state)) return true;
+    return this.followShowOtherOn(state);
+  },
+
+  homeTeamId(state) {
+    const me = this.myMember(state);
+    const home = me && (me.team_id ?? me.teamId);
+    if (home != null && home !== '' && Number.isFinite(Number(home))) return Number(home);
+    return null;
+  },
+
+  defaultFocusedTeamId(state) {
+    const home = this.homeTeamId(state);
+    if (home != null) return home;
+    const teams = [...((state && state.teams) || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
+    return teams[0] ? Number(teams[0].id) : null;
+  },
+
+  syncJoinerFocus(state) {
+    if (this.isOrganizer(state)) return this.ensureFocusedTeam(state);
+    const home = this.homeTeamId(state);
+    if (home != null) this.focusedTeamId = home;
+    else this.focusedTeamId = this.defaultFocusedTeamId(state);
+    const team = ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, this.focusedTeamId));
+    if (team) {
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: team.name };
+      else this.addPlayerDraft.teamName = team.name;
+    }
+    return this.focusedTeamId;
+  },
+
+  ensureFocusedTeam(state) {
+    if (!this.isOrganizer(state)) return this.syncJoinerFocus(state);
+    const teams = (state && state.teams) || [];
+    if (this.focusedTeamId != null && teams.some((t) => this.sameTeamIds(t.id, this.focusedTeamId))) {
+      return this.focusedTeamId;
+    }
+    this.focusedTeamId = this.defaultFocusedTeamId(state);
+    return this.focusedTeamId;
+  },
+
+  focusedTeam(state) {
+    const id = this.ensureFocusedTeam(state);
+    return ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, id)) || null;
+  },
+
+  isSharedBoard(state) {
+    return this.canSeeOtherTeams(state);
+  },
+
+  memberOnFocusedTeam(state, member) {
+    if (!this.isOrganizer(state)) {
+      const home = this.homeTeamId(state);
+      if (home != null) return this.memberOnTeam(member, home);
+    }
+    const focused = this.focusedTeam(state);
+    if (!focused) return this.shareAnyTeam(this.myMember(state), member);
+    return this.memberOnTeam(member, focused.id);
+  },
+
+  canSeeTeamLane(state, team) {
+    if (!team) return false;
+    if (this.canSeeOtherTeams(state)) return true;
+    if (!this.isOrganizer(state)) {
+      const home = this.homeTeamId(state);
+      if (home != null) return this.sameTeamIds(team.id, home);
+    }
+    return this.sameTeamIds(team.id, this.ensureFocusedTeam(state));
+  },
+
+  focusTeam(teamId) {
+    const id = Number(teamId);
+    if (!Number.isFinite(id)) return;
+    this.focusedTeamId = id;
+    const team = ((this.state && this.state.teams) || []).find((t) => this.sameTeamIds(t.id, id));
+    if (team) {
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: team.name };
+      else this.addPlayerDraft.teamName = team.name;
+    }
+    if (this.state) this.draw(this.state);
+  },
+
+  canSeeMemberScores(state, member) {
+    if (!member) return false;
+    if (this.canSeeOtherTeams(state)) return true;
+    if (this.memberOnFocusedTeam(state, member)) return true;
+    const me = this.myMember(state);
+    return this.shareAnyTeam(me, member);
+  },
+
+  canSeeTeamScores(state, team) {
+    return this.canSeeTeamLane(state, team);
+  },
+
+  canManageRosterMember(state, member) {
+    if (!state || !member) return false;
+    if (this.isFollowAlong(state)) return false;
+    if (this.isFollowAlongMember(member) && !this.isOrganizer(state)) return false;
+    if (this.isOrganizer(state)) return true;
+    return this.canWriteMember(state, member);
+  },
+
+  isVegasOn(state) {
+    if (this.isStandardScorecard(state)) return false;
+    const cfg = this.sideConfig(state);
+    return !!(cfg.vegas && cfg.vegas.on);
+  },
+
+  isWolfOn(state) {
+    if (this.isStandardScorecard(state)) return false;
+    if (!state) return false;
+    const cfg = this.sideConfig(state);
+    if (cfg && cfg.wolf && this.flagOn(cfg.wolf.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    return !!(games && games.wolf);
+  },
+
+  vegasGame(state) {
+    const g = state && state.sideGames && state.sideGames.games && state.sideGames.games.vegas;
+    return g && (g.teamA || g.holes) ? g : null;
+  },
+
+  vegasSideForTeam(state, team) {
+    const v = this.vegasGame(state);
+    if (!v || !team) return null;
+    if (v.teamA && Number(v.teamA.id) === Number(team.id)) return 'A';
+    if (v.teamB && Number(v.teamB.id) === Number(team.id)) return 'B';
+    return null;
+  },
+
+  fmtVegasPts(n) {
+    if (n == null || Number.isNaN(Number(n))) return '—';
+    const v = Number(n);
+    if (v === 0) return '0';
+    return v > 0 ? '+' + v : String(v);
+  },
+
+  vegasHoleFor(state, team, holeNumber) {
+    const v = this.vegasGame(state);
+    const side = this.vegasSideForTeam(state, team);
+    if (!v || !side) return null;
+    const row = (v.holes || []).find((h) => h.holeNumber === holeNumber);
+    const runFallback = side === 'A' ? (v.teamA && v.teamA.points) || 0 : (v.teamB && v.teamB.points) || 0;
+    if (!row || row.incomplete) {
+      return { incomplete: true, num: null, run: runFallback, swing: null, points: 0, flip: false };
+    }
+    return {
+      incomplete: false,
+      num: side === 'A' ? row.numA : row.numB,
+      run: side === 'A' ? (row.runA != null ? row.runA : runFallback) : (row.runB != null ? row.runB : runFallback),
+      swing: side === 'A' ? row.swingA : row.swingB,
+      points: row.points,
+      flip: side === 'A' ? row.flipA : row.flipB,
+    };
+  },
+
+  vegasStripText(state) {
+    const v = this.vegasGame(state);
+    if (!v || !v.teamA || !v.teamB) return this.isVegasOn(state) ? 'Vegas —' : '';
+    const hn = this.currentHole || 1;
+    const row = (v.holes || []).find((h) => h.holeNumber === hn);
+    const run = this.vegasNamedRun(v, hn);
+    if (!row || row.incomplete) return `Vegas ${run}`;
+    return `Vegas ${row.numA}–${row.numB} · this ${this.fmtVegasPts(row.swingA)}/${this.fmtVegasPts(row.swingB)} · ${run}`;
+  },
+
+  vegasBoardHtml(state) {
+    if (!this.isVegasOn(state)) return '';
+    return `<div class="vegas-board" id="vegas-board">${this.vegasBoardInner(state)}</div>`;
+  },
+
+  vegasPresses(state) {
+    return (state && state.presses || []).filter((p) => (p.game_key || p.gameKey) === 'vegas');
+  },
+
+  vegasGamesRunning(state, holeNumber) {
+    const hn = Number(holeNumber || this.currentHole || 1);
+    const v = this.vegasGame(state);
+    const row = v && (v.holes || []).find((h) => h.holeNumber === hn);
+    if (row && row.games != null) return row.games;
+    return 1 + this.vegasPresses(state).filter((p) => Number(p.start_hole ?? p.startHole ?? 1) <= hn).length;
+  },
+
+  vegasPressCount(state) {
+    return this.vegasGamesRunning(state, this.currentHole);
+  },
+
+  vegasRunPoints(game, holeNumber) {
+    if (!game || !game.teamA || !game.teamB) return { a: 0, b: 0 };
+    const hn = Number(holeNumber || this.currentHole || 0);
+    const row = hn ? (game.holes || []).find((h) => h.holeNumber === hn) : null;
+    const a = row && row.runA != null ? Number(row.runA) : Number(game.teamA.points) || 0;
+    const b = row && row.runB != null ? Number(row.runB) : Number(game.teamB.points) || 0;
+    return { a, b };
+  },
+
+  vegasNamedRun(game, holeNumber) {
+    if (!game || !game.teamA || !game.teamB) return 'RUNNING even';
+    const { a, b } = this.vegasRunPoints(game, holeNumber);
+    if (a === b) return 'RUNNING even';
+    if (a > b) {
+      return `RUNNING: ${game.teamA.name} up ${Math.abs(a)} · ${game.teamB.name} down ${Math.abs(b)}`;
+    }
+    return `RUNNING: ${game.teamB.name} up ${Math.abs(b)} · ${game.teamA.name} down ${Math.abs(a)}`;
+  },
+
+  vegasRunDiffLine(game, holeNumber) {
+    return this.vegasNamedRun(game, holeNumber);
+  },
+
+  vegasThisHoleLine(game, holeNumber) {
+    const row = (game.holes || []).find((h) => h.holeNumber === holeNumber);
+    if (!row || row.incomplete) return 'This hole: —';
+    const games = row.games != null ? row.games : 1;
+    return `This hole: ${game.teamA.name} ${this.fmtVegasPts(row.swingA)} · ${game.teamB.name} ${this.fmtVegasPts(row.swingB)} · ${row.numA}–${row.numB}${games > 1 ? ` ×${games}` : ''}`;
+  },
+
+  vegasBoardInner(state) {
+    const v = this.vegasGame(state);
+    if (!v || !v.teamA || !v.teamB) {
+      return this.isVegasOn(state) ? '<div class="vegas-board-this">Vegas —</div>' : '';
+    }
+    const hn = this.currentHole || 1;
+    return `<div class="vegas-board-this">${_esc(this.vegasThisHoleLine(v, hn))}</div>
+      <div class="vegas-board-total vegas-run-diff">${_esc(this.vegasRunDiffLine(v, hn))}</div>`;
+  },
+
+  vegasPressButtonHtml(state, holeNumber) {
+    if (!this.isVegasOn(state)) return '';
+    const n = this.vegasGamesRunning(state, holeNumber);
+    return `<div class="vegas-press-wrap" id="vegas-press-wrap">
+      <div class="vegas-press-bar">
+        <button type="button" class="vegas-press-btn" data-vegas-press="${holeNumber}" data-vegas-games="${n}" onclick="scorecard.pressVegasFromHole(${holeNumber})" aria-label="Vegas games running ${n}. Tap Press to add a game from hole ${holeNumber} through 18.">
+          <span class="vegas-press-label">Press</span>
+          <span class="vegas-press-badge">${n}</span>
+          <span class="vegas-press-hint">${n} game${n === 1 ? '' : 's'} running${Number(holeNumber) > 1 ? ` · from ${holeNumber}→18` : ''}</span>
+        </button>
+        ${this.pressEditButtonHtml()}
+      </div>
+      ${this.undoLastPressHtml(state)}
+      ${this.pressEditPanelHtml(state)}
+    </div>`;
+  },
+
+  latestPress(state) {
+    const list = ((state && state.presses) || []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+    return list.length ? list[list.length - 1] : null;
+  },
+
+  pressUndoLabel(press) {
+    if (!press) return 'Press';
+    const key = String(press.game_key || press.gameKey || '');
+    if (key === 'vegas') return 'Vegas';
+    if (key === 'nassau') {
+      const seg = String(press.segment || '');
+      if (seg === 'front') return 'Nassau Front';
+      if (seg === 'back') return 'Nassau Back';
+      return 'Nassau Overall';
+    }
+    if (key === 'wolf') return 'Wolf';
+    if (key === 'nines') return 'Nines';
+    return 'Press';
+  },
+
+  undoLastPressHtml(state) {
+    const last = this.latestPress(state);
+    if (!last) return '';
+    const label = this.pressUndoLabel(last);
+    return `<div class="undo-last-press-wrap">
+      <button type="button" class="undo-last-press-btn" onclick="scorecard.undoLastPress()" aria-label="Undo last press ${label}">
+        Undo last press<span class="undo-last-press-hint">${_esc(label)}</span>
+      </button>
+    </div>`;
+  },
+
+  canManagePresses(state) {
+    if (!state || this.isStandardScorecard(state)) return false;
+    return this.isVegasOn(state) || this.isNassauOn(state)
+      || this.isWolfOn(state) || this.isNinesOn(state);
+  },
+
+  pressEditButtonHtml() {
+    const open = !!this.pressEditOpen;
+    return `<button type="button" class="press-edit-btn${open ? ' is-open' : ''}" onclick="scorecard.togglePressEdit()" aria-expanded="${open ? 'true' : 'false'}" aria-controls="press-edit-panel">
+      Edit
+    </button>`;
+  },
+
+  pressEditSummary(state) {
+    const bits = [];
+    if (this.isVegasOn(state)) {
+      bits.push(`Vegas ${this.vegasGamesRunning(state, this.currentHole || 1)} games running`);
+    }
+    if (this.isNassauOn(state)) {
+      const parts = this.nassauSegmentsForHole(this.currentHole || 1).map((seg) => {
+        const c = this.nassauPressCount(state, seg.key);
+        return `${seg.label}${c ? ` ×${c}` : ''}`;
+      });
+      bits.push('Nassau ' + parts.join(' · '));
+    }
+    const last = this.latestPress(state);
+    if (last) bits.push('Newest ' + this.pressUndoLabel(last));
+    return bits.join(' · ') || 'No presses yet';
+  },
+
+  pressEditAddButtonsHtml(state) {
+    const hn = this.currentHole || 1;
+    const btns = [];
+    if (this.isVegasOn(state)) {
+      btns.push(`<button type="button" class="press-edit-add" onclick="scorecard.pressVegasFromHole(${hn})">Add Vegas press</button>`);
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>');
+    }
+    if (this.isNassauOn(state)) {
+      this.nassauSegmentsForHole(hn).forEach((seg) => {
+        const disabled = seg.enabled === false ? ' disabled' : '';
+        btns.push(`<button type="button" class="press-edit-add" data-nassau-press="${seg.key}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')">Add Nassau ${_esc(seg.label)}</button>`);
+      });
+    }
+    if (this.pressableGames(state).some((g) => g.key === 'wolf' || g.key === 'nines')) {
+      btns.push('<button type="button" class="press-edit-add" onclick="scorecard.confirmPress()">Add Wolf / Nines press</button>');
+    }
+    return btns.join('');
+  },
+
+  pressEditPanelHtml(state) {
+    if (!this.pressEditOpen || !this.canManagePresses(state)) return '';
+    return `<div class="press-edit-panel" id="press-edit-panel">
+      <div class="press-edit-heading">Edit presses</div>
+      <p class="press-edit-summary">${_esc(this.pressEditSummary(state))}</p>
+      <div class="press-edit-adds">${this.pressEditAddButtonsHtml(state)}</div>
+      ${this.undoLastPressHtml(state) || '<p class="press-edit-empty">Nothing to undo.</p>'}
+    </div>`;
+  },
+
+  togglePressEdit() {
+    this.pressEditOpen = !this.pressEditOpen;
+    if (!this.state) return;
+    if (this.screen === 'play') this.paintPressChrome();
+    else this.draw(this.state);
+  },
+
+  async confirmUndoPress(label) {
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Undo last press (' + label + ')? Only the newest press is removed.',
+        submitLabel: 'Undo',
+        fields: [],
+      });
+      return !!ok;
+    }
+    if (typeof window !== 'undefined' && window.confirm) {
+      return window.confirm('Undo last press (' + label + ')?');
+    }
+    return false;
+  },
+
+  async undoLastPress() {
+    if (!this.state || !this.state.round) return;
+    const last = this.latestPress(this.state);
+    if (!last) {
+      _toast('No press to undo.', 'error');
+      return;
+    }
+    if (!await this.confirmUndoPress(this.pressUndoLabel(last))) return;
+    try {
+      const state = await svcApi('del', `/api/rounds/${this.state.round.id}/presses/last`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      if (this.screen === 'play') this.paintPressChrome();
+      else this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  flagOn(value) {
+    return value === true || value === 1 || value === '1' || value === 'on' || value === 'true' || value === 'yes';
+  },
+
+  isNassauOn(state) {
+    if (this.isStandardScorecard(state)) return false;
+    if (!state) return false;
+    const cfg = this.sideConfig(state);
+    if (cfg && cfg.nassau && this.flagOn(cfg.nassau.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    if (games && (games.nassau || (games.nassauPresses && games.nassauPresses.length))) return true;
+    const presses = state.presses || [];
+    if (presses.some((p) => (p.game_key || p.gameKey) === 'nassau')) return true;
+    const strip = state.sideGames && (state.sideGames.stripText || '');
+    return /\bNassau\b/i.test(strip);
+  },
+
+  nassauPresses(state) {
+    const g = state && state.sideGames && state.sideGames.games;
+    return (g && g.nassauPresses) || [];
+  },
+
+  nassauPressCount(state, segment) {
+    const rows = this.nassauPresses(state);
+    if (!segment) return rows.length;
+    return rows.filter((p) => p.segment === segment).length;
+  },
+
+  nassauSegmentsForHole(holeNumber) {
+    const hn = Number(holeNumber) || 1;
+    return [
+      { key: 'front', label: 'Front', end: 9, enabled: hn <= 9, hint: hn <= 9 ? 'dies at 9' : 'closed after 9', start: hn },
+      { key: 'back', label: 'Back', end: 18, enabled: true, hint: hn >= 10 ? 'dies at 18' : 'starts hole 10', start: hn >= 10 ? hn : 10 },
+      { key: 'overall', label: 'Overall', end: 18, enabled: true, hint: 'tap→18', start: hn },
+    ];
+  },
+
+  nassauSegLabel(segment) {
+    if (segment === 'front') return 'Front';
+    if (segment === 'back') return 'Back';
+    return 'Overall';
+  },
+
+  nassauThisHole(seg, holeNumber, teamA, teamB) {
+    const row = ((seg && seg.holeRows) || []).find((h) => h.holeNumber === holeNumber);
+    if (!row || row.scoreA == null || row.scoreB == null) return 'This hole: —';
+    if (row.winner === 'A') return `This hole: ${(teamA && teamA.name) || 'A'} wins`;
+    if (row.winner === 'B') return `This hole: ${(teamB && teamB.name) || 'B'} wins`;
+    return 'This hole: halved';
+  },
+
+  nassauByHole(seg) {
+    const bits = ((seg && seg.holeRows) || [])
+      .filter((h) => h.scoreA != null && h.scoreB != null)
+      .map((h) => {
+        const mark = h.winner === 'A' ? 'A' : h.winner === 'B' ? 'B' : '½';
+        return `H${h.holeNumber} ${mark}`;
+      });
+    return bits.length ? 'By hole: ' + bits.join(' · ') : 'By hole: —';
+  },
+
+  nassauTeamName(team, fallback) {
+    if (!team) return fallback;
+    return this.teamDisplay(team) || fallback;
+  },
+
+  nassauRunThrough(seg, holeNumber, teamA, teamB) {
+    const hn = Number(holeNumber) || this.currentHole || 18;
+    const rows = ((seg && seg.holeRows) || []).filter((h) => (
+      Number(h.holeNumber) <= hn && h.scoreA != null && h.scoreB != null
+    ));
+    let a = 0;
+    let b = 0;
+    for (const row of rows) {
+      if (row.winner === 'A') a += 1;
+      else if (row.winner === 'B') b += 1;
+    }
+    const nameA = this.nassauTeamName(teamA, 'A');
+    const nameB = this.nassauTeamName(teamB, 'B');
+    if (!rows.length) return 'RUNNING even';
+    if (a === b) return `RUNNING even (${a}–${b})`;
+    if (a > b) return `RUNNING: ${nameA} up ${a - b} · ${nameB} down ${a - b}`;
+    return `RUNNING: ${nameB} up ${b - a} · ${nameA} down ${b - a}`;
+  },
+
+  nassauRunText(seg, holeNumber, teamA, teamB) {
+    if (seg && (seg.holeRows || []).length) return this.nassauRunThrough(seg, holeNumber, teamA, teamB);
+    if (!seg) return 'RUNNING even';
+    const a = seg.holesWonA != null ? seg.holesWonA : 0;
+    const b = seg.holesWonB != null ? seg.holesWonB : 0;
+    const nameA = this.nassauTeamName(teamA, 'A');
+    const nameB = this.nassauTeamName(teamB, 'B');
+    if (a === b) return a || b ? `RUNNING even (${a}–${b})` : 'RUNNING even';
+    if (a > b) return `RUNNING: ${nameA} up ${a - b} · ${nameB} down ${a - b}`;
+    return `RUNNING: ${nameB} up ${b - a} · ${nameA} down ${b - a}`;
+  },
+
+  nassauLineHtml(label, seg, holeNumber, teamA, teamB) {
+    return `<div class="nassau-press-line">
+      <div class="nassau-line-title">${_esc(label)}</div>
+      <div class="nassau-line-run">${_esc(this.nassauRunText(seg, holeNumber, teamA, teamB))}</div>
+      <div>${_esc(this.nassauThisHole(seg, holeNumber, teamA, teamB))}</div>
+    </div>`;
+  },
+
+  nassauBoardHtml(state, boardId) {
+    if (!this.isNassauOn(state)) return '';
+    return `<div class="nassau-board" id="${boardId || 'nassau-board'}">${this.nassauBoardInner(state)}</div>`;
+  },
+
+  nassauLiveDockHtml(state, holeNumber) {
+    if (!this.isNassauOn(state)) return '';
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    return `<div class="nassau-live-dock" id="nassau-live-dock">
+      ${this.nassauPressButtonsHtml(state, hn)}
+      ${this.nassauBoardHtml(state)}
+    </div>`;
+  },
+
+  nassauBoardInner(state) {
+    const n = state && state.sideGames && state.sideGames.games && state.sideGames.games.nassau;
+    if (!n || !n.front) {
+      return '<div class="nassau-original">Nassau RUNNING — need two teams</div>';
+    }
+    const hn = this.currentHole || 1;
+    const presses = this.nassauPresses(state);
+    const counts = ['front', 'back', 'overall'].map((seg) => {
+      const c = this.nassauPressCount(state, seg);
+      const label = seg === 'front' ? 'F' : seg === 'back' ? 'B' : 'O';
+      return c ? `${label}${c}` : null;
+    }).filter(Boolean);
+    const badge = counts.length
+      ? `<div class="nassau-press-badge">${counts.join(' · ')} live press${presses.length === 1 ? '' : 'es'}</div>`
+      : '';
+    const original = ['front', 'back', 'overall'].map((seg) =>
+      this.nassauLineHtml(`Original ${this.nassauSegLabel(seg)}`, n[seg], hn, n.teamA, n.teamB)
+    ).join('');
+    const pressLines = presses.map((p, i) =>
+      this.nassauLineHtml(
+        `Press ${i + 1} ${this.nassauSegLabel(p.segment)} H${p.startHole}–${p.endHole}`,
+        p,
+        hn,
+        p.teamA || n.teamA,
+        p.teamB || n.teamB
+      )
+    ).join('');
+    return `${badge}${original}${pressLines}`;
+  },
+
+  nassauPressButtonsHtml(state, holeNumber, wrapId) {
+    if (!this.isNassauOn(state)) return '';
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    const manage = wrapId === 'nassau-press-wrap-toolbar' && !this.isVegasOn(state);
+    return `<div class="nassau-press-wrap" id="${wrapId || 'nassau-press-wrap'}">
+      <div class="nassau-press-heading">Nassau Press</div>
+      <div class="nassau-press-btns">${this.nassauSegmentsForHole(hn).map((seg) => {
+        const c = this.nassauPressCount(state, seg.key);
+        const disabled = seg.enabled === false ? ' disabled' : '';
+        return `<button type="button" class="nassau-press-btn" data-nassau-press="${seg.key}" data-nassau-hole="${hn}"${disabled} onclick="scorecard.pressNassauFromHole(${hn}, '${seg.key}')" aria-label="Press Nassau ${seg.label} from hole ${hn}">Press ${seg.label}${c ? ` <span class="nassau-press-count">${c}</span>` : ''}<span class="nassau-press-hint">${_esc(seg.hint || '')}</span></button>`;
+      }).join('')}</div>
+      ${manage ? `<div class="vegas-press-bar nassau-press-manage">${this.pressEditButtonHtml()}</div>` : ''}
+      ${manage ? this.undoLastPressHtml(state) : ''}
+      ${manage ? this.pressEditPanelHtml(state) : ''}
+    </div>`;
+  },
+
+  async pressNassauFromHole(holeNumber, segment) {
+    if (!this.state || !this.isNassauOn(this.state)) return;
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    const seg = this.nassauSegmentsForHole(hn).find((s) => s.key === segment);
+    if (seg && seg.enabled === false) {
+      _toast(seg.hint || 'That Nassau segment is not open on this hole.', 'error');
+      return;
+    }
+    const startHole = seg && seg.start != null ? Number(seg.start) : (segment === 'back' && hn < 10 ? 10 : hn);
+    const endHole = segment === 'front' ? 9 : 18;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
+        gameKey: 'nassau',
+        segment,
+        startHole,
+        endHole,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      if (this.screen === 'play') this.paintPressChrome();
+      else this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  async pressVegasFromHole(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
+        gameKey: 'vegas',
+        startHole: holeNumber,
+        endHole: 18,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  vegasPressStartHoles(state) {
+    const starts = [];
+    const seen = new Set();
+    this.vegasPresses(state).forEach((press) => {
+      const start = Number(press.start_hole ?? press.startHole);
+      if (!Number.isInteger(start) || start < 1 || start > 18 || seen.has(start)) return;
+      seen.add(start);
+      starts.push(start);
+    });
+    return starts.sort((a, b) => a - b);
+  },
+
+  isVegasPressStartHole(state, holeNumber) {
+    return this.vegasPressStartHoles(state).indexOf(Number(holeNumber)) !== -1;
+  },
+
+  holeNumberLabelHtml(state, holeNumber) {
+    const hn = Number(holeNumber) || 1;
+    const pip = this.isVegasOn(state) && this.isVegasPressStartHole(state, hn)
+      ? ' <span class="hole-pressed-pip">Pressed</span>'
+      : '';
+    return 'Hole ' + hn + pip;
+  },
+
+  pressedChipItems(state) {
+    const items = [];
+    const presses = ((state && state.presses) || []).slice().sort((a, b) => {
+      const sa = Number(a.start_hole ?? a.startHole ?? 0);
+      const sb = Number(b.start_hole ?? b.startHole ?? 0);
+      if (sa !== sb) return sa - sb;
+      return Number(a.id || 0) - Number(b.id || 0);
+    });
+    presses.forEach((press) => {
+      const key = String(press.game_key || press.gameKey || '');
+      const start = Number(press.start_hole ?? press.startHole);
+      let end = Number(press.end_hole ?? press.endHole);
+      if (!Number.isInteger(start) || start < 1) return;
+      if (!Number.isInteger(end) || end < start) end = 18;
+      if (key === 'vegas') {
+        items.push({
+          kind: 'vegas',
+          hole: start,
+          label: 'V ' + start + '→' + end,
+          title: 'Vegas press holes ' + start + ' through ' + end,
+        });
+      } else if (key === 'nassau') {
+        const side = String(press.segment || '');
+        let label = 'Nassau ' + start + '→' + end;
+        if (side === 'front') label = 'Front ' + start + '–' + end;
+        else if (side === 'back') label = 'Back ' + start + '–' + end;
+        else if (side === 'overall') label = 'Overall ' + start + '→' + end;
+        items.push({
+          kind: 'nassau',
+          hole: start,
+          label,
+          title: label + ' press',
+        });
+      }
+    });
+    return items;
+  },
+
+  pressedHolesBarHtml(state) {
+    if (!state || this.isStandardScorecard(state)) return '';
+    if (!this.isVegasOn(state) && !this.isNassauOn(state)) return '';
+    const chips = this.pressedChipItems(state);
+    const chipHtml = chips.length
+      ? chips.map((chip) => (
+        `<button type="button" class="pressed-chip pressed-chip-${_esc(chip.kind)}" data-go-pressed-hole="${chip.hole}" onclick="scorecard.goToPressedHole(${chip.hole})" title="${_esc(chip.title)}">${_esc(chip.label)}</button>`
+      )).join('')
+      : '<span class="pressed-holes-empty">None yet</span>';
+    const missed = this.isVegasOn(state)
+      ? '<button type="button" class="pressed-missed-btn" id="missed-press-btn" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>'
+      : '';
+    return `<div id="pressed-holes-bar" class="pressed-holes-bar" aria-label="Pressed holes">
+      <div class="pressed-holes-copy">
+        <span class="pressed-holes-label">Pressed</span>
+        <div class="pressed-holes-chips">${chipHtml}</div>
+      </div>
+      ${missed}
+    </div>`;
+  },
+
+  goToPressedHole(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    if (this.screen === 'play' && this.cardMode === 'full') {
+      this.paintCurrentHoleChrome();
+      return;
+    }
+    this.cardMode = 'hole';
+    if (this.state) this.draw(this.state);
+  },
+
+  async offerMissedVegasPress(preferredHole) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    let defaultHole = Number(preferredHole);
+    if (!Number.isInteger(defaultHole) || defaultHole < 1 || defaultHole > 18) {
+      defaultHole = Number(this.currentHole) || 1;
+    }
+    const options = [];
+    for (let h = 1; h <= 18; h += 1) {
+      options.push({ value: String(h), label: 'Hole ' + h + ' → 18' });
+    }
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (!prompt) return;
+    const values = await prompt({
+      title: 'Missed a press — start at an earlier hole. Running Vegas updates from that hole through 18.',
+      submitLabel: 'Add press',
+      fields: [{
+        name: 'startHole',
+        label: 'Start Vegas press at',
+        type: 'select',
+        options,
+        value: String(defaultHole),
+      }],
+    });
+    if (!values) return;
+    await this.pressVegasFromHole(Number(values.startHole));
+  },
+
+  async offerVegasPressFromHole(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Add missed Vegas press from hole ' + hole + ' through 18?',
+        submitLabel: 'Add press',
+        fields: [],
+      });
+      if (!ok) return;
+    } else if (typeof window !== 'undefined' && window.confirm) {
+      if (!window.confirm('Add missed Vegas press from hole ' + hole + ' through 18?')) return;
+    }
+    await this.pressVegasFromHole(hole);
+  },
+
+  async onFullCardHoleTap(holeNumber) {
+    const hole = Number(holeNumber);
+    if (!Number.isInteger(hole) || hole < 1 || hole > 18) return;
+    this.currentHole = hole;
+    this.paintCurrentHoleChrome();
+    if (this.isVegasOn(this.state)) await this.offerVegasPressFromHole(hole);
+  },
+
+  isNinesOn(state) {
+    if (this.isStandardScorecard(state)) return false;
+    if (!state) return false;
+    const cfg = this.sideConfig(state);
+    if (cfg && cfg.nines && this.flagOn(cfg.nines.on)) return true;
+    const games = state.sideGames && state.sideGames.games;
+    return !!(games && games.nines);
+  },
+
+  ninesGame(state) {
+    return state && state.sideGames && state.sideGames.games && state.sideGames.games.nines;
+  },
+
+  ninesBoardHtml(state) {
+    if (!this.isNinesOn(state)) return '';
+    return `<div class="nines-board" id="nines-board">${this.ninesBoardInner(state)}</div>`;
+  },
+
+  ninesPtsLine(players, key) {
+    return (players || []).map((p) => {
+      const val = p[key];
+      return `${p.name} ${val == null ? '—' : val}`;
+    }).join(' · ');
+  },
+
+  ninesPointGet(map, playerId) {
+    if (!map || typeof map !== 'object') return null;
+    const keys = [playerId, String(playerId)];
+    const asNum = Number(playerId);
+    if (Number.isFinite(asNum)) keys.push(asNum);
+    for (const key of keys) {
+      if (!Object.prototype.hasOwnProperty.call(map, key)) continue;
+      const val = map[key];
+      if (val == null || !Number.isFinite(Number(val))) continue;
+      return Number(val);
+    }
+    return null;
+  },
+
+  ninesPointMap(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const [key, val] of Object.entries(raw)) {
+      if (val == null || !Number.isFinite(Number(val))) continue;
+      out[String(key)] = Number(val);
+    }
+    return out;
+  },
+
+  ninesHolePointsLive(three, blitz) {
+    const scored = (three || []).filter((p) => p.score != null && Number.isFinite(Number(p.score)));
+    if (scored.length !== 3) return null;
+    const sorted = [...scored].sort((a, b) => Number(a.score) - Number(b.score) || String(a.id).localeCompare(String(b.id)));
+    const [a, b, c] = sorted;
+    const sa = Number(a.score);
+    const sb = Number(b.score);
+    const sc = Number(c.score);
+    const out = {};
+    if (blitz && sa <= sb - 2) {
+      out[a.id] = 9;
+      out[b.id] = 0;
+      out[c.id] = 0;
+      return out;
+    }
+    if (sa === sb && sb === sc) {
+      out[a.id] = 3;
+      out[b.id] = 3;
+      out[c.id] = 3;
+      return out;
+    }
+    if (sa === sb) {
+      out[a.id] = 4;
+      out[b.id] = 4;
+      out[c.id] = 1;
+      return out;
+    }
+    if (sb === sc) {
+      out[a.id] = 5;
+      out[b.id] = 2;
+      out[c.id] = 2;
+      return out;
+    }
+    out[a.id] = 5;
+    out[b.id] = 3;
+    out[c.id] = 1;
+    return out;
+  },
+
+  ninesThree(state) {
+    const members = (state && state.members) || [];
+    const g = this.ninesGame(state);
+    if (g && g.points && g.points.length === 3) {
+      return g.points.map((p) => {
+        const found = members.find((m) => String(m.id) === String(p.id));
+        return found || { id: p.id, display_name: p.name, name: p.name, holes: [] };
+      });
+    }
+    return members.length === 3 ? members : null;
+  },
+
+  ninesLiveScore(member, holeNumber, mode, three, state) {
+    const hs = ((member && member.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (!hs || hs.gross == null || hs.gross === '') return null;
+    const gross = Number(hs.gross);
+    if (!Number.isFinite(gross)) return null;
+    if (mode !== 'net') return gross;
+    const hcpOf = (m) => Number(m.playing_handicap ?? m.playingHandicap ?? m.handicap ?? 0) || 0;
+    const low = Math.min(...(three || []).map(hcpOf));
+    const rel = hcpOf(member) - low;
+    const hole = this.holeMeta(state, holeNumber);
+    const si = Number((hole && (hole.stroke_index ?? hole.strokeIndex)) || hs.strokeIndex || hs.stroke_index) || 1;
+    const base = Math.floor(rel / 18);
+    const rem = rel % 18;
+    const extra = (!(rem === 0 && rel !== 0) && si <= rem) ? 1 : 0;
+    return gross - (base + extra);
+  },
+
+  ninesComputeLedger(state) {
+    const three = this.ninesThree(state);
+    const cfg = ((this.sideConfig(state) || {}).nines) || {};
+    const mode = cfg.scoring === 'gross' ? 'gross' : 'net';
+    const blitz = cfg.blitz !== false;
+    const course = (state && state.holes) || [];
+    const list = course.length
+      ? course.map((h) => Number(h.hole_number ?? h.holeNumber)).filter((n) => Number.isFinite(n))
+      : Array.from({ length: 18 }, (_, i) => i + 1);
+    const serverHoles = ((this.ninesGame(state) || {}).holes) || [];
+    const totals = new Map();
+    if (three) three.forEach((m) => totals.set(String(m.id), 0));
+    const rows = [];
+    for (const hn of list) {
+      let pts = null;
+      if (three) {
+        const keyed = three.map((m) => ({
+          id: m.id,
+          score: this.ninesLiveScore(m, hn, mode, three, state),
+        }));
+        pts = this.ninesHolePointsLive(keyed, blitz);
+      }
+      const serverRow = serverHoles.find((h) => Number(h.holeNumber ?? h.hole_number) === Number(hn));
+      if (!pts && serverRow && !serverRow.incomplete && serverRow.points) pts = serverRow.points;
+      const map = this.ninesPointMap(pts);
+      if (!Object.keys(map).length) {
+        rows.push({
+          holeNumber: hn,
+          incomplete: true,
+          points: null,
+          running: Object.fromEntries(totals),
+        });
+        continue;
+      }
+      const ids = three ? three.map((m) => m.id) : Object.keys(map);
+      for (const id of ids) {
+        const add = this.ninesPointGet(map, id) ?? 0;
+        totals.set(String(id), (totals.get(String(id)) || 0) + add);
+      }
+      rows.push({
+        holeNumber: hn,
+        incomplete: false,
+        points: map,
+        running: Object.fromEntries(totals),
+      });
+    }
+    return { three, holes: rows };
+  },
+
+  ninesLedgerFor(state) {
+    if (!state) return { three: null, holes: [] };
+    if (this._ninesLedger && this._ninesLedgerState === state) return this._ninesLedger;
+    this._ninesLedgerState = state;
+    this._ninesLedger = this.ninesComputeLedger(state);
+    return this._ninesLedger;
+  },
+
+  ninesHoleValue(game, holeNumber, playerId, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    const live = (ledger.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (live && !live.incomplete) {
+      const fromLive = this.ninesPointGet(live.points, playerId);
+      if (fromLive != null) return fromLive;
+    }
+    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (row && row.players) {
+      const found = row.players.find((p) => String(p.id) === String(playerId));
+      if (found && found.hole != null && Number.isFinite(Number(found.hole))) return Number(found.hole);
+    }
+    if (!row || row.incomplete || !row.points) return null;
+    return this.ninesPointGet(row.points, playerId);
+  },
+
+  ninesRunningThrough(game, holeNumber, playerId, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    const cap = Number(holeNumber);
+    let sum = 0;
+    let seen = false;
+    for (const h of ledger.holes || []) {
+      const hn = Number(h.holeNumber);
+      if (!Number.isFinite(hn) || (Number.isFinite(cap) && hn > cap)) continue;
+      if (h.incomplete || !h.points) continue;
+      const add = this.ninesPointGet(h.points, playerId);
+      if (add == null) continue;
+      sum += add;
+      seen = true;
+    }
+    if (seen) return sum;
+    const liveRow = (ledger.holes || []).find((h) => Number(h.holeNumber) === Number(holeNumber));
+    if (liveRow && liveRow.running) {
+      const fromRun = this.ninesPointGet(liveRow.running, playerId);
+      if (fromRun != null) return fromRun;
+    }
+    let serverSum = 0;
+    let serverSeen = false;
+    for (const h of (game && game.holes) || []) {
+      const hn = Number(h.holeNumber ?? h.hole_number);
+      if (!Number.isFinite(hn) || (Number.isFinite(cap) && hn > cap)) continue;
+      if (h.incomplete || !h.points) continue;
+      const add = this.ninesPointGet(h.points, playerId);
+      if (add == null) continue;
+      serverSum += add;
+      serverSeen = true;
+    }
+    if (serverSeen) return serverSum;
+    const row = ((game && game.holes) || []).find((h) => Number(h.holeNumber ?? h.hole_number) === Number(holeNumber));
+    if (row && row.running) {
+      const fromRow = this.ninesPointGet(row.running, playerId);
+      if (fromRow != null) return fromRow;
+    }
+    if (row && row.players) {
+      const found = row.players.find((p) => String(p.id) === String(playerId));
+      if (found && found.run != null && Number.isFinite(Number(found.run))) return Number(found.run);
+    }
+    return null;
+  },
+
+  ninesRoster(game, state) {
+    const ledger = this.ninesLedgerFor(state || this.state);
+    if (ledger.three && ledger.three.length) {
+      return ledger.three.map((m) => ({
+        id: m.id,
+        name: m.display_name || m.name,
+      }));
+    }
+    if (game && game.points && game.points.length) return game.points;
+    const first = ((game && game.holes) || []).find((h) => h.players && h.players.length);
+    return (first && first.players) || [];
+  },
+
+  ninesBoardInner(state) {
+    const g = this.ninesGame(state);
+    if (!g) return this.isNinesOn(state) ? '<div class="nines-hole">Nines —</div>' : '';
+    if (g.incomplete && !this.ninesThree(state)) return '<div class="nines-hole">Nines — need exactly 3 players</div>';
+    const hn = this.currentHole || 1;
+    const roster = this.ninesRoster(g, state);
+    const holeLine = this.ninesPtsLine(roster.map((p) => ({
+      name: p.name,
+      hole: this.ninesHoleValue(g, hn, p.id, state),
+    })), 'hole');
+    const runLine = this.ninesPtsLine(roster.map((p) => ({
+      name: p.name,
+      run: this.ninesRunningThrough(g, hn, p.id, state),
+    })), 'run');
+    return `<div class="nines-hole">This hole: ${_esc(holeLine)}</div>
+      <div class="nines-run">RUNNING: ${_esc(runLine)}</div>`;
+  },
+
+  ninesTableRows(state, holes, showOut, showIn) {
+    if (!this.isNinesOn(state)) return '';
+    const g = this.ninesGame(state);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
+    return (state.members || []).map((m) => this.onePlayerNinesRows(state, m, holes, showOut, showIn)).join('');
+  },
+
+  onePlayerNinesRows(state, member, holes, showOut, showIn) {
+    if (!this.isNinesOn(state) || !member) return '';
+    const g = this.ninesGame(state);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
+    const cell = (hn, kind) => {
+      const val = kind === 'hole'
+        ? this.ninesHoleValue(g, hn, member.id, state)
+        : this.ninesRunningThrough(g, hn, member.id, state);
+      return `<td class="nines-cell" data-nines-${kind}="${member.id}:${hn}">${val == null ? '—' : val}</td>`;
+    };
+    const showTot = this.showTot(state);
+    const holeFn = (h) => cell(h.hole_number, 'hole');
+    const runFn = (h) => cell(h.hole_number, 'run');
+    const runOut = showOut ? this.ninesRunningThrough(g, 9, member.id, state) : null;
+    const runIn = showIn ? this.ninesRunningThrough(g, 18, member.id, state) : null;
+    const holeRow = this.joinCardRow(holes, showOut, showIn, holeFn, '<td class="sc-total sc-out"></td>', '<td class="sc-total sc-in"></td>', '<td class="sc-total sc-tot-sticky"></td>', showTot);
+    const runRow = this.joinCardRow(
+      holes,
+      showOut,
+      showIn,
+      runFn,
+      `<td class="sc-total sc-out">${runOut == null ? '' : runOut}</td>`,
+      `<td class="sc-total sc-in"></td>`,
+      `<td class="sc-total sc-tot-sticky">${runIn == null ? '' : runIn}</td>`,
+      showTot
+    );
+    const name = _esc(member.display_name || member.name || '');
+    return `<tr class="nines-hole-row nines-player-hole-row" data-nines-hole-member="${member.id}"><td class="row-label">${name} nines</td>${holeRow}</tr>
+      <tr class="nines-run-row nines-player-run-row" data-nines-run-member="${member.id}"><td class="row-label">${name} run</td>${runRow}</tr>`;
+  },
+
+  afterHoleScored(state, holeNumber) {
+    return ((state && state.members) || []).some((m) =>
+      (m.holes || []).some((h) => h.holeNumber === holeNumber && h.gross != null)
+    );
+  },
+
+  showOut(state) {
+    return this.afterHoleScored(state, 9);
+  },
+
+  showIn(state) {
+    return this.afterHoleScored(state, 18) || this.afterNineStarted(state, 10, 18);
+  },
+
+  showTot(state) {
+    return this.afterHoleScored(state, 18);
+  },
+
+  afterNineStarted(state, start, end) {
+    return ((state && state.members) || []).some((m) =>
+      (m.holes || []).some((h) => h.holeNumber >= start && h.holeNumber <= end && h.gross != null)
+    );
+  },
+
+  frontHoles(holes) {
+    return (holes || []).filter((h) => Number(h.hole_number ?? h.holeNumber) <= 9);
+  },
+
+  backHoles(holes) {
+    return (holes || []).filter((h) => Number(h.hole_number ?? h.holeNumber) >= 10);
+  },
+
+  joinCardRow(holes, showOut, showIn, holeFn, outHtml, inHtml, totHtml, showTot) {
+    const totOn = showTot == null ? showIn : showTot;
+    const front = this.frontHoles(holes).map(holeFn).join('');
+    const back = this.backHoles(holes).map(holeFn).join('');
+    return `${front}${showOut ? outHtml : ''}${back}${showIn ? (inHtml || '') : ''}${totOn ? (totHtml || '') : ''}`;
+  },
+
+  cardExtraCount(state) {
+    return (this.showOut(state) ? 1 : 0) + (this.showIn(state) ? 1 : 0) + (this.showTot(state) ? 1 : 0);
+  },
+
+  infoTip(key, text) {
+    return `<button type="button" class="info-tip" data-info="${key}" aria-expanded="false" aria-label="Help">ℹ</button><span class="info-pop" id="info-${key}" hidden>${_esc(text)}</span>`;
+  },
+
+  bindInfoTips() {
+    document.querySelectorAll('.info-tip').forEach((btn) => {
+      if (btn.dataset.bound === '1') return;
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const pop = document.getElementById('info-' + btn.getAttribute('data-info'));
+        if (!pop) return;
+        const open = pop.hidden;
+        document.querySelectorAll('.info-pop').forEach((el) => { el.hidden = true; });
+        document.querySelectorAll('.info-tip').forEach((el) => el.setAttribute('aria-expanded', 'false'));
+        pop.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+    });
+  },
+
+  visibleHoleMembers(state) {
+    if (this.isWolfOn(state)) return this.wolfRoster(state);
+    return this.groupedMembers(state)
+      .filter((g) => g.team && this.canSeeTeamScores(state, g.team))
+      .flatMap((g) => g.members || []);
+  },
+
+  canAddPlayer(state) {
+    if (this.isFollowAlong(state)) return false;
+    if (this.isOrganizer(state)) return true;
+    const me = this.myMember(state);
+    return !!(me && ((me.team_id != null && me.team_id !== '') || (me.teamId != null && me.teamId !== '')));
+  },
+
+  isGuestMember(member) {
+    return !!(member && (member.is_guest === 1 || member.is_guest === true || member.isGuest === true || member.is_guest === '1'));
+  },
+
+  isSignedInMember(member) {
+    const id = member && (member.player_id ?? member.playerId);
+    return id != null && id !== '' && Number.isFinite(Number(id));
+  },
+
+  isSelfMember(state, member) {
+    const me = this.myMember(state);
+    return !!(me && member && Number(me.id) === Number(member.id));
+  },
+
+  isMemberHost(state, member) {
+    if (!member) return false;
+    if (String(member.role || '').toLowerCase() === 'organizer') return true;
+    const oid = state && state.round && (state.round.organizer_id ?? state.round.organizerId);
+    return oid != null && Number(member.player_id ?? member.playerId) === Number(oid);
+  },
+
+  runnerBadge(state, member) {
+    if (!member || this.isFollowAlongMember(member)) return '';
+    if (this.isGuestMember(member)) return 'Guest';
+    if (this.isMemberHost(state, member)) return 'Host';
+    if (this.isSignedInMember(member)) return 'Leader';
+    return '';
+  },
+
+  runnerBadgeHtml(state, member) {
+    const label = this.runnerBadge(state, member);
+    if (!label) return '';
+    return `<div class="name-badge name-badge-${label.toLowerCase()}">${label}</div>`;
+  },
+
+  canRemoveRosterMember(state, member) {
+    if (!this.canManageRosterMember(state, member)) return false;
+    if (this.isSelfMember(state, member)) return false;
+    return true;
+  },
+
+  myTeamName(state) {
+    const me = this.myMember(state);
+    if (!me) return 'Team 1';
+    const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me.team_id ?? me.teamId));
+    return (team && team.name) || 'Team 1';
+  },
+
+  addPlayerPanel(state) {
+    const add = this.canAddPlayer(state) ? this.addPlayerPanelInner(state) : '';
+    const roster = this.setupRosterHtml(state);
+    const spin = this.fillSpinButtonHtml(state);
+    if (!add && !roster && !spin) return '';
+    return `<div id="add-player-panel" class="add-player-panel">${roster}${spin}${add}</div>`;
+  },
+
+  stillLeaderLineHtml(state) {
+    if (!this._stillLeaderCue) return '';
+    if (this.isFollowAlong(state)) return '';
+    return '<p class="still-leader-line" id="still-leader-line">You are still Leader on this team.</p>';
+  },
+
+  fireStillLeaderToast() {
+    if (typeof _toast === 'function') _toast('You are still Leader on this team.', 'success');
+  },
+
+  maybeFireAddPlayerLeaderCue() {
+    if (!this._pendingAddPlayerLeaderCue) return;
+    if (!this.state || !this.canAddPlayer(this.state)) return;
+    const shown = document.getElementById('add-player-toggle') || document.getElementById('add-player-card');
+    if (!shown) return;
+    this._pendingAddPlayerLeaderCue = false;
+    if (this._stillLeaderToastAt && Date.now() - this._stillLeaderToastAt < 2500) return;
+    this.fireStillLeaderToast();
+    this._stillLeaderToastAt = Date.now();
+  },
+
+  fillSpinButtonHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    return `<div class="card fill-spin-launch" id="fill-spin-launch">
+      <div class="card-title">Fill a short team</div>
+      <p class="card-subtitle">Any incomplete team (under 4). Pick which team to fill, exclude names, spin, then Accept.</p>
+      <button type="button" class="btn btn-accent" id="fill-spin-open" onclick="scorecard.openFillSpin()">Fill a short team (spin)</button>
+    </div>`;
+  },
+
+  fillSpinApi() {
+    return (typeof window !== 'undefined' && window.teamFillSpin) || {};
+  },
+
+  fillSpinTeamId(state) {
+    const api = this.fillSpinApi();
+    const name = this.fillSpin && this.fillSpin.teamName;
+    const teams = (api.sortedTeams && api.sortedTeams(state)) || state.teams || [];
+    const picked = teams.find((t) => t.name === name);
+    if (picked) return picked.id;
+    const short = api.defaultShortTeam ? api.defaultShortTeam(state) : teams[0];
+    return short && short.id;
+  },
+
+  fillSpinItems(state) {
+    const api = this.fillSpinApi();
+    const teamId = this.fillSpinTeamId(state);
+    const members = (api.fillCandidates ? api.fillCandidates(state, teamId) : []).map((m) => ({
+      memberId: m.id,
+      name: m.display_name,
+      team: api.teamOfMember ? api.teamOfMember(state, m) : null,
+      extra: false,
+    }));
+    const extras = ((this.fillSpin && this.fillSpin.extraNames) || []).map((name) => ({
+      name,
+      extra: true,
+    }));
+    return members.concat(extras);
+  },
+
+  openFillSpin(opts) {
+    if (!this.isOrganizer(this.state)) return;
+    const api = this.fillSpinApi();
+    const short = api.defaultShortTeam ? api.defaultShortTeam(this.state) : ((this.state.teams || [])[0] || null);
+    this.fillSpin = {
+      teamName: short && short.name,
+      excluded: new Set(),
+      extraNames: [],
+      winner: null,
+      reelOrder: [],
+      spinning: false,
+      fromNineteenth: !!(opts && opts.fromNineteenth),
+    };
+    this.drawFillSpin();
+  },
+
+  closeFillSpin() {
+    this.fillSpin = null;
+    const el = document.getElementById('fill-spin-overlay');
+    if (el) el.remove();
+  },
+
+  drawFillSpin() {
+    if (!this.fillSpin) return;
+    const state = this.state;
+    const api = this.fillSpinApi();
+    const teams = (api.sortedTeams && api.sortedTeams(state)) || state.teams || [];
+    if (!this.fillSpin.teamName && teams[0]) this.fillSpin.teamName = teams[0].name;
+    const target = teams.find((t) => t.name === this.fillSpin.teamName) || teams[0];
+    const count = target && api.scoringCountOnTeam ? api.scoringCountOnTeam(state, target.id) : 0;
+    const need = Math.max(0, (api.TEAM_FILL_SIZE || 4) - count);
+    const shorts = api.shortTeams ? api.shortTeams(state) : [];
+    const shortIds = new Set(shorts.map((t) => Number(t.id)));
+    const shortLine = shorts.length
+      ? shorts.map((t) => {
+        const n = api.scoringCountOnTeam ? api.scoringCountOnTeam(state, t.id) : 0;
+        return `${api.teamDisplay ? api.teamDisplay(t) : t.name} needs ${(api.TEAM_FILL_SIZE || 4) - n}`;
+      }).join(' · ')
+      : 'No team is short of 4';
+    const items = this.fillSpinItems(state);
+    const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const reelNames = (this.fillSpin.reelOrder && this.fillSpin.reelOrder.length)
+      ? this.fillSpin.reelOrder
+      : included;
+    const winner = this.fillSpin.winner;
+    let host = document.getElementById('fill-spin-overlay');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'fill-spin-overlay';
+      document.body.appendChild(host);
+    }
+    host.className = 'fill-spin-overlay';
+    const teamOpts = teams.map((t) => {
+      const n = api.scoringCountOnTeam ? api.scoringCountOnTeam(state, t.id) : 0;
+      const sel = target && Number(t.id) === Number(target.id) ? ' selected' : '';
+      const mark = shortIds.has(Number(t.id)) ? ' · short' : '';
+      return `<option value="${_esc(t.name)}"${sel}>${_esc(api.teamDisplay ? api.teamDisplay(t) : t.name)} · ${n}${mark}</option>`;
+    }).join('');
+    const rows = items.map((item) => {
+      const key = api.candidateKey ? api.candidateKey(item) : item.name;
+      const on = !this.fillSpin.excluded.has(key);
+      const where = item.extra ? 'new name' : (item.team ? (api.teamDisplay ? api.teamDisplay(item.team) : item.team.name) : 'unassigned');
+      return `<label class="fill-spin-cand">
+        <input type="checkbox" data-fill-key="${_esc(key)}" ${on ? 'checked' : ''} ${this.fillSpin.spinning ? 'disabled' : ''}>
+        <span>${_esc(item.name)}</span>
+        <em>${_esc(where)}</em>
+      </label>`;
+    }).join('') || '<p class="fill-spin-empty">No leftover names. Add a name or pick another team.</p>';
+    const reel = (reelNames.length ? reelNames : [{ name: '—' }]).map((item) => {
+      const landed = !!(winner && !this.fillSpin.spinning && item && item.name === winner.name);
+      return `<div class="fill-spin-cell${landed ? ' is-landed' : ''}">${_esc(item.name)}</div>`;
+    }).join('');
+    host.innerHTML = `
+      <div class="fill-spin-sheet" role="dialog" aria-modal="true" aria-labelledby="fill-spin-title">
+        <h2 id="fill-spin-title">Fill a short team</h2>
+        <p class="fill-spin-sub">Pick any incomplete team. Unchecked names stay off the wheel. Each Spin shuffles every eligible name with equal chance. Accept adds them to the short team and leaves them on their original team. One score counts for both.</p>
+        <p class="fill-spin-need" id="fill-spin-short-list">${_esc(shortLine)}</p>
+        <label class="tiny-label">Target team
+          <select class="form-input" id="fill-spin-team" ${this.fillSpin.spinning ? 'disabled' : ''}>${teamOpts}</select>
+        </label>
+        <p class="fill-spin-need">${target ? _esc((api.teamDisplay && api.teamDisplay(target)) || target.name) : 'Team'} has ${count}${need ? ` · needs ${need} more for a 4-man side` : ' · pick who joins anyway'}</p>
+        <div class="fill-spin-cands">${rows}</div>
+        <form class="fill-spin-add" id="fill-spin-add">
+          <input class="form-input" id="fill-spin-name" placeholder="Add a name to the wheel" autocomplete="off" ${this.fillSpin.spinning ? 'disabled' : ''}>
+          <button class="btn btn-sm btn-secondary" type="submit" ${this.fillSpin.spinning ? 'disabled' : ''}>Add</button>
+        </form>
+        <div class="fill-spin-wheel" aria-live="polite">
+          <div class="fill-spin-window${this.fillSpin.spinning ? ' is-spinning' : ''}">
+            <div class="fill-spin-reel">${reel}${reel}</div>
+          </div>
+        </div>
+        ${winner ? `<p class="fill-spin-winner">Winner: <strong>${_esc(winner.name)}</strong></p>` : ''}
+        <div class="fill-spin-actions">
+          <button type="button" class="btn btn-accent" id="fill-spin-go" ${this.fillSpin.spinning || !included.length ? 'disabled' : ''}>${winner ? 'Spin again' : 'Spin'}</button>
+          <button type="button" class="btn btn-accent" id="fill-spin-accept" ${winner && !this.fillSpin.spinning ? '' : 'disabled'}>Accept</button>
+          ${this.fillSpin.fromNineteenth ? '<button type="button" class="btn btn-accent" id="fill-spin-skip-19th">Skip → 19th</button>' : ''}
+          <button type="button" class="btn btn-secondary" id="fill-spin-cancel">Cancel</button>
+        </div>
+      </div>`;
+    const teamEl = document.getElementById('fill-spin-team');
+    if (teamEl) {
+      teamEl.onchange = () => {
+        this.fillSpin.teamName = teamEl.value;
+        this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
+        this.drawFillSpin();
+      };
+    }
+    host.querySelectorAll('[data-fill-key]').forEach((box) => {
+      box.onchange = () => {
+        const key = box.getAttribute('data-fill-key');
+        if (box.checked) this.fillSpin.excluded.delete(key);
+        else this.fillSpin.excluded.add(key);
+        this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
+        this.drawFillSpin();
+      };
+    });
+    const addForm = document.getElementById('fill-spin-add');
+    if (addForm) {
+      addForm.onsubmit = (ev) => {
+        ev.preventDefault();
+        const raw = ((document.getElementById('fill-spin-name') || {}).value || '').trim();
+        if (!raw) return;
+        if (!this.fillSpin.extraNames.includes(raw)) this.fillSpin.extraNames.push(raw);
+        this.fillSpin.winner = null;
+        this.fillSpin.reelOrder = [];
+        this.drawFillSpin();
+      };
+    }
+    const go = document.getElementById('fill-spin-go');
+    if (go) go.onclick = () => this.runFillSpin();
+    const accept = document.getElementById('fill-spin-accept');
+    if (accept) accept.onclick = () => this.acceptFillSpin();
+    const skip = document.getElementById('fill-spin-skip-19th');
+    if (skip) skip.onclick = () => this.skipFillSpinToNineteenth();
+    const cancel = document.getElementById('fill-spin-cancel');
+    if (cancel) cancel.onclick = () => this.closeFillSpin();
+  },
+
+  skipFillSpinToNineteenth() {
+    this.closeFillSpin();
+    this.openNineteenth({ skipFill: true });
+  },
+
+  runFillSpin() {
+    if (!this.fillSpin || this.fillSpin.spinning) return;
+    const api = this.fillSpinApi();
+    const items = this.fillSpinItems(this.state);
+    const included = api.includedCandidates ? api.includedCandidates(items, this.fillSpin.excluded) : items;
+    const shuffled = api.shuffleFillPool ? api.shuffleFillPool(included) : included.slice();
+    const winner = shuffled[0] || (api.pickFillWinner ? api.pickFillWinner(items, this.fillSpin.excluded) : null);
+    if (!winner) {
+      _toast('Include at least one name', 'error');
+      return;
+    }
+    this.fillSpin.spinning = true;
+    this.fillSpin.winner = null;
+    this.fillSpin.reelOrder = shuffled;
+    this.drawFillSpin();
+    window.setTimeout(() => {
+      if (!this.fillSpin) return;
+      this.fillSpin.spinning = false;
+      this.fillSpin.winner = winner;
+      this.fillSpin.reelOrder = [winner];
+      this.drawFillSpin();
+    }, 1100);
+  },
+
+  applyAcceptedFill(next) {
+    this.state = next;
+    if (next && next.round && next.round.id) this.writeCache(next.round.id, next);
+  },
+
+  showFilledScorecard(next) {
+    this.screen = 'play';
+    const id = next && next.round && next.round.id;
+    if (id && typeof app !== 'undefined' && typeof app.navigate === 'function') {
+      const hash = '#round/' + id;
+      if (String(window.location.hash || '') !== hash) {
+        app.navigate(hash);
+        return;
+      }
+    }
+    this.draw(next);
+  },
+
+  async acceptFillSpin() {
+    if (!this.fillSpin || !this.fillSpin.winner || this.fillSpin.spinning) return;
+    const winner = this.fillSpin.winner;
+    const teamName = this.fillSpin.teamName;
+    try {
+      const body = { teamName };
+      if (winner.memberId != null) body.memberId = winner.memberId;
+      else body.name = winner.name;
+      const fromNineteenth = !!(this.fillSpin && this.fillSpin.fromNineteenth);
+      const next = await svcApi('post', `/api/rounds/${this.state.round.id}/team-fill`, body);
+      if (!next || !next.round || !next.members) throw new Error('Could not add the winner');
+      this.applyAcceptedFill(next);
+      this.closeFillSpin();
+      _toast((winner.name || 'Winner') + ' is on ' + teamName, 'success');
+      if (fromNineteenth) {
+        if (this.shouldOfferFillBeforeNineteenth(this.state)) {
+          this.openFillSpin({ fromNineteenth: true });
+        } else {
+          this.openNineteenth({ skipFill: true });
+        }
+        return;
+      }
+      this.showFilledScorecard(next);
+    } catch (err) {
+      _toast(err.message || 'Could not add the winner', 'error');
+    }
+  },
+
+  manageableMembers(state) {
+    const rows = ((state && state.members) || []).filter((m) => this.canManageRosterMember(state, m));
+    if (this.screen === 'settings' || this.canSeeOtherTeams(state)) return rows;
+    return rows.filter((m) => this.memberOnFocusedTeam(state, m));
+  },
+
+  setupRosterHtml(state) {
+    const rows = this.manageableMembers(state);
+    if (!rows.length) return '';
+    const guests = rows.filter((m) => this.isGuestMember(m));
+    return `<div class="setup-roster card" id="setup-roster">
+      <div class="card-title">Team roster</div>
+      <p class="card-subtitle">Set Index or Remove before scoring. Index only — 0.5 rounding, no course handicap. Remove asks for a confirm tap. Clearing guests leaves you on the team. ${this.isOrganizer(state) ? 'This team’s roster. Open another team to edit that roster.' : 'Own team only.'}</p>
+      <ul class="setup-roster-list">
+        ${rows.map((m) => {
+          const hcp = m.playing_handicap ?? m.handicap ?? '';
+          const remove = this.canRemoveRosterMember(state, m)
+            ? `<button type="button" class="btn btn-sm btn-secondary setup-roster-remove" onclick="scorecard.removeMember(${m.id})">Remove</button>`
+            : '';
+          return `<li class="setup-roster-row" data-roster-member="${m.id}">
+            <span class="setup-roster-name">${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</span>
+            <label class="setup-roster-index">
+              <span>Index</span>
+              <input class="form-input setup-roster-hcp-input" inputmode="decimal" autocomplete="off"
+                value="${_esc(hcp)}" data-roster-hcp="${m.id}"
+                aria-label="Handicap Index for ${_esc(m.display_name)}">
+            </label>
+            <button type="button" class="btn btn-sm btn-accent setup-roster-set" onclick="scorecard.saveRosterHcp(${m.id})">Set</button>
+            ${remove}
+          </li>`;
+        }).join('')}
+      </ul>
+      ${guests.length ? '<button type="button" class="btn btn-sm btn-secondary" id="clear-guests">Clear guests</button>' : ''}
+      ${this.stillLeaderLineHtml(state)}
+    </div>`;
+  },
+
+  addPlayerPanelInner(state) {
+    const count = (state.members || []).filter((m) => !this.isFollowAlongMember(m)).length;
+    if (count >= 2 && !this.addPlayerOpen) {
+      return `${this.stillLeaderLineHtml(state)}<button type="button" class="btn btn-accent add-player-toggle" id="add-player-toggle">Add player</button>`;
+    }
+    const organizer = this.isOrganizer(state);
+    const mine = this.myTeamName(state);
+    const focused = this.focusedTeam(state);
+    const focusedName = (focused && focused.name) || (organizer ? 'Team 1' : mine);
+    const draft = this.addPlayerDraft || { name: '', handicap: '', teamName: focusedName };
+    const teamName = organizer
+      ? (this.canSeeOtherTeams(state) ? (draft.teamName || focusedName) : focusedName)
+      : mine;
+    const subtitle = organizer
+      ? 'Name, HCP, then Team 1 / Team 2 / Team 3. Add team for Team 4+. Auto-balance is only a helper.'
+      : 'Name, HCP, then your team. Guests you add stay on your team.';
+    return `
+      <div class="card add-player-card" id="add-player-card">
+        <h3 class="card-title">Add a player ${this.infoTip('add-player', 'Name, handicap index, and an explicit team. Strokes follow the rounded index on the scorecard SI. Auto-balance is only a helper.')}</h3>
+        ${this.stillLeaderLineHtml(state)}
+        <p class="card-subtitle">${subtitle}</p>
+        <form class="add-guest-row add-player-form" id="live-add-player-form">
+          <label class="add-field">
+            <span>Name</span>
+            <input class="form-input" id="live-add-guest-name" name="name" placeholder="Name" autocomplete="name" required value="${_esc(draft.name || '')}">
+          </label>
+          <label class="add-field">
+            <span>HCP</span>
+            <input class="form-input" id="live-add-guest-hcp" name="handicap" placeholder="HCP" inputmode="decimal" value="${_esc(draft.handicap || '')}">
+          </label>
+          <div class="add-field add-team-field">
+            <span>Team</span>
+            ${this.addTeamChipsHtml(teamName)}
+          </div>
+          <button class="btn btn-accent" type="submit" id="live-add-player-save">Save player</button>
+        </form>
+        ${count >= 2 ? '<button type="button" class="btn btn-secondary" id="add-player-done">Done adding</button>' : ''}
+      </div>`;
+  },
+
+  addTeamNames(state) {
+    const names = new Set(['Team 1', 'Team 2', 'Team 3']);
+    for (const team of (state && state.teams) || []) {
+      if (team && team.name) names.add(team.name);
+    }
+    for (const extra of (this.addPlayerDraft && this.addPlayerDraft.extraTeams) || []) {
+      if (extra) names.add(extra);
+    }
+    return [...names].sort((a, b) => {
+      const na = Number((a.match(/(\d+)/) || [])[1] || 99);
+      const nb = Number((b.match(/(\d+)/) || [])[1] || 99);
+      return na - nb || a.localeCompare(b);
+    });
+  },
+
+  nextAddTeamName(state) {
+    const used = new Set(this.addTeamNames(state));
+    let n = 4;
+    while (used.has('Team ' + n) && n < 20) n += 1;
+    return 'Team ' + n;
+  },
+
+  addTeamChipsHtml(selected) {
+    const organizer = this.isOrganizer(this.state);
+    const mine = this.myTeamName(this.state);
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || mine;
+    const shared = this.canSeeOtherTeams(this.state);
+    const current = organizer
+      ? (shared ? (selected || focusedName) : focusedName)
+      : mine;
+    const names = organizer
+      ? (shared ? this.addTeamNames(this.state) : [focusedName])
+      : [mine];
+    return `<div class="add-team-picks" role="group" aria-label="Team">
+      ${names.map((n) => {
+        const team = ((this.state && this.state.teams) || []).find((t) => t.name === n);
+        const label = team ? this.teamDisplay(team) : n;
+        return `<button type="button" class="add-team-chip${current === n ? ' is-on' : ''}" data-team-name="${n}">${_esc(label)}</button>`;
+      }).join('')}
+      ${organizer && shared ? '<button type="button" class="add-team-more" id="add-extra-team">Add team</button>' : ''}
+      <input type="hidden" id="live-add-guest-team" value="${_esc(current)}">
+    </div>`;
+  },
+
+  addExtraTeam() {
+    if (!this.isOrganizer(this.state)) return;
+    this.snapshotAddPlayer();
+    const name = this.nextAddTeamName(this.state);
+    if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name, extraTeams: [] };
+    const extras = this.addPlayerDraft.extraTeams || [];
+    if (!extras.includes(name)) extras.push(name);
+    this.addPlayerDraft.extraTeams = extras;
+    this.addPlayerDraft.teamName = name;
+    this.mountAddPlayerPanel();
+  },
+
+  snapshotAddPlayer() {
+    const name = document.getElementById('live-add-guest-name');
+    const hcp = document.getElementById('live-add-guest-hcp');
+    const team = document.getElementById('live-add-guest-team');
+    if (!name && !hcp && !team) return;
+    const prev = this.addPlayerDraft || { name: '', handicap: '', teamName: 'Team 1' };
+    this.addPlayerDraft = {
+      name: name ? name.value : prev.name,
+      handicap: hcp ? hcp.value : prev.handicap,
+      teamName: team ? team.value : (prev.teamName || 'Team 1'),
+      extraTeams: prev.extraTeams || [],
+    };
+  },
+
+  shouldHoldAddPlayer() {
+    if (this.addPlayerSuppressUntil && Date.now() < this.addPlayerSuppressUntil) return true;
+    if (this.addPlayerOpen) return true;
+    const card = document.getElementById('add-player-card');
+    if (card && card.contains(document.activeElement)) return true;
+    const roster = document.getElementById('setup-roster');
+    if (roster && roster.contains(document.activeElement)) return true;
+    const name = document.getElementById('live-add-guest-name');
+    return !!(name && String(name.value || '').trim());
+  },
+
+  pickAddTeam(teamName) {
+    const focused = this.focusedTeam(this.state);
+    const focusedName = (focused && focused.name) || 'Team 1';
+    const name = this.isOrganizer(this.state)
+      ? (this.canSeeOtherTeams(this.state) ? (teamName || focusedName) : focusedName)
+      : this.myTeamName(this.state);
+    if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: name };
+    this.addPlayerDraft.teamName = name;
+    const hidden = document.getElementById('live-add-guest-team');
+    if (hidden) hidden.value = name;
+    document.querySelectorAll('#add-player-panel .add-team-chip').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.getAttribute('data-team-name') === name);
+    });
+  },
+
+  mountAddPlayerPanel() {
+    const mount = document.getElementById('add-player-panel');
+    if (!mount || !this.state) return;
+    mount.innerHTML = this.addPlayerPanelInner(this.state);
+    this.bindAddPlayerPanel();
+    this.syncAddPlayerChrome();
+  },
+
+  openAddPlayer(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    this.addPlayerOpen = true;
+    this.addPlayerSuppressUntil = Date.now() + 450;
+    if (!this.isOrganizer(this.state)) {
+      const mine = this.myTeamName(this.state);
+      if (!this.addPlayerDraft) this.addPlayerDraft = { name: '', handicap: '', teamName: mine };
+      else this.addPlayerDraft.teamName = mine;
+    }
+    this.mountAddPlayerPanel();
+    const name = document.getElementById('live-add-guest-name');
+    if (name) name.focus();
+  },
+
+  closeAddPlayer() {
+    this.snapshotAddPlayer();
+    this.addPlayerOpen = false;
+    this.addPlayerSuppressUntil = 0;
+    this.mountAddPlayerPanel();
+    this.syncAddPlayerChrome();
+    if (this.isHoleView()) this.renderHoleNav();
+  },
+
+  bindAddPlayerPanel() {
+    const toggle = document.getElementById('add-player-toggle');
+    if (toggle) {
+      toggle.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.openAddPlayer(e);
+      };
+    }
+    const form = document.getElementById('live-add-player-form');
+    if (form) {
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addGuestFromForm('live');
+      };
+    }
+    document.querySelectorAll('#add-player-panel .add-team-chip').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.pickAddTeam(btn.getAttribute('data-team-name'));
+      };
+    });
+    const addTeam = document.getElementById('add-extra-team');
+    if (addTeam) {
+      addTeam.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addExtraTeam();
+      };
+    }
+    const done = document.getElementById('add-player-done');
+    if (done) {
+      done.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeAddPlayer();
+      };
+    }
+    const clear = document.getElementById('clear-guests');
+    if (clear) {
+      clear.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.clearGuests();
+      };
+    }
+    ['live-add-guest-name', 'live-add-guest-hcp'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('input', () => this.snapshotAddPlayer());
+    });
+    this.bindAddPlayerGuards();
+  },
+
+  bindAddPlayerGuards() {
+    const appEl = document.getElementById('app');
+    if (!appEl || appEl.dataset.addGuard === '1') return;
+    appEl.dataset.addGuard = '1';
+    const block = (e) => {
+      if (!this.shouldHoldAddPlayer()) return;
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.closest('#add-player-panel, #add-player-card, .add-player-toggle')) return;
+      if (t.closest('.score-input, [data-score-cell], #hole-nav, .press-live')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    appEl.addEventListener('pointerdown', block, true);
+    appEl.addEventListener('click', block, true);
+  },
+
+  bindHoleBack() {
+    const back = document.getElementById('hole-back');
+    if (!back) return;
+    back.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof app !== 'undefined' && app.navigate) app.navigate('#dashboard');
+    };
+  },
+
+  syncAddPlayerChrome() {
+    const view = document.getElementById('hole-view');
+    const holding = this.shouldHoldAddPlayer();
+    if (view) view.classList.toggle('add-player-open', holding);
+    const nav = document.getElementById('hole-nav');
+    if (nav && this.isHoleView()) {
+      if (holding) nav.hidden = true;
+      else if (!this.stepperOpen) nav.hidden = false;
+    }
+  },
+
+  ensureVsPar() {
+    if (window.vsPar && typeof window.vsPar.formatVsPar === 'function') return;
+    if (document.querySelector('script[data-vspar-loader]')) return;
+    const script = document.createElement('script');
+    script.src = 'js/vsPar.js?v=' + this.ASSET_V;
+    script.dataset.vsparLoader = '1';
+    script.onload = () => {
+      if (this.state && this.isHoleView()) {
+        for (const team of this.state.teams || []) this.paintTeamVsPar(team);
+      }
+    };
+    document.head.appendChild(script);
+  },
+
+  ballsCountedText(state, memberId) {
+    let g = 0;
+    let n = 0;
+    for (const team of state.teams || []) {
+      for (const hole of team.holes || []) {
+        for (const ball of hole.balls || []) {
+          if (Number(ball.playerId) === Number(memberId)) {
+            if (ball.type === 'gross') g += 1;
+            else n += 1;
+          }
+        }
+      }
+    }
+    const bits = [];
+    if (g) bits.push(g + 'G');
+    if (n) bits.push(n + 'N');
+    return bits.join(' · ') || '—';
+  },
+
+  teamNameFor(state, member) {
+    const team = (state.teams || []).find((t) => t.id === member.team_id);
+    return team ? this.teamDisplay(team) : '—';
+  },
+
+  teamDisplay(team) {
+    if (!team) return '—';
+    const name = String(team.name || '').trim() || 'Team';
+    const nick = String(team.nickname || '').trim();
+    return nick ? `${name} · ${nick}` : name;
+  },
+
+  commitScore(memberId, holeNumber, gross) {
+    if (!this.state) return;
+    const member = (this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
+    this.showWriteError('');
+    this.applyLocalScore(memberId, holeNumber, gross);
+    const roundId = this.state.round.id;
+    svcApi('postScore', `/api/rounds/${roundId}/scores`, { memberId, holeNumber, gross })
+      .then((slim) => {
+        if (!slim || slim.ok !== true) {
+          this.showWriteError('Score did not save. Totals on the card may be incomplete.');
+          return;
+        }
+        this.applySlimPost(slim);
+        this.paintPlayerTotals(memberId);
+        this.paintRaceStrip();
+        this.paintEndTotals();
+        this.paintNinesBoard();
+        this.writeCache(roundId, this.state);
+      })
+      .catch((err) => {
+        if (err.offline) {
+          this.showWriteError('Saved on this phone. Will sync when you are back online.');
+        } else {
+          this.showWriteError('Score did not save: ' + err.message);
+        }
+      });
+  },
+
+  readGrossTyping(previousPending, fieldValue, insertedDigit) {
+    let raw = String(fieldValue == null ? '' : fieldValue).replace(/\D/g, '');
+    const prev = String(previousPending == null ? '' : previousPending).replace(/\D/g, '');
+    const ins = String(insertedDigit == null ? '' : insertedDigit).replace(/\D/g, '');
+    if (raw.length <= 1 && prev.length === 1 && ins.length === 1) {
+      const pair = (prev + ins).slice(0, 2);
+      const n = Number(pair);
+      if (n >= 10 && n <= 19) raw = pair;
+    }
+    raw = raw.slice(0, 2);
+    if (!raw) return { raw: '', value: null, complete: false };
+    const n = Number(raw);
+    if (!Number.isInteger(n)) return { raw: '', value: null, complete: false };
+    if (n > 19) return { raw: '', value: null, complete: false, overflow: true };
+    if (n >= 10 && n <= 19) return { raw, value: n, complete: true };
+    if (n >= 2 && n <= 9) return { raw, value: n, complete: true };
+    if (n === 1) return { raw: '1', value: 1, complete: false };
+    return { raw: '', value: null, complete: false };
+  },
+
+  onScoreInput(e) {
+    if (this.shouldHoldAddPlayer()) return;
+    const input = e.target;
+    const member = this.state && (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+    if (!this.canWriteMember(this.state, member)) {
+      input.value = input.dataset.committed || '';
+      return;
+    }
+    const inserted = (e.inputType === 'insertText' || e.inputType === 'insertCompositionText')
+      ? (e.data != null ? String(e.data) : '')
+      : '';
+    const parsed = this.readGrossTyping(input.dataset.pending, input.value, inserted);
+    input.dataset.pending = parsed.raw;
+    input.value = parsed.raw;
+    try { input.setSelectionRange(parsed.raw.length, parsed.raw.length); } catch { /* ignore */ }
+    if (this._oneTimer) {
+      clearTimeout(this._oneTimer);
+      this._oneTimer = null;
+    }
+    if (parsed.overflow) {
+      this.showWriteError('Gross must be 1–19.');
+      input.value = '';
+      input.dataset.pending = '';
+      return;
+    }
+    if (parsed.raw === '') return;
+    if (parsed.complete && parsed.value != null) {
+      this.commitTyped(input, parsed.value, true);
+      return;
+    }
+    if (parsed.value === 1) {
+      this._oneTimer = setTimeout(() => {
+        if (input.value === '1' && (input.dataset.pending || '1') === '1') {
+          this.commitTyped(input, 1, true);
+        }
+      }, this.ONE_DIGIT_MS);
+    }
+  },
+
+  onScoreBlur(e) {
+    if (this.shouldHoldAddPlayer()) return;
+    const input = e.target;
+    const locked = this.state && (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+    if (!this.canWriteMember(this.state, locked)) {
+      input.value = input.dataset.committed || '';
+      return;
+    }
+    if (this._oneTimer) {
+      clearTimeout(this._oneTimer);
+      this._oneTimer = null;
+    }
+    const parsed = this.readGrossTyping(input.dataset.pending, input.value, '');
+    input.dataset.pending = parsed.raw;
+    const raw = parsed.raw;
+    if (raw === '') {
+      const member = this.state && this.state.members.find((m) => m.id === Number(input.dataset.member));
+      const hs = member && (member.holes || []).find((h) => h.holeNumber === Number(input.dataset.hole));
+      if (hs && hs.gross != null) this.commitTyped(input, null, false);
+      return;
+    }
+    if (parsed.overflow) {
+      this.showWriteError('Gross must be 1–19.');
+      return;
+    }
+    const n = parsed.value;
+    if (Number.isInteger(n) && n >= 1 && n <= 19) {
+      if (!input.dataset.committed || Number(input.dataset.committed) !== n) {
+        this.commitTyped(input, n, false);
+      }
+    } else {
+      this.showWriteError('Gross must be 1–19.');
+    }
+  },
+
+  onScoreKey(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      this.onScoreBlur(e);
+      this.focusNextHole(Number(e.target.dataset.member), Number(e.target.dataset.hole));
+    }
+  },
+
+  commitTyped(input, gross, advance) {
+    const memberId = Number(input.dataset.member);
+    const holeNumber = Number(input.dataset.hole);
+    const member = this.state && (this.state.members || []).find((m) => Number(m.id) === memberId);
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
+    input.dataset.committed = gross == null ? '' : String(gross);
+    input.dataset.pending = gross == null ? '' : String(gross);
+    if (gross != null) input.value = String(gross);
+    this.focusCell = { memberId, holeNumber };
+    this.currentHole = holeNumber;
+    this.commitScore(memberId, holeNumber, gross);
+    this.paintCurrentHoleChrome();
+    if (advance) this.focusNextHole(memberId, holeNumber);
+  },
+
+  loadScoreAdvance() {
+    try {
+      const raw = localStorage.getItem(this.SCORE_ADVANCE_KEY);
+      if (raw === 'across' || raw === 'down') this.scoreAdvance = raw;
+    } catch { /* keep default */ }
+    return this.scoreAdvance === 'across' ? 'across' : 'down';
+  },
+
+  setScoreAdvance(mode) {
+    this.scoreAdvance = mode === 'across' ? 'across' : 'down';
+    try { localStorage.setItem(this.SCORE_ADVANCE_KEY, this.scoreAdvance); } catch { /* ignore */ }
+    document.querySelectorAll('[data-score-advance]').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.getAttribute('data-score-advance') === this.scoreAdvance);
+    });
+  },
+
+  advanceToggleHtml() {
+    const mode = this.loadScoreAdvance();
+    return `<div class="score-advance" id="score-advance" role="group" aria-label="Score entry direction">
+      <button type="button" class="score-advance-btn${mode === 'down' ? ' is-on' : ''}" data-score-advance="down" onclick="scorecard.setScoreAdvance('down')">Down</button>
+      <button type="button" class="score-advance-btn${mode === 'across' ? ' is-on' : ''}" data-score-advance="across" onclick="scorecard.setScoreAdvance('across')">Across</button>
+    </div>`;
+  },
+
+  writableAdvanceOrder() {
+    return (this.visibleHoleMembers(this.state) || [])
+      .filter((m) => this.canWriteMember(this.state, m))
+      .map((m) => m.id);
+  },
+
+  nextAdvanceTarget(memberId, holeNumber) {
+    const api = typeof window !== 'undefined' ? window.scoreAdvance : null;
+    const holes = (this.state && this.state.holes) || [];
+    if (this.loadScoreAdvance() === 'across') {
+      if (api && api.nextAcrossTarget) return api.nextAcrossTarget({ holes, memberId, holeNumber });
+      const idx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
+      const next = holes[idx + 1];
+      return next ? { memberId, holeNumber: next.hole_number } : null;
+    }
+    if (api && api.nextDownTarget) {
+      return api.nextDownTarget({
+        members: this.state && this.state.members,
+        me: this.myMember(this.state),
+        orderIds: this.writableAdvanceOrder(),
+        holes,
+        memberId,
+        holeNumber,
+        organizer: this.isOrganizer(this.state),
+      });
+    }
+    const roster = (this.visibleHoleMembers(this.state) || []).filter((m) => this.canWriteMember(this.state, m));
+    const idx = roster.findIndex((m) => Number(m.id) === Number(memberId));
+    if (roster[idx + 1]) return { memberId: roster[idx + 1].id, holeNumber };
+    const hIdx = holes.findIndex((h) => Number(h.hole_number) === Number(holeNumber));
+    const next = holes[hIdx + 1];
+    return next && roster[0] ? { memberId: roster[0].id, holeNumber: next.hole_number } : null;
+  },
+
+  focusNextHole(memberId, holeNumber) {
+    const target = this.nextAdvanceTarget(memberId, holeNumber);
+    if (!target) return;
+    this.focusCell = { memberId: target.memberId, holeNumber: target.holeNumber };
+    if (Number(target.holeNumber) !== Number(holeNumber)) {
+      this.currentHole = target.holeNumber;
+      if (this.isHoleView()) {
+        this.retargetHoleView(this.currentHole);
+        for (const member of this.state.members || []) this.paintScoreCell(member.id, this.currentHole);
+      }
+      this.paintCurrentHoleChrome();
+    }
+    const el = document.querySelector(`input.score-input[data-member="${target.memberId}"][data-hole="${target.holeNumber}"]`);
+    if (el && !el.disabled) {
+      try { el.focus({ preventScroll: true }); } catch { el.focus(); }
+      if (typeof el.select === 'function') el.select();
+      if (this.loadScoreAdvance() === 'across' && typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      } else if (typeof el.scrollIntoView === 'function') {
+        el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+  },
+
+  paintCurrentHoleChrome() {
+    const n = this.currentHole;
+    document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-current-hole', hn === n);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
+    });
+    const label = document.getElementById('hole-number');
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, n);
+    const nav = document.querySelector('.hole-nav-label');
+    if (nav) nav.textContent = 'Hole ' + n;
+    const meta = document.getElementById('hole-meta');
+    const hole = this.holeMeta(this.state, n);
+    if (meta) meta.textContent = `Par ${hole.par ?? '—'} · SI ${hole.stroke_index ?? '—'}`;
+    this.paintTeamHole(n);
+    this.paintBallLine(n);
+    this.paintRaceStrip();
+    this.paintPressChrome();
+    this.paintNinesBoard();
+    this.paintVegasBoard();
+    this.paintNineTotals();
+  },
+
+  paintNinesBoard() {
+    const el = document.getElementById('nines-board');
+    if (el && this.state) el.innerHTML = this.ninesBoardInner(this.state);
+    this.paintNinesTableRows();
+    this.paintNinesPlayerLines();
+  },
+
+  paintNinesTableRows() {
+    const table = document.getElementById('full-scorecard');
+    if (!table || !this.state) return;
+    const holes = this.state.holes || [];
+    const showOut = this.showOut(this.state);
+    const showIn = this.showIn(this.state);
+    (this.state.members || []).forEach((member) => {
+      const html = this.onePlayerNinesRows(this.state, member, holes, showOut, showIn);
+      const oldHole = table.querySelector(`tr[data-nines-hole-member="${member.id}"]`);
+      const oldRun = table.querySelector(`tr[data-nines-run-member="${member.id}"]`);
+      if (!html) {
+        if (oldHole) oldHole.remove();
+        if (oldRun) oldRun.remove();
+        return;
+      }
+      const tmp = document.createElement('tbody');
+      tmp.innerHTML = html;
+      const nextHole = tmp.querySelector('tr.nines-player-hole-row');
+      const nextRun = tmp.querySelector('tr.nines-player-run-row');
+      const player = table.querySelector(`tr.row-player[data-member-row="${member.id}"]`);
+      if (oldHole && nextHole) oldHole.replaceWith(nextHole);
+      else if (nextHole && player) player.insertAdjacentElement('afterend', nextHole);
+      else if (nextHole) (table.tBodies[0] || table).appendChild(nextHole);
+      const holeNow = table.querySelector(`tr[data-nines-hole-member="${member.id}"]`);
+      if (oldRun && nextRun) oldRun.replaceWith(nextRun);
+      else if (nextRun && holeNow) holeNow.insertAdjacentElement('afterend', nextRun);
+      else if (nextRun && player) player.insertAdjacentElement('afterend', nextRun);
+    });
+    table.querySelectorAll('tr.nines-hole-row:not(.nines-player-hole-row), tr.nines-run-row:not(.nines-player-run-row)').forEach((el) => el.remove());
+  },
+
+  paintNinesPlayerLines() {
+    if (!this.state) return;
+    const hn = this.currentHole || 1;
+    document.querySelectorAll('.hole-player-row').forEach((row) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(row.dataset.memberRow));
+      if (!member) return;
+      const html = this.playerNinesLineHtml(this.state, member, hn);
+      const line = row.querySelector('.nines-player-stack, .nines-player-line');
+      if (!html) {
+        if (line) line.remove();
+        return;
+      }
+      if (line) line.outerHTML = html;
+      else row.insertAdjacentHTML('beforeend', html);
+    });
+  },
+
+  paintVegasBoard() {
+    const el = document.getElementById('vegas-board');
+    if (el && this.state) el.innerHTML = this.vegasBoardInner(this.state);
+  },
+
+  bindScoreInputs() {
+    document.querySelectorAll('input.score-input[data-member]').forEach((input) => {
+      if (input.dataset.bound) return;
+      input.dataset.bound = '1';
+      input.addEventListener('input', (e) => this.onScoreInput(e));
+      input.addEventListener('blur', (e) => this.onScoreBlur(e));
+      input.addEventListener('keydown', (e) => this.onScoreKey(e));
+      input.addEventListener('focus', (e) => {
+        if (this.shouldHoldAddPlayer()) {
+          e.target.blur();
+          return;
+        }
+        this.focusCell = {
+          memberId: Number(e.target.dataset.member),
+          holeNumber: Number(e.target.dataset.hole),
+        };
+        this.currentHole = this.focusCell.holeNumber;
+        this.paintCurrentHoleChrome();
+      });
+      input.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.openEditorFromInput(input);
+      });
+    });
+  },
+
+  openEditorFromInput(input) {
+    const memberId = Number(input.dataset.member);
+    const holeNumber = Number(input.dataset.hole);
+    const member = this.state.members.find((m) => m.id === memberId);
+    if (!this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
+    const hole = this.holeMeta(this.state, holeNumber);
+    const hs = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    this.openEditor(this.state.round.id, memberId, holeNumber, member.display_name, hs?.gross ?? null, hole.par);
+  },
+
+  openStepperFallback() {
+    if (this.shouldHoldAddPlayer()) return;
+    if (!this.state) return;
+    const focus = this.focusCell || {
+      memberId: this.state.members[0] && this.state.members[0].id,
+      holeNumber: this.currentHole,
+    };
+    const member = this.state.members.find((m) => m.id === focus.memberId) || this.state.members[0];
+    if (!member) return;
+    if (!this.canWriteMember(this.state, member)) {
+      const writable = (this.state.members || []).find((m) => this.canWriteMember(this.state, m));
+      if (!writable) {
+        this.showWriteError('You can only enter scores for your own team.');
+        return;
+      }
+      this.openEditor(this.state.round.id, writable.id, focus.holeNumber || this.currentHole, writable.display_name,
+        ((writable.holes || []).find((h) => h.holeNumber === (focus.holeNumber || this.currentHole)) || {}).gross ?? null,
+        this.holeMeta(this.state, focus.holeNumber || this.currentHole).par);
+      return;
+    }
+    const hole = this.holeMeta(this.state, focus.holeNumber || this.currentHole);
+    const hs = (member.holes || []).find((h) => h.holeNumber === (focus.holeNumber || this.currentHole));
+    this.openEditor(this.state.round.id, member.id, focus.holeNumber || this.currentHole, member.display_name, hs?.gross ?? null, hole.par);
+  },
+
+  applySlimPost(slim) {
+    if (!slim || !this.state) return;
+    if (slim.updatedAt) this.state.updatedAt = slim.updatedAt;
+    for (const row of slim.teams || []) {
+      const team = (this.state.teams || []).find((t) => t.id === row.id);
+      if (!team) continue;
+      if (row.total != null) team.total = row.total;
+      if (row.hole && team.holes) {
+        const idx = team.holes.findIndex((h) => h.holeNumber === row.hole.holeNumber);
+        if (idx >= 0) team.holes[idx] = { ...team.holes[idx], ...row.hole };
+      }
+    }
+    if (slim.sideGames) this.state.sideGames = { ...(this.state.sideGames || {}), ...slim.sideGames };
+    this._ninesLedger = null;
+    this.paintTeamHole(slim.holeNumber);
+    this.paintRaceStrip();
+    this.paintBallLine(slim.holeNumber);
+    this.paintEndTotals();
+    this.paintPlayerTotals();
+    this.paintNinesBoard();
+    this.paintPressChrome();
+    this.ensureEighteenBanner();
+    if (this.missingNineCols()) {
+      this.draw(this.state);
+      return;
+    }
+    this.paintNineTotals();
+    this.lockScoreInputs();
+  },
+
+  ensureEighteenBanner() {
+    if (!this.state || this.screen !== 'play') return;
+    const existing = document.getElementById('eighteen-done');
+    if (!this.canOpenNineteenth(this.state)) {
+      if (existing) existing.remove();
+      return;
+    }
+    if (existing) return;
+    const html = this.eighteenBanner(this.state);
+    const join = document.querySelector('.live-join-bar');
+    if (join) {
+      join.insertAdjacentHTML('afterend', html);
+      return;
+    }
+    const bar = document.querySelector('.round-toolbar, .hole-toolbar');
+    if (bar) bar.insertAdjacentHTML('beforebegin', html);
+  },
+
+  isOrganizer(state) {
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (!user || !state || !state.round) return false;
+    const uid = Number(user.id);
+    if (Number(state.round.organizer_id ?? state.round.organizerId) === uid) return true;
+    return (state.members || []).some((m) => Number(m.player_id) === uid && m.role === 'organizer');
+  },
+
+  myMember(state) {
+    const user = typeof auth !== 'undefined' && auth.currentUser;
+    if (!user || !state) return null;
+    return (state.members || []).find((m) => Number(m.player_id) === Number(user.id)) || null;
+  },
+
+  sameTeamIds(a, b) {
+    if (a == null || b == null || a === '') return false;
+    return Number(a) === Number(b) && Number.isFinite(Number(a));
+  },
+
+  sameTeamOrEmpty(a, b) {
+    const empty = (x) => x == null || x === '';
+    if (empty(a) && empty(b)) return true;
+    return this.sameTeamIds(a, b);
+  },
+
+  memberTeamIds(member) {
+    const api = this.fillSpinApi();
+    if (api.memberTeamIds) return api.memberTeamIds(member);
+    const ids = [];
+    const home = member && (member.team_id ?? member.teamId);
+    const fill = member && (member.fill_team_id ?? member.fillTeamId);
+    if (home != null && home !== '' && Number.isFinite(Number(home))) ids.push(Number(home));
+    if (fill != null && fill !== '' && Number.isFinite(Number(fill)) && !this.sameTeamIds(fill, home)) {
+      ids.push(Number(fill));
+    }
+    return ids;
+  },
+
+  memberOnTeam(member, teamId) {
+    const api = this.fillSpinApi();
+    if (api.memberOnTeam) return api.memberOnTeam(member, teamId);
+    return this.memberTeamIds(member).some((id) => this.sameTeamIds(id, teamId));
+  },
+
+  shareAnyTeam(a, b) {
+    return this.memberTeamIds(a).some((id) => this.memberOnTeam(b, id));
+  },
+
+  isFollowAlongMember(member) {
+    const role = String((member && member.role) || '').toLowerCase();
+    return role === 'follower' || role === 'follow' || role === 'follow_along';
+  },
+
+  isFollowAlong(state) {
+    return this.isFollowAlongMember(this.myMember(state));
+  },
+
+  canWriteMember(state, member) {
+    if (!state || !member) return false;
+    if (this.isFollowAlong(state) || this.isFollowAlongMember(member)) return false;
+    if (this.isOrganizer(state)) return true;
+    const me = this.myMember(state);
+    return this.shareAnyTeam(me, member);
+  },
+
+  lockScoreInputs() {
+    if (!this.state) return;
+    document.querySelectorAll('input.score-input[data-member]').forEach((input) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(input.dataset.member));
+      const writable = this.canWriteMember(this.state, member);
+      input.disabled = !writable;
+      input.readOnly = !writable;
+      if (writable) input.removeAttribute('tabindex');
+      else input.tabIndex = -1;
+      const cell = input.closest('[data-score-cell]');
+      if (cell) cell.classList.toggle('is-readonly', !writable);
+      const row = input.closest('.hole-player-row, tr.row-player');
+      if (row) row.classList.toggle('is-readonly', !writable);
+    });
+  },
+
+  onAuthReady() {
+    if (!this.state || this.screen !== 'play') return;
+    this.lockScoreInputs();
+  },
+
+  focusHoleScore(memberId, holeNumber, ev) {
+    if (ev && ev.target && ev.target.classList && ev.target.classList.contains('score-input')) return;
+    const member = ((this.state && this.state.members) || []).find((m) => String(m.id) === String(memberId));
+    if (!this.canWriteMember(this.state, member)) return;
+    const input = document.querySelector(`input.score-input[data-member="${memberId}"][data-hole="${holeNumber}"]`);
+    if (input && !input.disabled && !input.readOnly) {
+      input.focus();
+      return;
+    }
+  },
+
+  scoreInputDisabled(state, member) {
+    return !this.canWriteMember(state, member);
+  },
+
+  wolfRoster(state) {
+    return (state.members || []).filter((m) => !this.isFollowAlongMember(m));
+  },
+
+  draw(state) {
+    if (!this._preserveAddDraft) this.snapshotAddPlayer();
+    this._preserveAddDraft = false;
+    if (this.screen === 'settings') {
+      this.drawSettings(state);
+      this.bindShowOtherBar();
+      this.bindInfoTips();
+      return;
+    }
+    if (this.screen === 'results') {
+      this.drawResults(state);
+      this.bindShowOtherBar();
+      this.bindInfoTips();
+      return;
+    }
+    if (this.screen === 'rules') {
+      this.drawGameRules(state);
+      this.bindInfoTips();
+      return;
+    }
+    if (this.screen === 'nineteenth') {
+      this.drawNineteenth(state);
+      this.bindInfoTips();
+      if (window.wyrmCoil && typeof window.wyrmCoil.onNineteenthDrawn === 'function') {
+        window.wyrmCoil.onNineteenthDrawn(state);
+      }
+      return;
+    }
+    if (this.isHoleView()) this.drawHoleView(state);
+    else this.drawFullCard(state);
+    this.bindOverlay();
+    this.bindScoreInputs();
+    this.bindAddPlayerPanel();
+    this.bindTeamPicker();
+    this.bindShowOtherBar();
+    this.bindHoleBack();
+    this.maybeFireAddPlayerLeaderCue();
+    this.syncAddPlayerChrome();
+    this.bindInfoTips();
+    this.lockScoreInputs();
+    svcApi('updateBadge');
+  },
+
+  joinCode(state) {
+    const r = (state || this.state || {}).round || {};
+    return String(r.joinCode || r.join_code || '').trim().toUpperCase();
+  },
+
+  joinCodeBarHtml(state) {
+    const code = this.joinCode(state);
+    if (!code) return '';
+    return `<div class="live-join-bar" id="live-join-bar">
+      <span class="live-join-label">Code</span>
+      <button type="button" class="live-join-code" id="live-join-code" onclick="scorecard.copyJoinCode()" aria-label="Copy join code ${_esc(code)}">${_esc(code)}</button>
+      <button type="button" class="btn btn-sm btn-accent live-join-copy" id="live-join-copy" onclick="scorecard.copyJoinCode()">Copy</button>
+    </div>`;
+  },
+
+  followAlongBarHtml(state) {
+    if (!this.isFollowAlong(state)) return '';
+    const me = this.myMember(state);
+    const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, me && (me.team_id ?? me.teamId)));
+    const label = (team && this.teamDisplay(team)) || this.myTeamName(state);
+    const prefOn = this.followShowOtherOn(state);
+    const hostAllows = this.isShowOtherScoresOn(state);
+    return `<div class="follow-along-bar" id="follow-along-bar">
+      <div class="follow-along-label">Following ${_esc(label)} · read-only</div>
+      <div class="follow-board" role="group" aria-label="Other teams on your board">
+        <button type="button" class="follow-board-btn${prefOn ? ' is-on' : ''}" data-follow-board="1" onclick="scorecard.setFollowShowOther(true)">See other teams</button>
+        <button type="button" class="follow-board-btn${!prefOn ? ' is-on' : ''}" data-follow-board="0" onclick="scorecard.setFollowShowOther(false)">Hide other teams</button>
+      </div>
+      ${hostAllows ? '' : '<p class="follow-board-note">Host is hiding other teams. See applies when they turn that on.</p>'}
+    </div>`;
+  },
+
+  async setFollowShowOther(on) {
+    if (!this.state || this.isOrganizer(this.state)) return;
+    const want = !!on;
+    const me = this.myMember(this.state);
+    if (me) {
+      me.followShowOther = want;
+      me.follow_show_other = want ? 1 : 0;
+    }
+    try {
+      localStorage.setItem('goldendale_follow_show_' + this.state.round.id, want ? '1' : '0');
+    } catch { /* ignore */ }
+    this.draw(this.state);
+    try {
+      const next = await svcApi('put', `/api/rounds/${this.state.round.id}/follow-view`, { showOtherScores: want });
+      this.state = next;
+      this.draw(this.state);
+    } catch (err) {
+      _toast(err.message || 'Could not save board view', 'error');
+    }
+  },
+
+  copyJoinCode() {
+    const code = this.joinCode(this.state);
+    if (!code) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code).then(() => _toast('Copied ' + code, 'success')).catch(() => {
+        _formPrompt({
+          title: 'Join code',
+          submitLabel: 'Done',
+          fields: [{ name: 'text', label: 'Code', value: code }],
+        });
+      });
+      return;
+    }
+    this.copy(code);
+  },
+
+  toolbar(state, extra) {
+    const r = state.round;
+    const organizer = this.isOrganizer(state);
+    return `
+      <div class="round-toolbar">
+        <a href="#dashboard" onclick="event.preventDefault();app.navigate('#dashboard')">&larr; Rounds</a>
+        <span class="badge badge-${_esc(r.status)}" data-status-badge>${_esc(r.status)}</span>
+        <span class="unsynced-inline" id="unsynced-inline"></span>
+        ${extra || ''}
+        <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.showScreen('results')">See dashboard</button>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('rules')">Game Rules</button>
+        ${organizer ? '<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
+      </div>`;
+  },
+
+  showScreen(screen) {
+    const id = this.state && this.state.round && this.state.round.id;
+    if (!id) return;
+    if (screen === 'settings' || screen === 'results' || screen === 'dashboard'
+      || screen === 'rules' || screen === 'nineteenth') {
+      const path = screen === 'results' ? 'dashboard' : screen;
+      app.navigate('#round/' + id + '/' + path);
+      return;
+    }
+    app.navigate('#round/' + id);
+  },
+
+  setCardMode(mode) {
+    this.cardMode = mode;
+    if (this.state) this.draw(this.state);
+  },
+
+  holeMeta(state, holeNumber) {
+    return (state.holes || []).find((h) => h.hole_number === holeNumber) || {};
+  },
+
+  ballFirstName(ball) {
+    return String((ball && ball.name) || '?').split(/\s+/)[0] || '?';
+  },
+
+  teamBallsText(team, holeNumber) {
+    const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
+    return ((hole && hole.balls) || []).map((ball) => {
+      const kind = ball.type === 'gross' ? 'G' : 'N';
+      return `${this.ballFirstName(ball)} ${ball.score}${kind}`;
+    }).join(' · ');
+  },
+
+  teamBallsHtml(team, holeNumber) {
+    return `<div class="team-balls" data-team-balls="${team.id}">${_esc(this.teamBallsText(team, holeNumber))}</div>`;
+  },
+
+  latestScoredHole(state) {
+    let latest = 0;
+    for (const team of state.teams || []) {
+      for (const hole of team.holes || []) {
+        if (hole.total != null && hole.holeNumber > latest) latest = hole.holeNumber;
+      }
+    }
+    if (latest) return latest;
+    for (const member of state.members || []) {
+      for (const hole of member.holes || []) {
+        if (hole.gross != null && hole.holeNumber > latest) latest = hole.holeNumber;
+      }
+    }
+    return latest || null;
+  },
+
+  ballLineText(state, holeNumber) {
+    return (state.teams || []).filter((team) => this.canSeeTeamScores(state, team)).map((team) => {
+      const balls = this.teamBallsText(team, holeNumber);
+      return balls ? `${this.teamDisplay(team)} ${balls}` : '';
+    }).filter(Boolean).join(' · ');
+  },
+
+  fmtTeam(value) {
+    if (value == null || value === '') return '—';
+    const vp = window.vsPar;
+    if (vp && typeof vp.formatVsPar === 'function') {
+      return vp.formatVsPar(value) || '—';
+    }
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n === 0) return 'E';
+    return n > 0 ? '+' + n : String(n);
+  },
+
+  teamRunThrough(team, holeNumber) {
+    const vp = window.vsPar;
+    const rows = (team && team.holes) || [];
+    if (vp && typeof vp.runningTeamVsPar === 'function') {
+      return vp.runningTeamVsPar(rows, holeNumber);
+    }
+    let sum = 0;
+    let any = false;
+    const through = Number(holeNumber);
+    for (const hole of rows) {
+      const n = Number(hole.holeNumber ?? hole.hole_number);
+      if (!Number.isFinite(n) || n > through) continue;
+      if (hole.total == null || hole.total === '') continue;
+      const v = Number(hole.total);
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      any = true;
+    }
+    return any ? sum : null;
+  },
+
+  teamRunText(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) return '—';
+    return this.fmtTeam(this.teamRunThrough(team, holeNumber));
+  },
+
+  teamHoleText(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) return '—';
+    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    return this.fmtTeam(hole && hole.total);
+  },
+
+  teamFormatLabel(round) {
+    if (!round || round.format === 'match_play') return 'Match play';
+    if (round.format === 'standard' || round.format === 'standard_scorecard') return 'Standard scorecard';
+    const tf = window.teamFormats;
+    if (tf && typeof tf.formatLabel === 'function') {
+      return tf.formatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
+    }
+    return `${round.gross_balls ?? 1} gross + ${round.net_balls ?? 2} net vs par`;
+  },
+
+  shortRaceTitle(round) {
+    const tf = window.teamFormats;
+    if (tf && typeof tf.shortFormatLabel === 'function') {
+      return tf.shortFormatLabel(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
+    }
+    return '1G+2N';
+  },
+
+  liveGameTitle(state) {
+    if (this.isStandardScorecard(state)) return 'Standard scorecard';
+    const bits = [];
+    if (this.isTeamRaceOn(state) && state && state.round && state.round.format !== 'match_play') {
+      bits.push('Sunday game · ' + this.shortRaceTitle(state.round));
+    }
+    const cfg = this.sideConfig(state);
+    const labels = [
+      ['vegas', 'Vegas'],
+      ['wolf', 'Wolf'],
+      ['nassau', 'Nassau'],
+      ['nines', 'Nines'],
+      ['skins', 'Skins'],
+    ];
+    for (const [key, label] of labels) {
+      if (cfg[key] && this.flagOn(cfg[key].on)) bits.push(label);
+    }
+    return bits.join(' + ') || 'Scorecard';
+  },
+
+  liveGameTitleHtml(state) {
+    return `<div class="live-game-title" id="live-game-title">${_esc(this.liveGameTitle(state))}</div>`;
+  },
+
+  teamFormatRule(round) {
+    const tf = window.teamFormats;
+    if (tf && typeof tf.formatRuleText === 'function') {
+      return tf.formatRuleText(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls);
+    }
+    return '';
+  },
+
+  currentGameKey(round) {
+    const tf = window.teamFormats;
+    if (tf && typeof tf.gameFromBalls === 'function') {
+      return tf.gameFromBalls(round.gross_balls ?? round.grossBalls, round.net_balls ?? round.netBalls).key;
+    }
+    return '1G2N';
+  },
+
+  gameOptionsHtml(selectedKey) {
+    const tf = window.teamFormats;
+    const games = (tf && tf.TEAM_GAMES) || [];
+    return games.map((game) =>
+      `<option value="${game.key}" ${game.key === selectedKey ? 'selected' : ''}>${_esc(game.label)}</option>`
+    ).join('');
+  },
+
+  changeGame(key) {
+    const tf = window.teamFormats;
+    const game = tf && typeof tf.gameFromKey === 'function' ? tf.gameFromKey(key) : { grossBalls: 1, netBalls: 2 };
+    this.updateSettings({ grossBalls: game.grossBalls, netBalls: game.netBalls });
+  },
+
+  changeRoundFormat(format) {
+    const body = { format };
+    if (format === 'standard' || format === 'standard_scorecard') {
+      body.teamRace = false;
+      body.sideGames = (window.sideGames && window.sideGames.quietSideGames)
+        ? window.sideGames.quietSideGames()
+        : { skins: { on: false }, vegas: { on: false }, nassau: { on: false }, wolf: { on: false }, nines: { on: false }, birdieSlots: { on: false } };
+    } else if (format === 'team_net') {
+      body.teamRace = true;
+    }
+    this.updateSettings(body);
+  },
+
+  sideConfig(state) {
+    const fromSide = state && state.sideGames && state.sideGames.config;
+    if (fromSide && typeof fromSide === 'object' && !Array.isArray(fromSide) && (fromSide.nassau || fromSide.vegas || fromSide.wolf || fromSide.nines || fromSide.skins)) {
+      return fromSide;
+    }
+    const raw = state && state.round && (state.round.sideGames || state.round.side_games);
+    if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch { /* ignore */ }
+    }
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw;
+    return fromSide || {};
+  },
+
+  pressableGames(state) {
+    if (this.isStandardScorecard(state)) return [];
+    const cfg = this.sideConfig(state);
+    const defs = (window.sideGames && window.sideGames.SIDE_GAMES) || [];
+    return defs.filter((g) => g.pressable && cfg[g.key] && this.flagOn(cfg[g.key].on));
+  },
+
+  async confirmPress() {
+    if (!this.state) return;
+    const games = this.pressableGames(this.state).filter((g) => g.key !== 'vegas');
+    if (!games.length) {
+      _toast('Use the Vegas Press control to add a running game. Turn on Nassau, Wolf, or Nines to press those.', 'error');
+      return;
+    }
+    const hole = this.currentHole || 1;
+    const fields = [
+      {
+        name: 'gameKey',
+        label: 'Game',
+        type: 'select',
+        options: games.map((g) => ({ value: g.key, label: g.label })),
+        value: games[0].key,
+      },
+      { name: 'dollars', label: '$ (blank = same as parent)', value: '' },
+    ];
+    if (games.some((g) => g.key === 'nassau')) {
+      fields.push({
+        name: 'segment',
+        label: 'Nassau segment (ignored for other games)',
+        type: 'select',
+        options: [
+          ...(hole <= 9 ? [{ value: 'front', label: 'Front 1–9 (dies at 9)' }] : []),
+          ...(hole >= 10 ? [{ value: 'back', label: 'Back 10–18 (dies at 18)' }] : []),
+          { value: 'overall', label: 'Overall tap→18' },
+        ],
+        value: hole <= 9 ? 'front' : 'back',
+      });
+    }
+    const values = await _formPrompt({ title: 'Press from hole ' + hole, submitLabel: 'Press', fields });
+    if (!values) return;
+    const gameKey = values.gameKey || games[0].key;
+    const segment = gameKey === 'nassau' ? (values.segment || (hole <= 9 ? 'front' : 'back')) : null;
+    const endHole = gameKey === 'nassau' && segment === 'front' ? 9 : 18;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/presses`, {
+        gameKey,
+        segment,
+        startHole: hole,
+        endHole,
+        dollars: values.dollars === '' ? null : Number(values.dollars),
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  async setWolfPick(holeNumber, payload) {
+    if (!this.state) return;
+    const wolf = this.wolfForHole(this.state, holeNumber);
+    if (!wolf) return;
+    const body = (payload && typeof payload === 'object')
+      ? payload
+      : { partnerId: payload, lone: arguments[2] };
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/wolf/${holeNumber}`, {
+        wolfMemberId: wolf.id,
+        partnerMemberId: body.lone || body.blind ? null : body.partnerId,
+        lone: !!(body.lone || body.blind),
+        blind: !!body.blind,
+        passedIds: body.passedIds || [],
+        locked: body.locked !== false && !!(body.lone || body.blind || body.partnerId),
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) {
+      _toast(err.message, 'error');
+    }
+  },
+
+  wolfForHole(state, holeNumber) {
+    const members = [...(state.members || [])].sort((a, b) => a.id - b.id);
+    if (!members.length) return null;
+    return members[(Math.max(1, Number(holeNumber)) - 1) % members.length];
+  },
+
+  wolfPickFor(state, holeNumber) {
+    return (state.wolfPicks || []).find((p) => Number(p.hole_number || p.holeNumber) === Number(holeNumber)) || null;
+  },
+
+  wolfPassedIds(pick) {
+    const raw = pick && (pick.passed_ids || pick.passedIds);
+    if (Array.isArray(raw)) return raw.map(Number);
+    if (typeof raw === 'string' && raw.trim()) {
+      try { return JSON.parse(raw).map(Number); } catch { return []; }
+    }
+    return [];
+  },
+
+  wolfFlag(value) {
+    return value === true || value === 1 || value === '1' || value === 'true';
+  },
+
+  wolfLocked(pick) {
+    if (!pick) return false;
+    if (this.wolfFlag(pick.locked)) return true;
+    if (this.wolfFlag(pick.blind) || this.wolfFlag(pick.lone) || this.wolfFlag(pick.lone_wolf)) return true;
+    if (pick.partner_member_id || pick.partnerMemberId) return true;
+    return false;
+  },
+
+  wolfHoldsScoring(state, holeNumber) {
+    if (!this.isWolfOn(state)) return false;
+    return !this.wolfLocked(this.wolfPickFor(state, holeNumber));
+  },
+
+  wolfOthers(state, holeNumber) {
+    const wolf = this.wolfForHole(state, holeNumber);
+    return [...(state.members || [])]
+      .filter((m) => wolf && m.id !== wolf.id)
+      .sort((a, b) => a.id - b.id);
+  },
+
+  wolfSides(state, holeNumber) {
+    const wolf = this.wolfForHole(state, holeNumber);
+    const pick = this.wolfPickFor(state, holeNumber);
+    if (!wolf || !this.wolfLocked(pick)) return null;
+    const partnerId = pick && (pick.partner_member_id || pick.partnerMemberId);
+    const wolfSide = [wolf].concat((state.members || []).filter((m) => Number(m.id) === Number(partnerId)));
+    const field = (state.members || []).filter((m) => m.id !== wolf.id && Number(m.id) !== Number(partnerId));
+    const blind = !!(pick && pick.blind);
+    const lone = !partnerId;
+    return { wolf, partnerId, wolfSide, field, blind, lone };
+  },
+
+  wolfPass(holeNumber, memberId) {
+    const pick = this.wolfPickFor(this.state, holeNumber);
+    const passed = this.wolfPassedIds(pick);
+    if (!passed.includes(Number(memberId))) passed.push(Number(memberId));
+    this.setWolfPick(holeNumber, { passedIds: passed, locked: false });
+  },
+
+  wolfPointValues(state) {
+    const cfg = this.sideConfig(state).wolf || {};
+    const n = (v, fallback) => {
+      const x = Number(v);
+      return Number.isFinite(x) && x > 0 ? x : fallback;
+    };
+    return {
+      partnered: n(cfg.partnered, 1),
+      lone: n(cfg.lone, 2),
+      blind: n(cfg.blind, 4),
+    };
+  },
+
+  wolfBarHtml(state, holeNumber) {
+    const cfg = this.sideConfig(state);
+    if (!cfg.wolf || !cfg.wolf.on) return '';
+    const wolf = this.wolfForHole(state, holeNumber);
+    if (!wolf) return '';
+    const pick = this.wolfPickFor(state, holeNumber);
+    const sides = this.wolfSides(state, holeNumber);
+    if (sides) {
+      const wolfNames = sides.wolfSide.map((m) => m.display_name).join(' + ');
+      const fieldNames = sides.field.map((m) => m.display_name).join(' / ') || 'field';
+      const vals = this.wolfPointValues(state);
+      const kind = sides.blind
+        ? `Blind Lone Wolf ±${vals.blind}`
+        : (sides.lone ? `Lone Wolf ±${vals.lone}` : `Wolf + partner ±${vals.partnered}`);
+      return `<div class="wolf-bar" id="wolf-bar">
+        <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
+        <div class="wolf-sides">${_esc(kind)} · ${_esc(wolfNames)} vs ${_esc(fieldNames)}</div>
+      </div>`;
+    }
+    const passed = this.wolfPassedIds(pick);
+    const others = this.wolfOthers(state, holeNumber);
+    const current = others.find((m) => !passed.includes(Number(m.id)));
+    const canBlind = passed.length === 0;
+    const rows = others.map((m) => {
+      if (passed.includes(Number(m.id))) {
+        return `<div class="wolf-tee is-passed">Passed ${_esc(m.display_name)}</div>`;
+      }
+      if (current && current.id === m.id) {
+        return `<div class="wolf-tee is-up">${_esc(m.display_name)} teed
+          <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { partnerId: ${m.id}, locked: true })">Pick partner</button>
+          <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.wolfPass(${holeNumber}, ${m.id})">Pass</button>
+        </div>`;
+      }
+      return `<div class="wolf-tee">Waiting to tee: ${_esc(m.display_name)}</div>`;
+    }).join('');
+    return `<div class="wolf-bar" id="wolf-bar">
+      <div class="wolf-badge">Wolf: ${_esc(wolf.display_name)}</div>
+      <p class="card-subtitle">After each tee, pick that player or pass. Lock Wolf sides before scoring this hole for points — you can still enter gross now. Next hole is a new Wolf.</p>
+      ${canBlind ? `<button type="button" class="btn btn-sm btn-accent" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, blind: true, locked: true })">Blind Lone Wolf ±${this.wolfPointValues(state).blind}</button>` : ''}
+      ${rows}
+      <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.setWolfPick(${holeNumber}, { lone: true, locked: true })">Lone Wolf ±${this.wolfPointValues(state).lone}</button>
+    </div>`;
+  },
+
+  sideGamesFieldsInner(cfg) {
+    cfg = cfg || {};
+    const skinsOn = !!(cfg.skins && cfg.skins.on);
+    const vegasOn = !!(cfg.vegas && cfg.vegas.on);
+    const nassauOn = !!(cfg.nassau && cfg.nassau.on);
+    const wolfOn = !!(cfg.wolf && cfg.wolf.on);
+    const ninesOn = !!(cfg.nines && cfg.nines.on);
+    return `
+      <p class="card-subtitle">Scores enter once. Every game here reads the same hole scores. Skins default off. ${this.infoTip('side-games', 'Turn on any mix. Sunday game is a separate setup toggle. Side games can run alone.')}</p>
+      <label class="check-row"><input type="checkbox" name="skinsOn" ${skinsOn ? 'checked' : ''}> Skins</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('skins')) || '')}</p>
+      <div class="form-group"><label>Skins pot</label><input class="form-input" name="skinsPot" type="number" min="0" step="1" value="${cfg.skins && cfg.skins.pot != null ? cfg.skins.pot : 20}"></div>
+      <label class="check-row"><input type="checkbox" name="vegasOn" ${vegasOn ? 'checked' : ''}> Vegas</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('vegas')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Vegas scoring</label><select class="form-input" name="vegasScoring"><option value="gross" ${cfg.vegas && cfg.vegas.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.vegas && cfg.vegas.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="vegasDollars" type="number" min="0" step="0.5" value="${cfg.vegas && cfg.vegas.dollarsPerPoint != null ? cfg.vegas.dollarsPerPoint : 1}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="nassauOn" ${nassauOn ? 'checked' : ''}> Nassau (NASA)</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nassau')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Nassau scoring</label><select class="form-input" name="nassauScoring"><option value="net" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nassau && cfg.nassau.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
+        <div class="form-group"><label>Front $</label><input class="form-input" name="nassauFront" type="number" min="0" value="${cfg.nassau && cfg.nassau.front != null ? cfg.nassau.front : 2}"></div>
+        <div class="form-group"><label>Back $</label><input class="form-input" name="nassauBack" type="number" min="0" value="${cfg.nassau && cfg.nassau.back != null ? cfg.nassau.back : 2}"></div>
+        <div class="form-group"><label>Overall $</label><input class="form-input" name="nassauOverall" type="number" min="0" value="${cfg.nassau && cfg.nassau.overall != null ? cfg.nassau.overall : 2}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="wolfOn" ${wolfOn ? 'checked' : ''}> Wolf</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('wolf')) || '')}</p>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Wolf scoring</label><select class="form-input" name="wolfScoring"><option value="gross" ${cfg.wolf && cfg.wolf.scoring === 'net' ? '' : 'selected'}>Gross</option><option value="net" ${cfg.wolf && cfg.wolf.scoring === 'net' ? 'selected' : ''}>Net</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="wolfDollars" type="number" min="0" step="0.5" value="${cfg.wolf && cfg.wolf.dollarsPerPoint != null ? cfg.wolf.dollarsPerPoint : 1}"></div>
+        <div class="form-group"><label>Partnered ±</label><input class="form-input" name="wolfPartnered" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.partnered != null ? cfg.wolf.partnered : 1}"></div>
+        <div class="form-group"><label>Lone ±</label><input class="form-input" name="wolfLone" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.lone != null ? cfg.wolf.lone : 2}"></div>
+        <div class="form-group"><label>Blind Lone ±</label><input class="form-input" name="wolfBlind" type="number" min="1" step="1" value="${cfg.wolf && cfg.wolf.blind != null ? cfg.wolf.blind : 4}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="ninesOn" ${ninesOn ? 'checked' : ''}> Nines (3 players)</label>
+      <p class="game-rule">${_esc((window.sideGames && window.sideGames.sideGameRule('nines')) || '')}</p>
+      <label class="check-row"><input type="checkbox" name="ninesBlitz" ${!cfg.nines || cfg.nines.blitz !== false ? 'checked' : ''}> Blitz 9-0-0</label>
+      <div class="grid grid-2">
+        <div class="form-group"><label>Nines scoring</label><select class="form-input" name="ninesScoring"><option value="net" ${cfg.nines && cfg.nines.scoring === 'gross' ? '' : 'selected'}>Net</option><option value="gross" ${cfg.nines && cfg.nines.scoring === 'gross' ? 'selected' : ''}>Gross</option></select></div>
+        <div class="form-group"><label>$ / point</label><input class="form-input" name="ninesDollars" type="number" min="0" step="0.5" value="${cfg.nines && cfg.nines.dollarsPerPoint != null ? cfg.nines.dollarsPerPoint : 1}"></div>
+      </div>
+      <label class="check-row"><input type="checkbox" name="birdieSlotsOn" ${!cfg.birdieSlots || cfg.birdieSlots.on !== false ? 'checked' : ''}> Birdie dragon slots ${this.infoTip('slots', 'Fun layer, not team money. Each player’s spins = their own gross + net better than par. Points stay on that player (one player 29 · another 50). 19th hole shows the fun board. Longer reel before it settles.')}</label>
+      <label class="check-row"><input type="checkbox" name="kpsOn" ${cfg.kps && cfg.kps.on ? 'checked' : ''}> Closest-to-the-pin ${this.infoTip('kps', 'Optional. Default OFF. Pick KP holes, record a winner, see them on the 19th hole.')}</label>
+      <div class="form-group"><label>KP holes (comma, e.g. 3, 8, 12, 16)</label>
+        <input class="form-input" name="kpsHoles" value="${cfg.kps && cfg.kps.holes && cfg.kps.holes.length ? cfg.kps.holes.join(', ') : ''}">
+      </div>`;
+  },
+
+  sideGamesSettingsHtml(state) {
+    if (this.isStandardScorecard(state)) return '';
+    const cfg = this.sideConfig(state);
+    return `<form class="card" id="side-games-settings" onsubmit="event.preventDefault();scorecard.saveSideGames()">
+      <div class="card-title">Side games</div>
+      ${this.sideGamesFieldsInner(cfg)}
+      <button class="btn btn-secondary btn-sm" type="submit">Save side games</button>
+    </form>`;
+  },
+
+  saveSideGames() {
+    const form = document.getElementById('side-games-settings');
+    if (!form) return;
+    const fd = new FormData(form);
+    this.updateSettings({ sideGames: this.readSideGamesForm(fd) });
+  },
+
+  readSideGamesForm(fd) {
+    return {
+      skins: { on: fd.get('skinsOn') === 'on', pot: Number(fd.get('skinsPot') || 0) },
+      vegas: { on: fd.get('vegasOn') === 'on', scoring: fd.get('vegasScoring') || 'gross', dollarsPerPoint: Number(fd.get('vegasDollars') || 1) },
+      nassau: {
+        on: fd.get('nassauOn') === 'on',
+        scoring: fd.get('nassauScoring') || 'net',
+        front: Number(fd.get('nassauFront') || 0),
+        back: Number(fd.get('nassauBack') || 0),
+        overall: Number(fd.get('nassauOverall') || 0),
+      },
+      wolf: {
+        on: fd.get('wolfOn') === 'on',
+        scoring: fd.get('wolfScoring') || 'gross',
+        dollarsPerPoint: Number(fd.get('wolfDollars') || 1),
+        partnered: Number(fd.get('wolfPartnered') || 1),
+        lone: Number(fd.get('wolfLone') || 2),
+        blind: Number(fd.get('wolfBlind') || 4),
+      },
+      nines: {
+        on: fd.get('ninesOn') === 'on',
+        scoring: fd.get('ninesScoring') || 'net',
+        blitz: fd.get('ninesBlitz') === 'on',
+        dollarsPerPoint: Number(fd.get('ninesDollars') || 1),
+      },
+      birdieSlots: { on: fd.get('birdieSlotsOn') === 'on' },
+      kps: {
+        on: fd.get('kpsOn') === 'on',
+        holes: String(fd.get('kpsHoles') || '').split(/[\s,]+/).map(Number).filter((n) => n >= 1 && n <= 18),
+        winners: (this.state && this.sideConfig(this.state).kps && this.sideConfig(this.state).kps.winners) || {},
+      },
+    };
+  },
+
+  sideGamesResultsHtml(state) {
+    const side = state.sideGames;
+    if (!side || !side.games) return '';
+    const blocks = [];
+    const g = side.games;
+    const raceTeams = (state.teams || []).map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ');
+    if (this.isTeamRaceOn(state) && raceTeams) {
+      blocks.push(`<div class="card"><h3 class="card-title">Sunday game</h3><p>${_esc(raceTeams)}</p></div>`);
+    }
+    if (g.skins) {
+      const s = g.skins;
+      const gross = (s.grossWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
+      const net = (s.netWinners || []).map((w) => `${w.name} ${w.count}`).join(', ') || 'none';
+      blocks.push(`<div class="card"><h3 class="card-title">Skins</h3>
+        <p>Pot ${s.pot} · ${s.skinCount} skins · ${s.valuePerSkin ? s.valuePerSkin.toFixed(2) : '0'} each</p>
+        <p>Gross skins: ${_esc(gross)}</p>
+        <p>Net skins: ${_esc(net)}</p></div>`);
+    }
+    if (g.vegas && g.vegas.teamA) {
+      blocks.push(`<div class="card"><h3 class="card-title">Vegas</h3>
+        <p>${_esc(g.vegas.teamA.name)} ${this.fmtVegasPts(g.vegas.teamA.points)} · ${_esc(g.vegas.teamB.name)} ${this.fmtVegasPts(g.vegas.teamB.points)} <span class="tiny-label">zero-sum</span></p></div>`);
+    }
+    if (g.nassau && g.nassau.front) {
+      const presses = g.nassauPresses || [];
+      const pressBits = presses.map((p, i) =>
+        `Press ${i + 1} ${this.nassauSegLabel(p.segment)} H${p.startHole}–${p.endHole}: ${p.status}`
+      ).join(' · ');
+      blocks.push(`<div class="card"><h3 class="card-title">Nassau (NASA)</h3>
+        <p>Original · Front ${ _esc(g.nassau.front.status) } · Back ${ _esc(g.nassau.back.status) } · 18 ${ _esc(g.nassau.overall.status) }</p>
+        ${pressBits ? `<p>${_esc(pressBits)}</p>` : ''}
+        <p class="card-subtitle">Three bets. Presses die at the end of that segment. Original stays live.</p></div>`);
+    }
+    if (g.wolf) {
+      const pts = (g.wolf.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
+      blocks.push(`<div class="card"><h3 class="card-title">Wolf</h3><p>${_esc(pts || 'No holes decided')}</p></div>`);
+    }
+    if (g.nines) {
+      const pts = (g.nines.points || []).map((p) => `${p.name} ${p.points}`).join(' · ');
+      blocks.push(`<div class="card"><h3 class="card-title">Nines</h3><p>${_esc(g.nines.incomplete ? 'Need exactly 3 players' : pts)}</p></div>`);
+    }
+    if (g.birdieSlots && g.birdieSlots.on) {
+      const board = g.birdieSlots.funBoard || (g.birdieSlots.leader ? g.birdieSlots.leader.name + ' ' + g.birdieSlots.leader.points : '');
+      blocks.push(`<div class="card"><h3 class="card-title">Wyrm Coil fun board</h3><p>${_esc(board || 'No birdies yet')} · fun only, not team money</p></div>`);
+    }
+    if (side.stripText) {
+      blocks.push(`<div class="card"><h3 class="card-title">All games</h3><p>${_esc(side.stripText)}</p></div>`);
+    }
+    if (!blocks.length) return '';
+    return `<h3 class="section-title">Side games</h3>${blocks.join('')}`;
+  },
+
+  raceStripText(state) {
+    if (this.isStandardScorecard(state)) return '';
+    const extra = state.sideGames && state.sideGames.stripText;
+    const vegasBit = this.isVegasOn(state) ? this.vegasStripText(state) : '';
+    const extraSansVegas = extra
+      ? extra.split(' · ').filter((bit) => !/^Vegas\b/.test(bit)).join(' · ')
+      : '';
+    if (!this.isTeamRaceOn(state)) {
+      return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    }
+    const all = state.teams || [];
+    const teams = this.screen === 'play'
+      ? all.filter((t) => this.canSeeTeamScores(state, t))
+      : all;
+    if (!teams.length) return [vegasBit, extraSansVegas].filter(Boolean).join(' · ');
+    const completed = state.round.status === 'completed';
+    const leader = state.winner || teams.find((t) => t.total != null) || teams[0];
+    if (completed && leader) {
+      const win = `Sunday game ${this.teamDisplay(leader)} wins · ${this.fmtTeam(leader.total)}`;
+      return [vegasBit, win, extraSansVegas].filter(Boolean).join(' · ');
+    }
+    const teamBits = teams.map((t) => {
+      const seen = this.canSeeTeamScores(state, t);
+      let bit = `${this.teamDisplay(t)} ${!seen || t.total == null ? '—' : this.fmtTeam(t.total)}`;
+      if (seen && leader && leader.total != null && t.total != null && t.id !== leader.id) {
+        bit += ` (${this.fmtTeam(t.total - leader.total)})`;
+      }
+      return bit;
+    }).join(' · ');
+    return [vegasBit, `Sunday game ${teamBits}`, extraSansVegas].filter(Boolean).join(' · ');
+  },
+
+  fillSeatLabel(member, team) {
+    if (!team || !this.memberOnTeam(member, team.id)) return '';
+    if (this.sameTeamIds(member.team_id ?? member.teamId, team.id)) return '';
+    return ' <em class="fill-seat">fill</em>';
+  },
+
+  rosterFillNote(state, member) {
+    const fillId = member && (member.fill_team_id ?? member.fillTeamId);
+    if (fillId == null || fillId === '') return '';
+    const team = ((state && state.teams) || []).find((t) => this.sameTeamIds(t.id, fillId));
+    const name = team ? this.teamDisplay(team) : 'fill team';
+    return ` <em class="fill-seat">also ${_esc(name)}</em>`;
+  },
+
+  holePlayerRowHtml(state, member, holeNumber, team) {
+    const hole = this.holeMeta(state, holeNumber);
+    const raw = (member.holes || []).find((x) => x.holeNumber === holeNumber);
+    const seen = this.canSeeMemberScores(state, member);
+    const hs = seen ? raw : null;
+    const cls = this.cellClassList(hs, hole.par);
+    const wolfRole = this.wolfRoleLabel(state, member, holeNumber);
+    const writable = this.canWriteMember(state, member);
+    return `<div class="hole-player-row${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${member.id}" onclick="scorecard.focusHoleScore(${member.id}, ${holeNumber}, event)">
+      <span class="hole-player-name">${_esc(member.display_name)}${this.fillSeatLabel(member, team)}${this.runnerBadgeHtml(state, member)}${wolfRole ? ` <span class="wolf-role">${_esc(wolfRole)}</span>` : ''}</span>
+      <div class="hole-player-score ${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${holeNumber}">
+        <div class="gross-box">
+          <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
+            data-member="${member.id}" data-hole="${holeNumber}"
+            data-committed="${hs?.gross ?? ''}" data-pending="${hs?.gross ?? ''}"
+            ${writable ? '' : 'disabled readonly tabindex="-1"'}
+            value="${hs?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${holeNumber}">
+          ${seen ? this.strokeDotsHtml(raw?.strokes) : ''}
+        </div>
+        ${hs?.gross != null ? `<span class="net-mini">${hs.net}</span>` : ''}
+      </div>
+      ${this.playerNinesLineHtml(state, member, holeNumber)}
+      ${this.playerNineLineHtml(state, member)}
+    </div>`;
+  },
+
+  playerNinesLineHtml(state, member, holeNumber) {
+    if (!this.isNinesOn(state)) return '';
+    const g = this.ninesGame(state);
+    if (g && g.incomplete && !this.ninesThree(state)) return '';
+    const holePts = this.ninesHoleValue(g, holeNumber, member.id, state);
+    const runPts = this.ninesRunningThrough(g, holeNumber, member.id, state);
+    if (holePts == null && runPts == null) return '';
+    return `<div class="nines-player-stack" data-nines-player="${member.id}">
+      <div class="nines-player-hole">hole ${holePts == null ? '—' : holePts}</div>
+      <div class="nines-player-run">run ${runPts == null ? '—' : runPts}</div>
+    </div>`;
+  },
+
+  playerNineLineText(state, member) {
+    if (!member || !this.canSeeMemberScores(state, member)) return '';
+    const bits = [];
+    if (this.showOut(state) && member.outGross != null) bits.push(`OUT ${member.outGross}/${member.outNet ?? '—'}`);
+    if (this.showIn(state) && member.inGross != null) bits.push(`IN ${member.inGross}/${member.inNet ?? '—'}`);
+    if (this.showTot(state) && member.totalGross != null) bits.push(`TOT ${member.totalGross}/${member.totalNet ?? '—'}`);
+    return bits.join(' · ');
+  },
+
+  playerNineLineHtml(state, member) {
+    const text = this.playerNineLineText(state, member);
+    return `<div class="nine-line" data-nine-line="${member.id}">${text}</div>`;
+  },
+
+  wolfRoleLabel(state, member, holeNumber) {
+    if (!this.isWolfOn(state)) return '';
+    const wolf = this.wolfForHole(state, holeNumber);
+    if (wolf && member.id === wolf.id) return 'Wolf';
+    const sides = this.wolfSides(state, holeNumber);
+    if (!sides) return '';
+    if (sides.partnerId && Number(member.id) === Number(sides.partnerId)) return 'Partner';
+    return 'Field';
+  },
+
+  holePlayersHtml(state, holeNumber) {
+    if (this.isWolfOn(state)) {
+      const sides = this.wolfSides(state, holeNumber);
+      const sections = sides
+        ? [
+          { name: sides.blind ? 'Blind Lone Wolf' : (sides.lone ? 'Lone Wolf' : 'Wolf side'), members: sides.wolfSide },
+          { name: 'Field', members: sides.field },
+        ]
+        : [{ name: 'Wolf hole', members: this.wolfRoster(state) }];
+      const wolfHtml = sections.map((group) => {
+        const rows = (group.members || []).map((member) => this.holePlayerRowHtml(state, member, holeNumber)).join('');
+        return `<section class="hole-team-group">${rows}<div class="hole-team-total"><div class="hole-team-scoreline"><span>${_esc(group.name)}</span></div></div></section>`;
+      }).join('');
+      const extra = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
+        const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
+        const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+        return vegasHtml || raceHtml ? `<section class="hole-team-group" data-team-group="${group.team.id}">${vegasHtml}${raceHtml}</section>` : '';
+      }).join('');
+      return `<div class="hole-players" id="hole-players">${wolfHtml}${extra}</div>`;
+    }
+    const groups = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team));
+    return `<div class="hole-players" id="hole-players">${groups.map((group) => {
+      const rows = group.members.map((member) => this.holePlayerRowHtml(state, member, holeNumber, group.team)).join('');
+      const vegasHtml = this.isVegasOn(state) ? this.oneHoleVegasTotal(state, group.team, holeNumber) : '';
+      const raceHtml = this.isTeamRaceOn(state) ? this.oneHoleTeamTotal(state, group.team, holeNumber) : '';
+      return `<section class="hole-team-group" data-team-group="${group.team.id}"><div class="hole-team-head">${_esc(this.teamDisplay(group.team))}</div>${rows}${vegasHtml}${raceHtml}</section>`;
+    }).join('')}</div>`;
+  },
+
+  nassauToolbarPressHtml(state, holeNumber) {
+    if (!this.isNassauOn(state)) return '';
+    const hn = Number(holeNumber) || this.currentHole || 1;
+    return `<div class="nassau-toolbar-press" id="nassau-toolbar-press">
+      ${this.nassauPressButtonsHtml(state, hn, 'nassau-press-wrap-toolbar')}
+      ${this.nassauBoardHtml(state, 'nassau-board-toolbar')}
+    </div>`;
+  },
+
+  holeToolbar(state) {
+    const organizer = this.isOrganizer(state);
+    return `
+      <div class="round-toolbar hole-toolbar" id="hole-toolbar">
+        <button type="button" class="hole-back" id="hole-back">Back</button>
+        ${this.advanceToggleHtml()}
+        <span class="unsynced-inline" id="unsynced-inline"></span>
+        <button type="button" class="btn btn-sm btn-secondary hole-overflow" id="hole-overflow" aria-label="More" aria-haspopup="true" aria-expanded="false" onclick="scorecard.toggleHoleOverflow(event)">⋯</button>
+        <div class="hole-overflow-menu" id="hole-overflow-menu" hidden>
+          <button type="button" onclick="scorecard.setCardMode('full')">Full card</button>
+          ${this.pressableGames(state).filter((g) => g.key !== 'vegas').length ? '<button type="button" onclick="scorecard.confirmPress()">Press</button>' : ''}
+          ${this.canManagePresses(state) ? '<button type="button" onclick="scorecard.togglePressEdit()">Edit presses</button>' : ''}
+          ${this.isVegasOn(state) ? '<button type="button" onclick="scorecard.offerMissedVegasPress()">Missed a press</button>' : ''}
+          ${this.latestPress(state) ? '<button type="button" onclick="scorecard.undoLastPress()">Undo last press</button>' : ''}
+          <button type="button" onclick="scorecard.showScreen('rules')">Game Rules</button>
+          ${organizer ? '<button type="button" onclick="scorecard.showScreen(\'settings\')">Settings</button>' : ''}
+        </div>
+      </div>
+      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}`;
+  },
+
+  toggleHoleOverflow(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('hole-overflow-menu');
+    const btn = document.getElementById('hole-overflow');
+    if (!menu || !btn) return;
+    const open = menu.hidden;
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    this.bindHoleOverflowDismiss();
+  },
+
+  bindHoleOverflowDismiss() {
+    if (this._overflowBound) return;
+    this._overflowBound = true;
+    document.addEventListener('click', (ev) => {
+      const menu = document.getElementById('hole-overflow-menu');
+      const btn = document.getElementById('hole-overflow');
+      if (!menu || menu.hidden) return;
+      if (btn && (btn === ev.target || btn.contains(ev.target))) return;
+      if (menu.contains(ev.target)) return;
+      menu.hidden = true;
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+    });
+  },
+
+  drawHoleView(state) {
+    this.ensureVsPar();
+    const container = document.getElementById('app');
+    const holeNumber = this.pickCurrentHole(state);
+    this.currentHole = holeNumber;
+    const race = this.raceStripText(state);
+
+    container.innerHTML = `
+      ${this.joinCodeBarHtml(state)}
+      ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
+      ${this.teamPickerHtml(state)}
+      ${this.eighteenBanner(state)}
+      ${this.pressedHolesBarHtml(state)}
+      ${this.holeToolbar(state)}
+      ${this.writeErrorBanner()}
+      ${this.nassauLiveDockHtml(state, holeNumber)}
+      <div class="card hole-view" id="hole-view">
+        <div class="hole-chrome">
+          ${this.nassauPressButtonsHtml(state, holeNumber, 'nassau-press-wrap-card')}
+          ${this.nassauBoardHtml(state, 'nassau-board-card')}
+          ${this.liveGameTitleHtml(state)}
+          <div class="hole-number-row">
+            <div class="hole-number" id="hole-number">${this.holeNumberLabelHtml(state, holeNumber)}</div>
+            <button type="button" class="btn btn-sm btn-accent hole-full-card-btn" onclick="scorecard.setCardMode('full')">Full card</button>
+          </div>
+          ${this.vegasBoardHtml(state)}
+          ${this.vegasPressButtonHtml(state, holeNumber)}
+          ${this.ninesBoardHtml(state)}
+          <div class="race-strip" id="race-strip">${_esc(race)}</div>
+          ${this.pressableGames(state).filter((g) => g.key !== 'nassau' && g.key !== 'vegas').length ? `<button type="button" class="btn btn-sm btn-accent press-live" onclick="scorecard.confirmPress()">Press</button>${this.infoTip('press', 'Vegas Press increments games running (not a new ledger). Wolf / Nines press from this hole to 18. Nassau uses Front / Back / Overall on the live card.')}` : ''}
+        </div>
+        ${this.nineTotalsBarHtml(state)}
+        ${this.wolfBarHtml(state, holeNumber)}
+        ${this.kpPickerHtml(state, holeNumber)}
+        ${this.addPlayerPanel(state)}
+        ${this.holePlayersHtml(state, holeNumber)}
+      </div>
+      <div class="hole-nav thumb-zone" id="hole-nav"></div>
+    `;
+    this.renderHoleNav();
+  },
+
+  holeNavButtonsHtml(holeNumber) {
+    const holes = (this.state && this.state.holes) || [];
+    const first = holes[0];
+    const last = holes[holes.length - 1];
+    return `
+      <button type="button" class="btn btn-secondary" id="hole-prev" ${first && holeNumber <= first.hole_number ? 'disabled' : ''}>Prev</button>
+      <span class="hole-nav-label">Hole ${holeNumber}</span>
+      <button type="button" class="btn btn-secondary" id="hole-stepper">Stepper</button>
+      <button type="button" class="btn btn-secondary" id="hole-next" ${last && holeNumber >= last.hole_number ? 'disabled' : ''}>Next</button>`;
+  },
+
+  stepperInnerHtml() {
+    const o = this.overlay || {};
+    const value = o.current == null ? (o.par ?? '') : o.current;
+    return `<div class="score-stepper" id="hole-stepper-bar">
+      <button type="button" class="btn btn-secondary stepper-btn" id="score-minus">−</button>
+      <input type="tel" id="score-overlay-input" class="form-input score-overlay-number" inputmode="numeric" autocomplete="off" maxlength="2" value="${value}" aria-label="${_esc(o.name || 'Score')}">
+      <button type="button" class="btn btn-secondary stepper-btn" id="score-plus">+</button>
+      <button type="button" class="btn btn-secondary" id="score-done">Done</button>
+    </div>`;
+  },
+
+  renderHoleNav() {
+    let nav = document.getElementById('hole-nav');
+    if (this.shouldHoldAddPlayer()) {
+      if (nav) nav.hidden = true;
+      return;
+    }
+    if (this.stepperOpen && this.overlay) {
+      if (!nav) {
+        nav = document.createElement('div');
+        nav.id = 'hole-nav';
+        nav.className = 'hole-nav thumb-zone';
+        const app = document.getElementById('app');
+        if (app) app.appendChild(nav);
+      }
+      if (!nav) return;
+      nav.hidden = false;
+      nav.innerHTML = this.stepperInnerHtml();
+      this.bindStepperControls();
+      return;
+    }
+    if (!this.isHoleView()) {
+      if (nav) nav.remove();
+      return;
+    }
+    if (!nav) return;
+    nav.hidden = false;
+    nav.innerHTML = this.holeNavButtonsHtml(this.currentHole);
+    const prev = document.getElementById('hole-prev');
+    const next = document.getElementById('hole-next');
+    const stepper = document.getElementById('hole-stepper');
+    if (prev) prev.onclick = () => this.shiftHole(-1);
+    if (next) next.onclick = () => this.shiftHole(1);
+    if (stepper) stepper.onclick = () => this.openStepperFallback();
+  },
+
+  oneHoleVegasTotal(state, team, holeNumber) {
+    if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
+    const row = this.vegasHoleFor(state, team, holeNumber);
+    const thisPts = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+    const runLine = this.vegasNamedRun(this.vegasGame(state), holeNumber);
+    return `<div class="hole-team-total hole-vegas-total ${row && row.incomplete ? 'incomplete' : ''}" data-vegas-total="${team.id}">
+      <div class="vegas-line-this">This hole <span data-vegas-swing="${team.id}">${thisPts}</span></div>
+      <div class="vegas-line-run" data-vegas-named-run="${team.id}">${_esc(runLine)}</div>
+    </div>`;
+  },
+
+  teamNineLineText(state, team) {
+    const seen = this.canSeeTeamScores(state, team);
+    const bits = [];
+    if (this.showOut(state)) bits.push(`OUT ${seen ? this.fmtTeam(team.out) : '—'}`);
+    if (this.showIn(state)) bits.push(`IN ${seen ? this.fmtTeam(team.inn) : '—'}`);
+    if (this.showTot(state)) bits.push(`TOT ${seen ? this.fmtTeam(team.total) : '—'}`);
+    return bits.join(' · ');
+  },
+
+  oneHoleTeamTotal(state, team, holeNumber) {
+    const hole = (team.holes || []).find((x) => x.holeNumber === holeNumber);
+    const bits = this.teamNineLineText(state, team);
+    const raceLabel = this.isVegasOn(state) ? 'Sunday game' : `${_esc(this.teamDisplay(team))} hole`;
+    return `<div class="hole-team-total ${hole?.incomplete ? 'incomplete' : ''}" data-team-total="${team.id}">
+      <div class="hole-team-scoreline">
+        <span>${raceLabel}</span>
+        <strong data-team-hole-score="${team.id}:${holeNumber}">${this.teamHoleText(state, team, holeNumber)}</strong>
+      </div>
+      <div class="hole-team-runline vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
+        <div class="vs-par-run"><span class="vs-par-label">Running</span> <strong data-team-run="${team.id}:${holeNumber}">${this.teamRunText(state, team, holeNumber)}</strong></div>
+      </div>
+      <div class="nine-line nine-team-line" data-team-nines="${team.id}">${bits}</div>
+      ${this.teamBallsHtml(team, holeNumber)}
+    </div>`;
+  },
+
+  nineTotalsBarInner(state) {
+    const showOut = this.showOut(state);
+    const showIn = this.showIn(state);
+    const showTot = this.showTot(state);
+    if (!showOut && !showIn && !showTot) return '';
+    const teams = this.isStandardScorecard(state) ? [] : (state.teams || []).filter((t) => this.canSeeTeamScores(state, t));
+    const teamBits = teams.map((t) => {
+      const seen = this.canSeeTeamScores(state, t);
+      const chips = [];
+      if (showOut) chips.push(`<span class="nine-chip nine-out"><span class="nine-chip-label">OUT</span> ${seen ? this.fmtTeam(t.out) : '—'}</span>`);
+      if (showIn) chips.push(`<span class="nine-chip nine-in"><span class="nine-chip-label">IN</span> ${seen ? this.fmtTeam(t.inn) : '—'}</span>`);
+      if (showTot) chips.push(`<span class="nine-chip nine-tot"><span class="nine-chip-label">TOT</span> ${seen ? this.fmtTeam(t.total) : '—'}</span>`);
+      return `<div class="nine-totals-team">${_esc(this.teamDisplay(t))} ${chips.join('')}</div>`;
+    }).join('');
+    const players = this.visibleHoleMembers(state) || [];
+    const playerBits = players.map((m) => {
+      const text = this.playerNineLineText(state, m);
+      return text ? `${_esc(m.display_name)} ${text}` : '';
+    }).filter(Boolean).join(' · ');
+    return `${teamBits}${playerBits ? `<div class="nine-totals-players">${playerBits}</div>` : ''}`;
+  },
+
+  nineTotalsBarHtml(state) {
+    const inner = this.nineTotalsBarInner(state);
+    return `<div class="nine-totals-bar" id="nine-totals-bar"${inner ? '' : ' hidden'}>${inner}</div>`;
+  },
+
+  paintNineTotals() {
+    if (!this.state) return;
+    let el = document.getElementById('nine-totals-bar');
+    const inner = this.nineTotalsBarInner(this.state);
+    if (!el) {
+      const holeView = document.getElementById('hole-view');
+      const card = document.getElementById('scorecard-scroll');
+      const host = holeView || (card && card.parentElement);
+      if (!host) return;
+      host.insertAdjacentHTML(holeView ? 'afterbegin' : 'beforebegin', this.nineTotalsBarHtml(this.state));
+      return;
+    }
+    el.hidden = !inner;
+    el.innerHTML = inner;
+    document.querySelectorAll('[data-nine-line]').forEach((node) => {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(node.getAttribute('data-nine-line')));
+      node.textContent = member ? this.playerNineLineText(this.state, member) : '';
+    });
+    document.querySelectorAll('[data-team-nines]').forEach((node) => {
+      const team = (this.state.teams || []).find((t) => String(t.id) === String(node.getAttribute('data-team-nines')));
+      node.textContent = team ? this.teamNineLineText(this.state, team) : '';
+    });
+  },
+
+  missingNineCols() {
+    if (!this.state || this.isHoleView()) return false;
+    if (this.showOut(this.state) && !document.querySelector('#full-scorecard [data-out], #full-scorecard [data-team-out]')) return true;
+    if (this.showIn(this.state) && !document.querySelector('#full-scorecard [data-in], #full-scorecard [data-team-in]')) return true;
+    if (this.showTot(this.state) && !document.querySelector('#full-scorecard [data-tot], #full-scorecard [data-team-tot]')) return true;
+    return false;
+  },
+
+  kpPickerHtml(state, holeNumber) {
+    if (this.isStandardScorecard(state)) return '';
+    const cfg = this.sideConfig(state);
+    if (!cfg.kps || !cfg.kps.on) return '';
+    if (!(cfg.kps.holes || []).includes(Number(holeNumber))) return '';
+    const current = cfg.kps.winners && cfg.kps.winners[String(holeNumber)];
+    const curId = current && (current.memberId || current.id);
+    return `<div class="kp-picker card">
+      <label>KP this hole ${this.infoTip('kp-hole', 'Closest to the pin. Optional. Winner shows on the 19th hole.')}
+        <select class="form-input" onchange="scorecard.setKpWinner(${holeNumber}, this.value)">
+          <option value="">No winner yet</option>
+          ${(state.members || []).map((m) => `<option value="${m.id}" ${Number(curId) === m.id ? 'selected' : ''}>${_esc(m.display_name)}</option>`).join('')}
+        </select>
+      </label>
+    </div>`;
+  },
+
+  setKpWinner(holeNumber, memberId) {
+    const cfg = this.sideConfig(this.state);
+    const kps = Object.assign({ on: true, holes: [], winners: {} }, cfg.kps || {});
+    kps.winners = Object.assign({}, kps.winners);
+    if (!memberId) delete kps.winners[String(holeNumber)];
+    else {
+      const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
+      kps.winners[String(holeNumber)] = { memberId: Number(memberId), name: member ? member.display_name : '' };
+    }
+    this.updateSettings({ sideGames: Object.assign({}, cfg, { kps }) });
+  },
+
+  holeTeamTotals(state, holeNumber) {
+    return (state.teams || []).map((team) => this.oneHoleTeamTotal(state, team, holeNumber)).join('');
+  },
+
+  endTotalsHtml(state) {
+    const teams = (state.teams || []).filter((t) => this.canSeeTeamScores(state, t)).map((t) => {
+      const total = this.fmtTeam(t.total);
+      return `${this.teamDisplay(t)} ${total}`;
+    }).join(' · ');
+    return teams ? `Team totals · ${teams}` : 'Team totals appear as scores land.';
+  },
+
+  paintEndTotals() {
+    const el = document.getElementById('end-totals');
+    if (el && this.state) el.textContent = this.endTotalsHtml(this.state);
+  },
+
+  retargetHoleView(holeNumber) {
+    document.querySelectorAll('#hole-players .hole-player-row').forEach((row) => {
+      const memberId = row.dataset.memberRow;
+      const member = (this.state.members || []).find((m) => String(m.id) === String(memberId));
+      const cell = row.querySelector('[data-score-cell]');
+      if (cell) cell.setAttribute('data-score-cell', memberId + ':' + holeNumber);
+      const input = row.querySelector('input.score-input');
+      if (input) {
+        input.dataset.hole = String(holeNumber);
+        input.setAttribute('aria-label', (member ? member.display_name : 'Player') + ' hole ' + holeNumber);
+        const writable = this.canWriteMember(this.state, member);
+        input.disabled = !writable;
+        input.readOnly = !writable;
+        if (writable) input.removeAttribute('tabindex');
+        else input.tabIndex = -1;
+        row.classList.toggle('is-readonly', !writable);
+      }
+    });
+    document.querySelectorAll('#hole-players [data-team-total]').forEach((wrap) => {
+      const teamId = wrap.dataset.teamTotal;
+      const score = wrap.querySelector('[data-team-hole-score]');
+      if (score) score.setAttribute('data-team-hole-score', teamId + ':' + holeNumber);
+      const vs = wrap.querySelector('[data-vs-par]');
+      if (vs) vs.setAttribute('data-vs-par', teamId + ':' + holeNumber);
+      const run = wrap.querySelector('[data-team-run]');
+      if (run) run.setAttribute('data-team-run', teamId + ':' + holeNumber);
+    });
+    document.querySelectorAll('#hole-players [data-vegas-total]').forEach((wrap) => {
+      const teamId = wrap.dataset.vegasTotal;
+      const num = wrap.querySelector('[data-vegas-num]');
+      if (num) num.setAttribute('data-vegas-num', teamId + ':' + holeNumber);
+    });
+  },
+
+  shiftHole(delta) {
+    if (this.shouldHoldAddPlayer()) return;
+    const holes = (this.state && this.state.holes) || [];
+    const idx = holes.findIndex((h) => h.hole_number === this.currentHole);
+    const next = holes[idx + delta];
+    if (!next) return;
+    const focused = document.activeElement;
+    const keepMember = focused && focused.classList && focused.classList.contains('score-input')
+      ? Number(focused.dataset.member)
+      : null;
+    this.currentHole = next.hole_number;
+    const holeView = document.getElementById('hole-view');
+    const players = document.getElementById('hole-players');
+    const rows = players ? players.querySelectorAll('.hole-player-row') : [];
+    const rosterOk = this.isHoleView() && holeView && players
+      && rows.length === this.visibleHoleMembers(this.state).length;
+    if (!rosterOk) {
+      this.draw(this.state);
+      return;
+    }
+    this.retargetHoleView(this.currentHole);
+    for (const member of this.state.members || []) this.paintScoreCell(member.id, this.currentHole);
+    this.paintTeamHole(this.currentHole);
+    this.paintCurrentHoleChrome();
+    this.renderHoleNav();
+    if (keepMember) {
+      const el = document.querySelector(`#hole-players input.score-input[data-member="${keepMember}"]`);
+      if (el) el.focus();
+    }
+  },
+
+  drawFullCard(state) {
+    const container = document.getElementById('app');
+    const r = state.round;
+    const holes = state.holes || [];
+    const formatLabel = this.teamFormatLabel(r);
+    const outHoles = holes.filter((h) => h.hole_number <= 9);
+    const inHoles = holes.filter((h) => h.hole_number >= 10);
+    const holeToggle = '<button type="button" class="btn btn-sm btn-accent hole-this-hole" onclick="scorecard.setCardMode(\'hole\')">This hole</button>';
+
+    container.innerHTML = `
+      ${this.joinCodeBarHtml(state)}
+      ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
+      ${this.teamPickerHtml(state)}
+      ${this.eighteenBanner(state)}
+      ${this.toolbar(state, holeToggle + this.advanceToggleHtml())}
+      ${this.pressedHolesBarHtml(state)}
+      ${this.nassauToolbarPressHtml(state, this.currentHole || 1)}
+      ${this.writeErrorBanner()}
+      ${this.addPlayerPanel(state)}
+      ${this.nassauLiveDockHtml(state, this.currentHole || 1)}
+      <div class="card">
+        ${this.liveGameTitleHtml(state)}
+        ${this.vegasBoardHtml(state)}
+        ${this.vegasPressButtonHtml(state, this.currentHole || 1)}
+        <h2 class="card-title">${_esc(r.name)}</h2>
+        <p class="card-subtitle">${_esc(r.course?.name || '')} · ${_esc(r.tee?.name || 'Tee')} · ${formatLabel} · ${r.holes}</p>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Scorecard</span></div>
+        ${this.nineTotalsBarHtml(state)}
+        <div class="scorecard-container high-contrast" id="scorecard-scroll">
+          ${this.scoreTable(state, holes, outHoles, inHoles)}
+        </div>
+        <div class="end-totals" id="end-totals" hidden></div>
+        <div class="ball-reveal" id="ball-reveal">${this.expandedHole ? 'Hole ' + this.expandedHole + ' · ' + _esc(this.ballLineText(state, this.expandedHole)) : ''}</div>
+      </div>
+    `;
+  },
+
+  scoreTable(state, holes, outHoles, inHoles) {
+    const showOut = this.showOut(state);
+    const showIn = this.showIn(state);
+    const showTot = this.showTot(state);
+    const holeHead = (h) => {
+      const pressed = this.isVegasOn(state) && this.isVegasPressStartHole(state, h.hole_number);
+      return `<th data-hole-h="${h.hole_number}" class="sc-hole-head${h.hole_number === this.currentHole ? ' is-current-hole' : ''}${pressed ? ' is-vegas-pressed' : ''}" onclick="scorecard.onFullCardHoleTap(${h.hole_number})"><button type="button" class="sc-hole-head-btn" aria-label="Hole ${h.hole_number}${pressed ? ', Vegas press starts here' : ''}${this.isVegasOn(state) ? ', tap to add a missed Vegas press' : ''}">${h.hole_number}${pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : ''}</button></th>`;
+    };
+    const parHead = (h) => `<th>${h.par}<div class="si-mini">${h.stroke_index}</div></th>`;
+    const outPar = outHoles.reduce((s, h) => s + h.par, 0);
+    const inPar = inHoles.reduce((s, h) => s + h.par, 0);
+    const totPar = holes.reduce((s, h) => s + h.par, 0);
+    return `
+      <table class="scorecard team-scorecard" id="full-scorecard">
+        <thead>
+          <tr>
+            <th>Hole</th>
+            ${this.joinCardRow(holes, showOut, showIn, holeHead, '<th class="sc-out">OUT</th>', '<th class="sc-in">IN</th>', '<th class="sc-tot-sticky">TOT</th>', showTot)}
+          </tr>
+          <tr class="par-row">
+            <th class="row-label">Par / SI</th>
+            ${this.joinCardRow(holes, showOut, showIn, parHead, `<th class="sc-out">${outPar}</th>`, `<th class="sc-in">${inPar}</th>`, `<th class="sc-tot-sticky">${totPar}</th>`, showTot)}
+          </tr>
+        </thead>
+        <tbody>
+          ${this.playerRows(state, holes, outHoles, inHoles, showOut, showIn)}
+        </tbody>
+      </table>`;
+  },
+
+  drawSettings(state) {
+    const container = document.getElementById('app');
+    const r = state.round;
+    const organizer = this.isOrganizer(state);
+    container.innerHTML = `
+        ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
+      <div class="card">
+        <h2 class="card-title">Settings ${this.infoTip('settings', 'Sunday game and format. Handicap index is rounded at 0.5 and applied by stroke index — no course handicap.')}</h2>
+        <p class="card-subtitle">${_esc(r.name)} · join <strong>${_esc(r.joinCode || r.join_code)}</strong></p>
+        <p class="join-row">
+          <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.joinUrl || '')}')">Copy join link</button>
+          <button class="btn btn-sm btn-secondary" onclick="scorecard.copy('${_esc(r.publicUrl || '')}')">Copy public board</button>
+        </p>
+      </div>
+        ${this.showOtherTeamsBarHtml(state)}
+        ${organizer ? this.settingsBar(state) : this.joinerRosterSettings(state)}
+    `;
+    svcApi('updateBadge');
+  },
+
+  drawResults(state) {
+    const container = document.getElementById('app');
+    const r = state.round;
+    const teamFormat = r.format === 'team_net';
+    const standard = this.isStandardScorecard(state);
+    const resultMembers = (state.members || []).filter((m) => {
+      if (!m.team_id) return false;
+      const team = (state.teams || []).find((t) => this.sameTeamIds(t.id, m.team_id));
+      return this.canSeeTeamLane(state, team);
+    });
+    container.innerHTML = `
+      ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
+      ${this.followAlongBarHtml(state)}
+      ${this.showOtherTeamsBarHtml(state)}
+      <div class="card results-board" id="results-board">
+        <h2 class="card-title">Round results</h2>
+        <p class="card-subtitle">${_esc(r.name)} · ${_esc(r.course?.name || 'Goldendale Golf Club')} · ${standard ? 'Standard scorecard' : (teamFormat ? _esc(this.teamFormatLabel(r)) : 'Match play')}</p>
+        ${standard ? '' : `<p class="race-strip">${_esc(this.raceStripText(state))}</p>`}
+        <div class="roster-table-wrap">
+          <table class="roster-table results-table">
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Team</th>
+                <th>HCP</th>
+                <th>Gross</th>
+                <th>Net</th>
+                ${teamFormat ? '<th>Balls counted</th><th>Team total</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${resultMembers.map((m) => {
+                const team = (state.teams || []).find((t) => t.id === m.team_id);
+                return `<tr>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}</td>
+                  <td>${_esc(this.teamNameFor(state, m))}</td>
+                  <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
+                  <td>${m.totalGross ?? '—'}</td>
+                  <td>${m.totalNet ?? '—'}</td>
+                  ${teamFormat ? `<td>${_esc(this.ballsCountedText(state, m.id))}</td><td>${this.fmtTeam(team && team.total)}</td>` : ''}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        ${standard ? '' : teamFormat ? `
+          <h3 class="section-title">Balls counted by hole</h3>
+          <p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>
+          <div class="ball-board">${(state.holeResults || []).map((hr) => {
+            const bits = (hr.teams || []).map((t) => {
+              const balls = (t.balls || []).map((b) => `${b.name} ${b.score}${b.type === 'gross' ? 'G' : 'N'}`).join(' · ');
+              return `${t.teamName} ${this.fmtTeam(t.total)} (${balls || '—'})`;
+            }).join(' · ');
+            return `<div>Hole ${hr.holeNumber}: ${_esc(bits)}</div>`;
+          }).join('')}</div>
+        ` : this.matchBlock(state)}
+        ${standard ? '' : this.sideGamesResultsHtml(state)}
+        <div class="welcome-actions mt-md">
+          ${this.canOpenNineteenth(state) ? '<button class="btn btn-accent btn-sm" onclick="scorecard.openNineteenth()">Go to the 19th hole</button>' : ''}
+          <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
+          <a class="btn btn-secondary btn-sm" href="/api/rounds/${r.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('#lb/${_esc(r.public_token || '')}')">Public board</button>
+        </div>
+      </div>
+    `;
+    svcApi('updateBadge');
+  },
+
+  teamChoices(state) {
+    return this.addTeamNames(state);
+  },
+
+  teamSelectHtml(state, member, extraClass) {
+    const current = (state.teams || []).find((t) => t.id === member.team_id);
+    return `<select class="form-input team-pick ${extraClass || ''}" data-member-team="${member.id}"
+      onchange="scorecard.assignTeam(${member.id}, this.value)">
+      ${this.teamChoices(state).map((n) => {
+        const team = (state.teams || []).find((t) => t.name === n);
+        return `<option value="${_esc(n)}" ${current && current.name === n ? 'selected' : ''}>${_esc(team ? this.teamDisplay(team) : n)}</option>`;
+      }).join('')}
+    </select>`;
+  },
+
+  joinerRosterSettings(state) {
+    return `<div class="card">
+      <div class="card-title">Your team</div>
+      <p class="card-subtitle">Own team only. Set Index (0.5 rounding, no course handicap) or remove a player before scoring locks in.</p>
+      ${this.setupRosterHtml(state)}
+    </div>`;
+  },
+
+  settingsBar(state) {
+    const r = state.round;
+    return `
+      <div class="admin-bar" style="display:flex">
+        <span class="admin-bar-label">Organizer</span>
+        <button class="btn btn-sm btn-secondary" onclick="scorecard.balanceTeams()">Auto-balance (helper)</button>
+        ${r.format === 'match_play' ? '<button class="btn btn-sm btn-secondary" onclick="scorecard.generateMatches()">Generate matches</button>' : ''}
+        <button class="btn btn-sm btn-secondary" onclick="scorecard.setStatus('${r.status === 'completed' ? 'live' : 'completed'}')">${r.status === 'completed' ? 'Reopen' : 'Complete round'}</button>
+        <span class="tiny-label">HCP = Index only ${this.infoTip('hcp-index', 'Round the index at 0.5 (2.4→2, 2.5→3). Strokes by scorecard SI. No course handicap.')}</span>
+        <label class="tiny-label">Game ${this.infoTip('round-format', 'Team vs par is the Sunday race (1G+2N or 1G+1N). Standard scorecard is dots plus OUT/IN/TOT only.')}
+          <select onchange="scorecard.changeRoundFormat(this.value)">
+            <option value="team_net" ${r.format === 'team_net' ? 'selected' : ''}>Team vs par</option>
+            <option value="standard" ${r.format === 'standard' || r.format === 'standard_scorecard' ? 'selected' : ''}>Standard scorecard</option>
+            <option value="match_play" ${r.format === 'match_play' ? 'selected' : ''}>Match play</option>
+          </select>
+        </label>
+        ${r.format === 'team_net' ? `<label class="tiny-label">Sunday game format ${this.infoTip('format', 'Best-combo vs-par. Pick 1G+2N (default) or 1G+1N.')}
+          <select onchange="scorecard.changeGame(this.value)">${this.gameOptionsHtml(this.currentGameKey(r))}</select>
+        </label>` : ''}
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${this.isTeamRaceOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({teamRace: this.checked})"> Sunday game ${this.infoTip('team-race', 'Default ON. The Sunday game is the team vs-par race (1G+2N or 1G+1N).')}</label>`}
+        <label class="tiny-label"><input type="checkbox" ${this.isShowOtherScoresOn(state) ? 'checked' : ''} onchange="scorecard.updateSettings({showOtherScores: this.checked})"> Show other teams’ scores ${this.infoTip('show-other', 'Default OFF. Each scorecard stays on one team. ON is the shared board — other teams are visible. The host can still enter every team’s scores after opening that team’s card. Non-hosts stay own-team write only.')}</label>
+        ${this.isStandardScorecard(state) ? '' : `<label class="tiny-label"><input type="checkbox" ${r.dual_count ? 'checked' : ''} onchange="scorecard.updateSettings({dualCount: this.checked})"> Dual-count</label>`}
+      </div>
+      ${r.format === 'team_net' ? `<p class="card-subtitle game-rule">${_esc(this.teamFormatRule(r))}</p>` : ''}
+      ${this.isStandardScorecard(state) ? '<p class="card-subtitle game-rule">Standard scorecard: handicap dots and OUT / IN / TOT only. No Sunday race.</p>' : ''}
+      ${this.sideGamesSettingsHtml(state)}
+      <div class="card">
+        <div class="card-title">Players (${state.members.length}/20)</div>
+        <p class="card-subtitle">Pick a team for each player (Team 1 / 2 / 3, or Add team for 4+). Auto-balance is only a helper.</p>
+        ${this.fillSpinButtonHtml(state)}
+        <button type="button" class="btn btn-sm btn-secondary" id="settings-add-team" onclick="scorecard.addExtraTeamFromSettings()">Add team</button>
+        <div class="team-nick-list">
+          ${(state.teams || []).map((t) => `
+            <label class="tiny-label">${_esc(t.name)} nickname
+              <input class="form-input team-nick-input" data-team-nick="${_esc(t.name)}" value="${_esc(t.nickname || '')}" maxlength="24" placeholder="optional" onchange="scorecard.saveTeamNickname('${_esc(t.name)}', this.value)">
+            </label>`).join('')}
+        </div>
+        <form class="add-guest-row" id="add-guest-form" onsubmit="event.preventDefault();scorecard.addGuestFromForm()">
+          <input class="form-input" id="add-guest-name" placeholder="Name" required>
+          <input class="form-input" id="add-guest-hcp" placeholder="HCP">
+          <select class="form-input team-pick" id="add-guest-team">
+            ${this.teamChoices(state).map((n) => {
+              const team = (state.teams || []).find((t) => t.name === n);
+              return `<option value="${_esc(n)}" ${n === 'Team 1' ? 'selected' : ''}>${_esc(team ? this.teamDisplay(team) : n)}</option>`;
+            }).join('')}
+          </select>
+          <button class="btn btn-sm btn-accent" type="submit">Add player</button>
+        </form>
+        <div class="roster-table-wrap">
+          <table class="roster-table">
+            <thead><tr><th>Player</th><th>HCP</th><th>Team</th><th></th></tr></thead>
+            <tbody>
+              ${state.members.map((m) => `
+                <tr>
+                  <td>${_esc(m.display_name)}${this.runnerBadgeHtml(state, m)}${this.rosterFillNote(state, m)}</td>
+                  <td>${m.playing_handicap ?? m.handicap ?? '—'}</td>
+                  <td>${this.teamSelectHtml(state, m)}</td>
+                  <td>
+                    <button type="button" class="linkish" onclick="scorecard.editMember(${m.id})">HCP</button>
+                    ${this.canRemoveRosterMember(state, m) ? `<button type="button" class="linkish" onclick="scorecard.removeMember(${m.id})">Remove</button>` : ''}
+                  </td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <label class="tiny-label" for="bulk-guests">Add several (one per line: Name, handicap, team)</label>
+        <textarea class="form-input" id="bulk-guests" rows="4" placeholder="Cole Jan, 12, 3"></textarea>
+        <button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.addBulkGuests()">Add names</button>
+      </div>`;
+  },
+
+  groupedMembers(state) {
+    const used = new Set();
+    const groups = [];
+    const teams = [...(state.teams || [])].sort((a, b) => (a.sortOrder ?? a.sort_order ?? 0) - (b.sortOrder ?? b.sort_order ?? 0));
+    for (const team of teams) {
+      const members = (state.members || []).filter((m) => this.memberOnTeam(m, team.id) && !this.isFollowAlongMember(m));
+      members.forEach((m) => used.add(m.id));
+      groups.push({ team, members });
+    }
+    const rest = (state.members || []).filter((m) => !used.has(m.id));
+    if (rest.length) groups.push({ team: null, members: rest });
+    if (this.canSeeOtherTeams(state)) return groups;
+    return groups.filter((g) => g.team && this.canSeeTeamLane(state, g.team));
+  },
+
+  showOtherTeamsBarHtml(state) {
+    if (this.isFollowAlong(state)) return '';
+    const organizer = this.isOrganizer(state);
+    const hostOn = this.isShowOtherScoresOn(state);
+    const on = organizer ? hostOn : (hostOn && this.followShowOtherOn(state));
+    const note = organizer
+      ? (on
+        ? 'ON — you chose to see other teams’ cards.'
+        : 'OFF — your card only. Other-team setup stays off this scorecard.')
+      : (hostOn
+        ? (on
+          ? 'ON — you chose to see other teams’ cards.'
+          : 'OFF — your card only. Turn ON to see other teams.')
+        : 'Host is hiding other teams. ON applies when they turn that on.');
+    return `<div class="show-other-bar" id="show-other-bar" data-show-other="${on ? 'on' : 'off'}">
+      <div class="show-other-label">Show other teams</div>
+      <div class="show-other-switch" role="group" aria-label="Show other teams">
+        <button type="button" class="show-other-btn${on ? ' is-on' : ''}" data-show-other="1" aria-pressed="${on ? 'true' : 'false'}">ON</button>
+        <button type="button" class="show-other-btn${!on ? ' is-on is-off' : ''}" data-show-other="0" aria-pressed="${on ? 'false' : 'true'}">OFF</button>
+      </div>
+      <p class="show-other-note">${note}</p>
+    </div>`;
+  },
+
+  bindShowOtherBar() {
+    document.querySelectorAll('#show-other-bar [data-show-other]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.setShowOtherTeams(btn.getAttribute('data-show-other') === '1');
+      };
+    });
+  },
+
+  async setShowOtherTeams(on) {
+    if (!this.state) return;
+    const want = !!on;
+    if (this.isOrganizer(this.state)) {
+      if (this.isShowOtherScoresOn(this.state) === want) return;
+      if (this.state.round) {
+        this.state.round.showOtherScores = want;
+        this.state.round.show_other_scores = want ? 1 : 0;
+      }
+      this.draw(this.state);
+      await this.updateSettings({ showOtherScores: want });
+      return;
+    }
+    await this.setFollowShowOther(want);
+  },
+
+  teamPickerHtml(state) {
+    if (!this.isOrganizer(state)) return '';
+    const teams = state.teams || [];
+    if (teams.length < 2) return '';
+    this.ensureFocusedTeam(state);
+    const focused = this.focusedTeam(state);
+    const shared = this.canSeeOtherTeams(state);
+    return `<div class="team-picker-row" id="team-picker-row">
+      <div class="team-picker" id="team-picker" role="tablist" aria-label="Team scorecard">
+        ${teams.map((t) => {
+          const on = !shared && this.sameTeamIds(t.id, focused && focused.id);
+          return `<button type="button" class="team-pick-chip${on ? ' is-on' : ''}${shared ? ' is-shared' : ''}" data-focus-team="${t.id}" role="tab" aria-selected="${on || shared ? 'true' : 'false'}">${_esc(this.teamDisplay(t))}</button>`;
+        }).join('')}
+      </div>
+      ${shared
+        ? '<p class="team-picker-note">Shared board on — every team is visible.</p>'
+        : '<p class="team-picker-note">Your card only. Open another team to see that roster.</p>'}
+    </div>`;
+  },
+
+  bindTeamPicker() {
+    document.querySelectorAll('#team-picker [data-focus-team]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.focusTeam(btn.getAttribute('data-focus-team'));
+      };
+    });
+  },
+
+  playerRows(state, holes, outHoles, inHoles, showOut, showIn) {
+    const extra = this.cardExtraCount(state);
+    if (this.isWolfOn(state)) {
+      const rows = this.wolfRoster(state).map((m) => this.onePlayerRow(state, m, holes, showOut, showIn)).join('');
+      const extras = this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
+        const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
+        const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
+        return vegasRow + teamRow;
+      }).join('');
+      return rows + extras;
+    }
+    return this.groupedMembers(state).filter((group) => group.team && (group.members || []).length && this.canSeeTeamScores(state, group.team)).map((group) => {
+      const label = this.teamDisplay(group.team);
+      const head = `<tr class="row-team-head"><th class="row-label">${_esc(label)}</th><td colspan="${holes.length + extra}"></td></tr>`;
+      const rows = group.members.map((m) => this.onePlayerRow(state, m, holes, showOut, showIn, group.team)).join('');
+      const vegasRow = this.isVegasOn(state) ? this.oneVegasRow(state, group.team, holes, showOut, showIn) : '';
+      const teamRow = this.isTeamRaceOn(state) ? this.oneTeamRow(state, group.team, holes, showOut, showIn) : '';
+      return head + rows + vegasRow + teamRow;
+    }).join('');
+  },
+
+  onePlayerRow(state, m, holes, showOut, showIn, team) {
+    const seen = this.canSeeMemberScores(state, m);
+    const holeCell = (h) => {
+      const hs = seen ? (m.holes || []).find((x) => x.holeNumber === h.hole_number) : null;
+      return this.scoreCellHtml(state, m, h, hs);
+    };
+    const showTot = this.showTot(state);
+    return `
+      <tr class="row-player${this.canWriteMember(state, m) ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-member-row="${m.id}">
+        <td class="row-label">${_esc(m.display_name)}${this.fillSeatLabel(m, team)}${this.runnerBadgeHtml(state, m)}<div class="hcp-mini">H ${m.playing_handicap ?? '—'}</div></td>
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          holeCell,
+          `<td class="sc-total sc-out" data-out="${m.id}">${seen ? (m.outGross ?? '') : ''} <span class="net-mini">${seen ? (m.outNet ?? '') : ''}</span></td>`,
+          `<td class="sc-total sc-in" data-in="${m.id}">${seen ? (m.inGross ?? '') : ''} <span class="net-mini">${seen ? (m.inNet ?? '') : ''}</span></td>`,
+          `<td class="sc-total sc-tot-sticky" data-tot="${m.id}"><strong>${seen ? (m.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (m.totalNet ?? '') : ''}</span></td>`,
+          showTot
+        )}
+      </tr>
+      ${this.onePlayerNinesRows(state, m, holes, showOut, showIn)}`;
+  },
+
+  oneTeamRow(state, team, holes, showOut, showIn) {
+    const seen = this.canSeeTeamScores(state, team);
+    const holeCell = (h) => {
+      const hole = (team.holes || []).find((x) => x.holeNumber === h.hole_number);
+      return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
+            onclick="scorecard.revealHoleBalls(${h.hole_number})">
+            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
+            <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
+          </td>`;
+    };
+    return `
+      <tr class="row-team" data-team-row="${team.id}">
+        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          holeCell,
+          `<td class="sc-total sc-out" data-team-out="${team.id}">${seen ? this.fmtTeam(team.out) : '—'}</td>`,
+          `<td class="sc-total sc-in" data-team-in="${team.id}">${seen ? this.fmtTeam(team.inn) : '—'}</td>`,
+          `<td class="sc-total sc-tot-sticky"><strong data-team-tot="${team.id}">${seen ? this.fmtTeam(team.total) : '—'}</strong></td>`,
+          this.showTot(state)
+        )}
+      </tr>`;
+  },
+
+  oneVegasRow(state, team, holes, showOut, showIn) {
+    if (this.vegasGame(state) && !this.vegasSideForTeam(state, team)) return '';
+    const last = holes[holes.length - 1];
+    const lastRow = last ? this.vegasHoleFor(state, team, last.hole_number) : null;
+    return `
+      <tr class="row-team row-vegas" data-vegas-row="${team.id}">
+        <td class="row-label">${_esc(this.teamDisplay(team))} Vegas</td>
+        ${this.joinCardRow(
+          holes,
+          showOut,
+          showIn,
+          (h) => {
+            const row = this.vegasHoleFor(state, team, h.hole_number);
+            const swing = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+            return `<td data-vegas-cell="${team.id}:${h.hole_number}" class="team-hole-cell ${row && row.incomplete ? 'incomplete' : ''}">
+            <span class="team-hole-score" data-vegas-num="${team.id}:${h.hole_number}">${row && row.num != null ? row.num : '—'}</span>
+            <span class="vegas-cell-swing" data-vegas-cell-swing="${team.id}:${h.hole_number}">${swing}</span>
+          </td>`;
+          },
+          '<td class="sc-total sc-out"></td>',
+          '<td class="sc-total sc-in"></td>',
+          `<td class="sc-total sc-tot-sticky"><strong data-vegas-run="${team.id}">${lastRow && lastRow.run != null ? this.fmtVegasPts(lastRow.run) : '0'}</strong></td>`,
+          this.showTot(state)
+        )}
+      </tr>`;
+  },
+
+  scoreCellHtml(state, member, hole, hs) {
+    const seen = this.canSeeMemberScores(state, member);
+    const shown = seen ? hs : null;
+    const cls = this.cellClassList(shown, hole.par);
+    const writable = this.canWriteMember(state, member);
+    return `<td class="${cls}${writable ? '' : ' is-readonly'}${seen ? '' : ' is-score-hidden'}" data-score-cell="${member.id}:${hole.hole_number}">
+      <div class="gross-box">
+        <input class="score-input" type="tel" inputmode="numeric" autocomplete="off" maxlength="2"
+          data-member="${member.id}" data-hole="${hole.hole_number}"
+          data-committed="${shown?.gross ?? ''}" data-pending="${shown?.gross ?? ''}"
+          ${writable ? '' : 'disabled readonly tabindex="-1"'}
+          value="${shown?.gross ?? ''}" aria-label="${_esc(member.display_name)} hole ${hole.hole_number}">
+        ${seen ? this.strokeDotsHtml(hs?.strokes) : ''}
+      </div>
+      ${shown?.gross != null ? `<span class="net-mini">${shown.net}</span>` : ''}
+    </td>`;
+  },
+
+  strokeDotsHtml(strokes) {
+    const marks = (window.vsPar && window.vsPar.strokeDotMarks)
+      ? window.vsPar.strokeDotMarks(strokes)
+      : { plus: false, count: 0 };
+    if (marks.plus) {
+      return '<span class="stroke-dots stroke-dots-plus" aria-label="plus handicap"><i class="dot-plus">+</i></span>';
+    }
+    if (!marks.count) return '';
+    const dots = Array.from({ length: marks.count }, () => '<i class="dot"></i>').join('');
+    return `<span class="stroke-dots dots-${marks.count}" aria-label="${marks.count} stroke${marks.count > 1 ? 's' : ''}">${dots}</span>`;
+  },
+
+  vsParPair(state, team, holeNumber) {
+    if (!this.canSeeTeamScores(state, team)) {
+      return { holeText: '—', runText: '—' };
+    }
+    const vp = window.vsPar || {};
+    const teamHole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
+    const holeVal = vp.holeTeamVsPar ? vp.holeTeamVsPar(teamHole && teamHole.total) : (teamHole && teamHole.total);
+    const runVal = this.teamRunThrough(team, holeNumber);
+    return {
+      holeText: this.fmtTeam(holeVal),
+      runText: this.fmtTeam(runVal),
+    };
+  },
+
+  vsParLinesHtml(state, team, holeNumber) {
+    const pair = this.vsParPair(state, team, holeNumber);
+    return `<div class="vs-par-lines" data-vs-par="${team.id}:${holeNumber}">
+      <div class="vs-par-hole"><span class="vs-par-label">Hole</span> ${pair.holeText}</div>
+      <div class="vs-par-run"><span class="vs-par-label">Running</span> <strong data-team-run="${team.id}:${holeNumber}">${pair.runText}</strong></div>
+    </div>`;
+  },
+
+  teamRows(state, holes, outHoles, inHoles) {
+    return (state.teams || []).map((team) => `
+      <tr class="row-team" data-team-row="${team.id}">
+        <td class="row-label">${_esc(this.teamDisplay(team))}</td>
+        ${this.joinCardRow(
+          holes,
+          !!outHoles.length,
+          !!inHoles.length,
+          (h) => {
+            const hole = team.holes.find((x) => x.holeNumber === h.hole_number);
+            return `<td data-team-hole="${team.id}:${h.hole_number}" class="team-hole-cell ${hole?.incomplete ? 'incomplete' : ''}"
+            onclick="scorecard.revealHoleBalls(${h.hole_number})">
+            <span class="team-hole-score" data-team-hole-score="${team.id}:${h.hole_number}">${this.teamHoleText(state, team, h.hole_number)}</span>
+            <span class="team-hole-run vs-par-run">Running <strong data-team-run="${team.id}:${h.hole_number}">${this.teamRunText(state, team, h.hole_number)}</strong></span>
+          </td>`;
+          },
+          `<td class="sc-total sc-out" data-team-out="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.out) : '—'}</td>`,
+          `<td class="sc-total sc-in" data-team-in="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.inn) : '—'}</td>`,
+          `<td class="sc-total sc-tot-sticky"><strong data-team-tot="${team.id}">${this.canSeeTeamScores(state, team) ? this.fmtTeam(team.total) : '—'}</strong></td>`,
+          true
+        )}
+      </tr>`).join('');
+  },
+
+  revealHoleBalls(holeNumber) {
+    this.expandedHole = this.expandedHole === holeNumber ? null : holeNumber;
+    const el = document.getElementById('ball-reveal');
+    if (!el || !this.state) return;
+    el.textContent = this.expandedHole
+      ? 'Hole ' + this.expandedHole + ' · ' + this.ballLineText(this.state, this.expandedHole)
+      : '';
+  },
+
+  resultsPreview(state) {
+    const winner = state.winner;
+    const completed = state.round.status === 'completed';
+    let headline = 'Enter scores to see team totals.';
+    if (winner) {
+      headline = completed
+        ? `${winner.name} wins · ${this.fmtTeam(winner.total)}`
+        : `Leading team: ${winner.name} · ${this.fmtTeam(winner.total)}`;
+    }
+    return `
+      <div class="card">
+        <div class="card-header"><span class="card-title">Results</span></div>
+        <p><strong>${_esc(headline)}</strong></p>
+        <p class="race-strip">${_esc(this.raceStripText(state))}</p>
+        <p class="card-subtitle">Tie-break: back 9, last 6, last 3, 18, hardest SI. Incomplete holes are flagged.</p>
+        <div class="welcome-actions">
+          <button class="btn btn-secondary btn-sm" onclick="scorecard.copyText()">Copy as text</button>
+          <a class="btn btn-secondary btn-sm" href="/api/rounds/${state.round.id}/results.csv" onclick="scorecard.downloadCsv(event)">CSV</a>
+          <button class="btn btn-secondary btn-sm" onclick="app.navigate('#lb/${_esc(state.round.public_token || '')}')">Public board</button>
+        </div>
+      </div>`;
+  },
+
+  matchBlock(state) {
+    const matches = state.matches || [];
+    return `
+      <div class="card">
+        <div class="card-title">Match play</div>
+        ${matches.length === 0 ? '<p>Organizer can generate pairings. 8 players use the retreat rotation; otherwise players are paired by handicap.</p>' : ''}
+        ${matches.map((m) => `
+          <div class="match-card">
+            <div class="players">
+              <span>${_esc(m.member1?.display_name || 'P1')}</span>
+              <span class="vs">vs</span>
+              <span>${_esc(m.member2?.display_name || 'P2')}</span>
+            </div>
+            <div>${_esc(m.resultText || 'All Square')}</div>
+          </div>`).join('')}
+      </div>`;
+  },
+
+  vsParClass(gross, par) {
+    if (gross == null || par == null) return '';
+    const d = Number(gross) - Number(par);
+    if (!Number.isFinite(d)) return '';
+    if (d <= -2) return 'vs-eagle';
+    if (d === -1) return 'vs-birdie';
+    if (d === 0) return 'vs-par';
+    if (d === 1) return 'vs-bogey';
+    return 'vs-double';
+  },
+
+  scoreMarkKind(gross, par, standard) {
+    if (standard) return '';
+    const vs = this.vsParClass(gross, par);
+    if (vs === 'vs-eagle') return 'eagle';
+    if (vs === 'vs-birdie') return 'birdie';
+    if (vs === 'vs-bogey') return 'bogey';
+    if (vs === 'vs-double') return 'double';
+    return '';
+  },
+
+  cellClassList(hs, par) {
+    const cls = ['sc-cell-editable'];
+    const vs = this.vsParClass(hs?.gross, par);
+    if (vs) cls.push(vs);
+    const mark = this.scoreMarkKind(hs?.gross, par, this.isStandardScorecard(this.state));
+    if (mark) cls.push('has-score-mark', 'mark-' + mark);
+    const dots = Math.max(0, hs?.strokes || 0);
+    if (dots) cls.push('dots-' + Math.min(dots, 3));
+    if ((hs?.strokes || 0) < 0) cls.push('dots-plus');
+    return cls.join(' ');
+  },
+
+  paintScoreCell(memberId, holeNumber) {
+    if (!this.state) return;
+    const member = this.state.members.find((m) => m.id === memberId);
+    const raw = member && (member.holes || []).find((h) => h.holeNumber === holeNumber);
+    const seen = this.canSeeMemberScores(this.state, member);
+    const hs = seen ? raw : null;
+    const hole = this.holeMeta(this.state, holeNumber);
+    const cells = document.querySelectorAll('[data-score-cell="' + memberId + ':' + holeNumber + '"]');
+    cells.forEach((cell) => {
+      const input = cell.querySelector('input.score-input');
+      const holeRow = cell.classList.contains('hole-player-score');
+      const writable = this.canWriteMember(this.state, member);
+      cell.className = (holeRow ? 'hole-player-score ' : '') + this.cellClassList(hs, hole.par) + (writable ? '' : ' is-readonly') + (seen ? '' : ' is-score-hidden');
+      if (input) {
+        input.disabled = !writable;
+        input.readOnly = !writable;
+        if (writable) input.removeAttribute('tabindex');
+        else input.tabIndex = -1;
+        const row = cell.closest('.hole-player-row, tr.row-player');
+        if (row) {
+          row.classList.toggle('is-readonly', !writable);
+          row.classList.toggle('is-score-hidden', !seen);
+        }
+        if (document.activeElement !== input) {
+          input.value = hs?.gross ?? '';
+          input.dataset.committed = hs?.gross ?? '';
+          input.dataset.pending = hs?.gross ?? '';
+        }
+        const box = cell.querySelector('.gross-box') || cell;
+        const nextDots = this.strokeDotsHtml(hs?.strokes);
+        const currentDots = box.querySelector('.stroke-dots');
+        if (nextDots) {
+          if (currentDots) currentDots.outerHTML = nextDots;
+          else box.insertAdjacentHTML('beforeend', nextDots);
+        } else if (currentDots) {
+          currentDots.remove();
+        }
+        let net = cell.querySelector('.net-mini');
+        if (hs?.gross != null) {
+          if (!net) {
+            net = document.createElement('span');
+            net.className = 'net-mini';
+            cell.appendChild(net);
+          }
+          net.textContent = hs.net;
+        } else if (net) {
+          net.remove();
+        }
+      }
+    });
+  },
+
+  paintPlayerTotals(memberId) {
+    if (!this.state) return;
+    const members = memberId
+      ? this.state.members.filter((m) => m.id === memberId)
+      : this.state.members;
+    for (const member of members) {
+      const seen = this.canSeeMemberScores(this.state, member);
+      const out = document.querySelector('[data-out="' + member.id + '"]');
+      if (out) out.innerHTML = `${seen ? (member.outGross ?? '') : ''} <span class="net-mini">${seen ? (member.outNet ?? '') : ''}</span>`;
+      const inn = document.querySelector('[data-in="' + member.id + '"]');
+      if (inn) inn.innerHTML = `${seen ? (member.inGross ?? '') : ''} <span class="net-mini">${seen ? (member.inNet ?? '') : ''}</span>`;
+      const tot = document.querySelector('[data-tot="' + member.id + '"]');
+      if (tot) tot.innerHTML = `<strong>${seen ? (member.totalGross ?? '') : ''}</strong> <span class="net-mini">${seen ? (member.totalNet ?? '') : ''}</span>`;
+    }
+  },
+
+  paintTeamHole(holeNumber) {
+    if (!this.state || holeNumber == null) return;
+    for (const team of this.state.teams || []) {
+      const seen = this.canSeeTeamScores(this.state, team);
+      const hole = (team.holes || []).find((h) => h.holeNumber === holeNumber);
+      document.querySelectorAll('[data-team-hole="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
+        el.classList.toggle('incomplete', !!hole?.incomplete);
+      });
+      document.querySelectorAll('[data-team-hole-score="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
+        el.textContent = seen ? this.fmtTeam(hole?.total) : '—';
+      });
+      document.querySelectorAll('[data-team-run="' + team.id + ':' + holeNumber + '"]').forEach((el) => {
+        el.textContent = seen ? this.fmtTeam(this.teamRunThrough(team, holeNumber)) : '—';
+      });
+      const wrap = document.querySelector('[data-team-total="' + team.id + '"]');
+      if (wrap) wrap.classList.toggle('incomplete', !!hole?.incomplete);
+      const tot = document.querySelector('[data-team-tot="' + team.id + '"]');
+      if (tot) tot.textContent = seen ? this.fmtTeam(team.total) : '—';
+      const out = document.querySelector('[data-team-out="' + team.id + '"]');
+      if (out) out.textContent = seen ? this.fmtTeam(team.out) : '—';
+      const inn = document.querySelector('[data-team-in="' + team.id + '"]');
+      if (inn) inn.textContent = seen ? this.fmtTeam(team.inn) : '—';
+      this.paintTeamVsPar(team);
+    }
+    this.paintVegas(holeNumber);
+  },
+
+  paintVegas(holeNumber) {
+    if (!this.state || !this.isVegasOn(this.state)) return;
+    const hn = holeNumber || this.currentHole;
+    for (const team of this.state.teams || []) {
+      const row = this.vegasHoleFor(this.state, team, hn);
+      document.querySelectorAll('[data-vegas-num="' + team.id + ':' + hn + '"]').forEach((el) => {
+        el.textContent = row && row.num != null ? String(row.num) : '—';
+      });
+      document.querySelectorAll('[data-vegas-swing="' + team.id + '"]').forEach((el) => {
+        el.textContent = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+      });
+      document.querySelectorAll('[data-vegas-cell-swing="' + team.id + ':' + hn + '"]').forEach((el) => {
+        el.textContent = row && row.swing != null ? this.fmtVegasPts(row.swing) : '—';
+      });
+      document.querySelectorAll('[data-vegas-run="' + team.id + '"]').forEach((el) => {
+        el.textContent = row && row.run != null ? this.fmtVegasPts(row.run) : '0';
+      });
+      document.querySelectorAll('[data-vegas-named-run="' + team.id + '"]').forEach((el) => {
+        el.textContent = this.vegasNamedRun(this.vegasGame(this.state), hn);
+      });
+      const wrap = document.querySelector('[data-vegas-total="' + team.id + '"]');
+      if (wrap) wrap.classList.toggle('incomplete', !!(row && row.incomplete));
+    }
+    const board = document.getElementById('vegas-board');
+    if (board) board.innerHTML = this.vegasBoardInner(this.state);
+  },
+
+  replaceNode(el, html) {
+    if (!el) return;
+    if (!html) {
+      el.remove();
+      return;
+    }
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    if (tmp.firstElementChild) el.replaceWith(tmp.firstElementChild);
+  },
+
+  paintPressedHoleMarks() {
+    if (!this.state) return;
+    const label = document.getElementById('hole-number');
+    if (label) label.innerHTML = this.holeNumberLabelHtml(this.state, this.currentHole || 1);
+    document.querySelectorAll('.team-scorecard thead th[data-hole-h]').forEach((th) => {
+      const hn = Number(th.dataset.holeH);
+      const pressed = this.isVegasOn(this.state) && this.isVegasPressStartHole(this.state, hn);
+      th.classList.toggle('is-vegas-pressed', pressed);
+      const btn = th.querySelector('.sc-hole-head-btn');
+      if (btn) {
+        btn.innerHTML = hn + (pressed ? '<span class="sc-hole-press-pip" title="Vegas press starts here">P</span>' : '');
+      }
+    });
+  },
+
+  paintPressChrome() {
+    if (!this.state) return;
+    const hn = this.currentHole || 1;
+    const vegasBoard = document.getElementById('vegas-board');
+    if (vegasBoard) vegasBoard.innerHTML = this.vegasBoardInner(this.state);
+    this.replaceNode(
+      document.getElementById('vegas-press-wrap') || document.querySelector('.vegas-press-wrap'),
+      this.vegasPressButtonHtml(this.state, hn)
+    );
+    const pressedBar = document.getElementById('pressed-holes-bar');
+    const pressedHtml = this.pressedHolesBarHtml(this.state);
+    if (pressedBar) this.replaceNode(pressedBar, pressedHtml);
+    else if (pressedHtml) {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = pressedHtml;
+      const node = tmp.firstElementChild;
+      const toolbar = document.getElementById('hole-toolbar');
+      const nassauBar = document.getElementById('nassau-toolbar-press');
+      if (node && toolbar && toolbar.parentNode) toolbar.insertAdjacentElement('beforebegin', node);
+      else if (node && nassauBar && nassauBar.parentNode) nassauBar.insertAdjacentElement('beforebegin', node);
+    }
+    this.paintPressedHoleMarks();
+    this.ensureNassauLiveDock(hn);
+    const ninesBoard = document.getElementById('nines-board');
+    if (ninesBoard) ninesBoard.innerHTML = this.ninesBoardInner(this.state);
+  },
+
+  ensureNassauLiveDock(holeNumber) {
+    const html = this.nassauLiveDockHtml(this.state, holeNumber);
+    const existing = document.getElementById('nassau-live-dock')
+      || document.getElementById('nassau-press-wrap');
+    if (existing) {
+      this.replaceNode(existing, html);
+    }
+    const cardBtns = document.getElementById('nassau-press-wrap-card');
+    if (cardBtns) this.replaceNode(cardBtns, this.nassauPressButtonsHtml(this.state, holeNumber, 'nassau-press-wrap-card'));
+    const cardBoard = document.getElementById('nassau-board-card');
+    if (cardBoard) this.replaceNode(cardBoard, this.nassauBoardHtml(this.state, 'nassau-board-card'));
+    const bar = document.getElementById('nassau-toolbar-press');
+    if (bar) this.replaceNode(bar, this.nassauToolbarPressHtml(this.state, holeNumber));
+    else if (this.nassauToolbarPressHtml(this.state, holeNumber)) {
+      const toolbar = document.getElementById('hole-toolbar');
+      if (toolbar && toolbar.parentNode) {
+        const tmpBar = document.createElement('div');
+        tmpBar.innerHTML = this.nassauToolbarPressHtml(this.state, holeNumber);
+        if (tmpBar.firstElementChild) toolbar.insertAdjacentElement('afterend', tmpBar.firstElementChild);
+      }
+    }
+    if (existing) return;
+    if (!html) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    const node = tmp.firstElementChild;
+    if (!node) return;
+    const holeView = document.getElementById('hole-view');
+    const toolbar = document.getElementById('hole-toolbar');
+    if (toolbar && toolbar.parentNode) {
+      toolbar.insertAdjacentElement('afterend', node);
+    } else if (holeView && holeView.parentNode) {
+      holeView.insertAdjacentElement('beforebegin', node);
+    } else if (holeView) {
+      holeView.insertBefore(node, holeView.firstChild);
+    }
+  },
+
+  paintTeamVsPar(team) {
+    if (!this.state || !team) return;
+    for (const course of this.state.holes || []) {
+      const pair = this.vsParPair(this.state, team, course.hole_number);
+      document.querySelectorAll('[data-vs-par="' + team.id + ':' + course.hole_number + '"]').forEach((el) => {
+        const holeEl = el.querySelector('.vs-par-hole');
+        const runEl = el.querySelector('[data-team-run], .vs-par-run strong, .vs-par-run');
+        if (holeEl) holeEl.innerHTML = '<span class="vs-par-label">Hole</span> ' + pair.holeText;
+        if (runEl && runEl.hasAttribute && runEl.hasAttribute('data-team-run')) {
+          runEl.textContent = pair.runText;
+        } else if (runEl) {
+          runEl.innerHTML = '<span class="vs-par-label">Running</span> ' + pair.runText;
+        }
+      });
+    }
+  },
+
+  paintRaceStrip() {
+    const title = document.getElementById('live-game-title');
+    if (title && this.state) title.textContent = this.liveGameTitle(this.state);
+    const el = document.getElementById('race-strip');
+    if (el && this.state) el.textContent = this.raceStripText(this.state);
+    const badge = document.querySelector('[data-status-badge]');
+    if (badge && this.state) {
+      badge.textContent = this.state.round.status;
+      badge.className = 'badge badge-' + this.state.round.status;
+    }
+  },
+
+  paintBallLine(holeNumber) {
+    const hole = holeNumber || this.currentHole;
+    if (!this.state) return;
+    for (const team of this.state.teams || []) {
+      document.querySelectorAll('[data-team-balls="' + team.id + '"]').forEach((el) => {
+        el.textContent = this.teamBallsText(team, hole);
+      });
+    }
+    const reveal = document.getElementById('ball-reveal');
+    if (reveal && this.expandedHole) {
+      reveal.textContent = 'Hole ' + this.expandedHole + ' · ' + this.ballLineText(this.state, this.expandedHole);
+    }
+  },
+
+  patchUI() {
+    if (!this.state) return;
+    if (this.screen !== 'play') return;
+    if (this.shouldHoldAddPlayer()) return;
+    if (this.isHoleView()) {
+      const players = document.getElementById('hole-players');
+      if (!players) {
+        this.draw(this.state);
+        return;
+      }
+      const rows = players.querySelectorAll('.hole-player-row');
+      if (rows.length !== this.visibleHoleMembers(this.state).length) {
+        this.draw(this.state);
+        return;
+      }
+      const holeNumber = this.currentHole;
+      for (const member of this.visibleHoleMembers(this.state)) {
+        this.paintScoreCell(member.id, holeNumber);
+      }
+      for (const team of this.state.teams || []) this.paintTeamHole(holeNumber);
+      this.paintRaceStrip();
+      this.paintBallLine(holeNumber);
+      this.paintEndTotals();
+      this.paintCurrentHoleChrome();
+      this.paintNineTotals();
+      this.lockScoreInputs();
+      return;
+    }
+    if (this.missingNineCols()) {
+      this.draw(this.state);
+      return;
+    }
+    const table = document.getElementById('full-scorecard');
+    if (!table) {
+      this.draw(this.state);
+      return;
+    }
+    const rows = table.querySelectorAll('tr.row-player');
+    if (rows.length !== this.visibleHoleMembers(this.state).length) {
+      this.draw(this.state);
+      return;
+    }
+    for (const member of this.state.members || []) {
+      for (const hs of member.holes || []) this.paintScoreCell(member.id, hs.holeNumber);
+      this.paintPlayerTotals(member.id);
+    }
+    for (const team of this.state.teams || []) {
+      for (const hole of team.holes || []) this.paintTeamHole(hole.holeNumber);
+    }
+    this.paintRaceStrip();
+    this.paintBallLine(this.currentHole);
+    this.paintEndTotals();
+    this.paintCurrentHoleChrome();
+    this.paintNineTotals();
+    this.lockScoreInputs();
+  },
+
+  openEditor(roundId, memberId, holeNumber, name, current, par) {
+    const member = this.state && (this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (this.state && !this.canWriteMember(this.state, member)) {
+      this.showWriteError('You can only enter scores for your own team.');
+      return;
+    }
+    this.overlay = { roundId, memberId, holeNumber, name, current, par };
+    this.stepperOpen = true;
+    this.renderHoleNav();
+    const input = document.getElementById('score-overlay-input');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  },
+
+  closeEditor() {
+    this.stepperOpen = false;
+    this.overlay = null;
+    this.renderHoleNav();
+  },
+
+  bindOverlay() {
+    this.bindStepperControls();
+  },
+
+  bindStepperControls() {
+    const minus = document.getElementById('score-minus');
+    const plus = document.getElementById('score-plus');
+    const clear = document.getElementById('score-clear');
+    const done = document.getElementById('score-done');
+    const input = document.getElementById('score-overlay-input');
+    if (!minus || !input || minus.dataset.bound) return;
+    minus.dataset.bound = '1';
+    minus.onclick = () => this.nudgeStepper(-1);
+    if (plus) plus.onclick = () => this.nudgeStepper(1);
+    if (clear) clear.onclick = () => this.commitStepper(null);
+    if (done) done.onclick = () => this.closeEditor();
+    const applyStepperDigits = () => {
+      const parsed = this.readGrossTyping(input.dataset.pending, input.value, '');
+      input.dataset.pending = parsed.raw;
+      input.value = parsed.raw;
+      if (parsed.complete && parsed.value != null) this.commitStepper(parsed.value);
+    };
+    input.addEventListener('input', applyStepperDigits);
+    input.addEventListener('change', applyStepperDigits);
+  },
+
+  nudgeStepper(delta) {
+    const input = document.getElementById('score-overlay-input');
+    if (!input || !this.overlay) return;
+    const fallback = Number(this.overlay.current != null ? this.overlay.current : this.overlay.par) || 4;
+    const next = Math.min(19, Math.max(1, (Number(input.value) || fallback) + delta));
+    input.value = next;
+    this.commitStepper(next);
+  },
+
+  commitStepper(gross) {
+    if (!this.overlay) return;
+    const { memberId, holeNumber } = this.overlay;
+    this.overlay.current = gross;
+    this.commitScore(memberId, holeNumber, gross);
+  },
+
+  async addGuest() {
+    const values = await _formPrompt({
+      title: 'Add guest',
+      submitLabel: 'Add guest',
+      fields: [
+        { name: 'name', label: 'Guest name', required: true, placeholder: 'Name' },
+        { name: 'handicap', label: 'Handicap (optional)', placeholder: '12.4 or +2' },
+        { name: 'teamName', label: 'Team (1, 2, 3… or blank)', placeholder: '3' },
+      ],
+    });
+    if (!values) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests`, {
+        name: values.name,
+        handicap: values.handicap,
+        teamName: values.teamName || null,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addGuestFromForm(which) {
+    const prefix = which === 'live' ? 'live-add-guest-' : 'add-guest-';
+    const name = (document.getElementById(prefix + 'name') || {}).value;
+    const handicap = (document.getElementById(prefix + 'hcp') || {}).value;
+    const rawTeam = (document.getElementById(prefix + 'team') || {}).value;
+    const organizer = this.isOrganizer(this.state);
+    const teamName = organizer ? (rawTeam || 'Team 1') : this.myTeamName(this.state);
+    if (!name) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests`, {
+        name: name.trim(),
+        handicap,
+        teamName: teamName || 'Team 1',
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this._stillLeaderCue = false;
+      this._pendingAddPlayerLeaderCue = false;
+      if (which === 'live') {
+        this.addPlayerOpen = (state.members || []).length >= 2 ? true : this.addPlayerOpen;
+        this.addPlayerDraft = {
+          name: '',
+          handicap: '',
+          teamName: teamName || (organizer ? 'Team 1' : this.myTeamName(this.state)),
+          extraTeams: (this.addPlayerDraft && this.addPlayerDraft.extraTeams) || [],
+        };
+        this._preserveAddDraft = true;
+      }
+      this.draw(state);
+      if (which === 'live') {
+        const nameEl = document.getElementById('live-add-guest-name');
+        if (nameEl) nameEl.focus();
+      }
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addBulkGuests() {
+    const raw = (document.getElementById('bulk-guests') || {}).value || '';
+    const guests = raw.split(/\n/).map((line) => {
+      const parts = line.split(',').map((s) => s.trim()).filter((s, i) => s || i === 0);
+      if (!parts[0]) return null;
+      return { name: parts[0], handicap: parts[1] || null, teamName: parts[2] || 'Team 1' };
+    }).filter(Boolean);
+    if (!guests.length) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/guests/bulk`, { guests });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async saveTeamNickname(teamName, nickname) {
+    if (!this.state) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams`, {
+        teamName,
+        nickname,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async addExtraTeamFromSettings() {
+    if (!this.state) return;
+    const name = this.nextAddTeamName(this.state);
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams`, { teamName: name });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async assignTeam(memberId, teamName) {
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
+        teamName: teamName || '',
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async balanceTeams() {
+    const values = await _formPrompt({
+      title: 'Auto-balance teams',
+      submitLabel: 'Balance',
+      fields: [{ name: 'teamCount', label: 'How many teams?', type: 'number', value: '2', required: true }],
+    });
+    if (!values) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/teams/balance`, {
+        teamCount: Number(values.teamCount),
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async generateMatches() {
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/matches/generate`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async setStatus(status) {
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}`, { status });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async updateSettings(body) {
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}`, body);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async saveRosterHcp(memberId) {
+    const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canManageRosterMember(this.state, member)) {
+      this.showWriteError('You can only edit players on your own team.');
+      return;
+    }
+    const input = document.querySelector('[data-roster-hcp="' + memberId + '"]');
+    const value = input ? String(input.value || '').trim() : '';
+    if (!value) {
+      _toast('Enter a Handicap Index.', 'error');
+      return;
+    }
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
+        handicap: value,
+        playingHandicap: value,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+      this.refreshStrokeDots();
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async editMember(memberId) {
+    const member = this.state.members.find((m) => m.id === memberId);
+    if (!this.canManageRosterMember(this.state, member)) {
+      this.showWriteError('You can only edit players on your own team.');
+      return;
+    }
+    const values = await _formPrompt({
+      title: 'Handicap Index',
+      submitLabel: 'Save',
+      fields: [{
+        name: 'playingHandicap',
+        label: 'Handicap Index (0.5 rounding, then SI strokes — no course handicap)',
+        value: member.playing_handicap ?? member.handicap ?? '',
+        required: true,
+      }],
+    });
+    if (!values) return;
+    try {
+      const state = await svcApi('put', `/api/rounds/${this.state.round.id}/members/${memberId}`, {
+        handicap: values.playingHandicap,
+        playingHandicap: values.playingHandicap,
+      });
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+      this.refreshStrokeDots();
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  refreshStrokeDots() {
+    if (!this.state) return;
+    const holeNumber = this.currentHole || this.pickCurrentHole(this.state);
+    for (const member of this.state.members || []) {
+      this.paintScoreCell(member.id, holeNumber);
+      for (const hole of member.holes || []) {
+        if (Number(hole.holeNumber) !== Number(holeNumber)) {
+          this.paintScoreCell(member.id, hole.holeNumber);
+        }
+      }
+    }
+  },
+
+  async confirmRemoveMember(name) {
+    const prompt = (typeof _formPrompt === 'function') ? _formPrompt : (typeof window !== 'undefined' ? window._formPrompt : null);
+    if (prompt) {
+      const ok = await prompt({
+        title: 'Remove ' + name + '? Their hole scores will be deleted. Tap Remove to confirm.',
+        submitLabel: 'Remove',
+        fields: [],
+      });
+      return !!ok;
+    }
+    if (typeof window !== 'undefined' && window.confirm) {
+      return window.confirm('Remove ' + name + ' from the roster? Their scores will be deleted.');
+    }
+    return false;
+  },
+
+  async removeMember(memberId) {
+    const member = (this.state && this.state.members || []).find((m) => Number(m.id) === Number(memberId));
+    if (!this.canRemoveRosterMember(this.state, member)) {
+      this.showWriteError(this.isSelfMember(this.state, member)
+        ? 'You cannot remove yourself from the card. Clear guests instead.'
+        : 'You can only remove players from your own team.');
+      return;
+    }
+    const name = member && member.display_name ? member.display_name : 'this player';
+    if (!await this.confirmRemoveMember(name)) return;
+    try {
+      const state = await svcApi('del', `/api/rounds/${this.state.round.id}/members/${memberId}`);
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this.draw(state);
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async clearGuests() {
+    if (!this.state || this.isFollowAlong(this.state)) return;
+    const guests = this.manageableMembers(this.state).filter((m) => this.isGuestMember(m));
+    if (!guests.length) return;
+    const ok = await this.confirmRemoveMember(guests.length + ' guest' + (guests.length === 1 ? '' : 's') + ' (you stay on the team)');
+    if (!ok) return;
+    try {
+      const state = await svcApi('post', `/api/rounds/${this.state.round.id}/clear-guests`, {});
+      this.state = state;
+      this.writeCache(state.round.id, state);
+      this._stillLeaderCue = true;
+      this._pendingAddPlayerLeaderCue = true;
+      this.draw(state);
+      this.fireStillLeaderToast();
+      this._stillLeaderToastAt = Date.now();
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  copy(text) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => _toast('Copied', 'success')).catch(() => {
+      _formPrompt({
+        title: 'Copy this link',
+        submitLabel: 'Done',
+        fields: [{ name: 'text', label: 'Link', value: text }],
+      });
+    });
+  },
+
+  async copyText() {
+    try {
+      const text = await svcApi('get', `/api/rounds/${this.state.round.id}/results.txt`);
+      this.copy(typeof text === 'string' ? text : JSON.stringify(text));
+    } catch (err) { _toast(err.message, 'error'); }
+  },
+
+  async downloadCsv(e) {
+    e.preventDefault();
+    const token = svcApi('getToken');
+    const res = await fetch(`/api/rounds/${this.state.round.id}/results.csv`, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'goldendale-round.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  drawGameRules(state) {
+    const container = document.getElementById('app');
+    const bar = state
+      ? this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)
+      : '<div class="round-toolbar"><a href="#dashboard" onclick="event.preventDefault();app.navigate(\'#dashboard\')">&larr; Rounds</a></div>';
+    container.innerHTML = `${bar}
+      <div class="card game-rules" id="game-rules">
+        <h2 class="card-title">Game Rules</h2>
+        <p class="card-subtitle">House rules. Short and plain. Tap ℹ on the live card for one-line help.</p>
+        <h3>Sunday game</h3>
+        <p>The Sunday game is the team vs-par race. Setup toggle, default ON. When ON, each team’s hole is the best combo of counted balls vs par — not a stroke sum. Goldendale default is <strong>1G+2N</strong> (one best gross + two best nets). Also offered: <strong>1G+1N</strong> (one gross + one net), 3G, 3N, 1G+3N, 2G+2N. Under that hole total, <strong>Running</strong> is the cumulative vs-par through the hole you are on (−2 then −3 = −5; −2 then +3 = +1). After 9, OUT is front 1–9; IN is 10–18; TOT is 1–18. OFF hides the Sunday game. Vegas, Wolf, Nassau, Nines, and Skins can run alone or stacked.</p>
+        <h3>Handicap index</h3>
+        <p>No course handicap. Round the index at 0.5 (2.4→2, 2.5→3, 18.7→19, 1.3→1). That integer is applied by scorecard stroke index for every net game.</p>
+        <h3>Skins</h3>
+        <p>One pot. Gross and net. A tie kills that hole — no carry. Net off the low man, strokes by SI. Value = pot ÷ (gross skins won + net skins won). Default OFF.</p>
+        <h3>Vegas</h3>
+        <p>2v2. Pair numbers, low first (4 and 5 = 45). 10+ is high-first (10 and 4 = 104, 4 and 11 = 114). Not the Sunday game vs-par total. Press is a games-running count that starts at 1; each tap adds a game from that hole on. This-hole swing = difference × games running (5-point hole × 3 games = +15/−15). Two lines: this-hole difference, then RUNNING that names who is up and who is down (e.g. Team B up 20 · Team A down 20). Flip on gross birdie+. Both sides birdie+ flips both.</p>
+        <h3>Nassau (NASA)</h3>
+        <p>NASA means Nassau. Three independent bets: Front 1–9, Back 10–18, Overall 1–18. Each hole is match play. The live card shows <strong>Press Front</strong>, <strong>Press Back</strong>, and <strong>Press Overall</strong> plus RUNNING scores for each original and each live press. Anyone can press. A press is a new bet from that hole through the end of that segment only — Front dies at 9, Back at 18, Overall tap→18. Original bets stay live. No auto 2-down.</p>
+        <h3>Wolf</h3>
+        <p>Wolf rotates each hole. After each tee, pick that player or pass. Sides lock before Wolf points settle — you can still type gross. Better ball wins (gross or net). Tie = 0. Point values are setup toggles: Partnered ±, Lone ±, and Blind Lone ±. Defaults: partnered ±1, Lone ±2, Blind Lone ±4. Win +, lose −, same magnitude. Next hole is a new Wolf.</p>
+        <h3>Join code teams</h3>
+        <p>One round, one join code. Host is Team 1 (optional nickname). After you pick a team (including Team 1 — you are not auto Team 1), choose <strong>Scorekeeper</strong> or <strong>Follow along</strong>. Scorekeepers write that team’s scores. Follow along is read-only for that team and does not add a player row. Optional team nickname. Live card shows Team N · nickname (or just Team N) on every login.</p>
+        <h3>Live card write lock</h3>
+        <p>The host / organizer may enter hole scores for every team after opening that team’s card. Own-card view does not show another team being built. Scorekeepers may enter scores only for players on their own team. Follow along cannot post scores, even on their team. The server rejects those writes. Host <strong>Show other teams</strong> (default OFF) is the shared-board read gate. Scorekeepers and followers have the same ON/OFF bar on the live card, results, and settings: they can hide opposing scores even when the host is showing them, and they can show them only when the host allows. If the host has hide ON, server redaction still wins for non-hosts — no leak. The personal toggle does not change the host setting or unlock writes. <strong>Host</strong> badge is the round organizer only. A joined scorekeeper shows <strong>Leader</strong> (guests show Guest).</p>
+        <h3>Score entry</h3>
+        <p>Gross is 1–19. Sunday default advance is <strong>Down</strong> (next writable player, same hole) — Across is opt-in catch-up, not the default. After the last player on that hole, Down wraps to player 1 on the next hole. Switch to <strong>Across</strong> to stay on one player and walk holes 2→3→4. Across keeps the next cell in view with a smooth scroll instead of a jump. Scorekeepers stay on their own team. The host walks the team card they have open.</p>
+        <h3>Nines</h3>
+        <p>Exactly 3 individual players. First row is that hole’s points (5-3-1 / 5-2-2 / 4-4-1 / 3-3-3 / Blitz 9-0-0). Second row per player <strong>sums</strong> those points through the hole you are on (hole1 5-2-2 then hole2 5-3-1 → running 10/5/3), not a reset. Net off the low man.</p>
+        <h3>Presses</h3>
+        <p>Vegas Press increments games running (not a new ledger). Nassau: from this hole to the end of that segment only (Front dies at 9). Wolf / Nines still press from this hole to 18. Anyone can press. <strong>Edit</strong> sits beside Vegas Press (or under Nassau Press when Vegas is off) and opens Add / Undo on the live card. <strong>Undo last press</strong> stays under Press and inside Edit. It pops only the newest press after a confirm — Vegas badge or Nassau Front / Back / Overall. Anyone who can press can undo.</p>
+        <h3>Score marks</h3>
+        <p>On the Sunday / side-game live card, the <strong>gross</strong> hole score (the number you type) gets paper-card marks: circle = birdie, double circle = eagle or better, square = bogey, double square = double bogey or worse. Net, handicap dots, and vs-par colors stay. Standard scorecard stays plain dotted totals — no circles or squares.</p>
+        <h3>Birdie dragon slots (Wyrm Coil)</h3>
+        <p>Fun layer, not team money. Default ON. Each player’s spin count is <strong>their own</strong> gross better-than-par plus their own net better-than-par (same hole can count both). Points stay on that player — a per-player fun board, never a team pot. On the 19th, the fun board lists everyone and Spin your birdies opens Wyrm Coil on that player’s remaining spins. Reels rotate longer before they settle. Toggle off to skip the coil. Original theme and pay — not a copy of any cabinet.</p>
+        <h3>Optional KPs</h3>
+        <p>Default OFF. Designate KP holes, record a winner, see them on the 19th hole.</p>
+        <h3>19th hole</h3>
+        <p>Go to the 19th hole when your team’s card is in — or when the host opens it. Opposing teams you cannot score do not block it. Podium reveals 3rd → 2nd → 1st with short confetti on the winner. Tap Front / Back / Overall / Skins cards to reveal. The Wyrm Coil fun board lists each player’s points. The big Spin your birdies door opens that player’s remaining spins. Share strip is one-tap summary plus a screenshot card. Sound stays off.</p>
+        <h3>OUT / IN / TOT</h3>
+        <p>After hole 9: OUT is front 1–9. After 18: IN is back 10–18 only. TOT is 1–18. Sunday game stays vs-par.</p>
+      </div>`;
+    svcApi('updateBadge');
+  },
+
+  nineteenthRankedTeams(state) {
+    return [...(state.teams || [])]
+      .filter((t) => t.total != null)
+      .sort((a, b) => Number(a.total) - Number(b.total));
+  },
+
+  podiumHtml(state) {
+    const ranked = this.nineteenthRankedTeams(state);
+    if (!ranked.length) return '<div class="podium" id="podium">No Sunday game totals yet.</div>';
+    const places = [
+      { cls: 'place-3', label: '3rd', team: ranked[2] },
+      { cls: 'place-2', label: '2nd', team: ranked[1] },
+      { cls: 'place-1', label: '1st', team: ranked[0] },
+    ];
+    return `<div class="podium" id="podium">${places.map((p) => `
+      <div class="podium-place ${p.cls}" data-place="${p.label}" hidden>
+        <span class="podium-label">${p.label}</span>
+        <strong>${p.team ? _esc(this.teamDisplay(p.team)) : '—'}</strong>
+        <span>${p.team ? this.fmtTeam(p.team.total) : ''}</span>
+        ${p.label === '1st' ? '<div class="confetti" id="nineteenth-confetti" hidden></div>' : ''}
+      </div>`).join('')}</div>`;
+  },
+
+  revealCardHtml(key, title, body) {
+    return `<button type="button" class="reveal-card" data-reveal="${key}" onclick="scorecard.revealNineteenthCard('${key}')">
+      <span class="reveal-title">${_esc(title)}</span>
+      <span class="reveal-body" hidden>${body}</span>
+    </button>`;
+  },
+
+  revealNineteenthCard(key) {
+    const card = document.querySelector(`.reveal-card[data-reveal="${key}"]`);
+    if (!card) return;
+    const body = card.querySelector('.reveal-body');
+    if (body) body.hidden = !body.hidden;
+    card.classList.toggle('is-open', body && !body.hidden);
+  },
+
+  nineteenthShareText(state) {
+    const ranked = this.nineteenthRankedTeams(state);
+    const winner = ranked[0];
+    const vegas = this.vegasGame(state);
+    const bits = [
+      `Sunday game · ${state.round && state.round.name ? state.round.name : 'Goldendale'}`,
+      winner ? `Winner ${winner.name} ${this.fmtTeam(winner.total)}` : '',
+      vegas && vegas.teamA ? this.vegasNamedRun(vegas) : '',
+    ].filter(Boolean);
+    return bits.join(' · ');
+  },
+
+  nineteenthSharePng(state) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 720;
+    canvas.height = 360;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return Promise.resolve(null);
+    ctx.fillStyle = '#1B5E20';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#F9A825';
+    ctx.fillRect(0, 0, canvas.width, 10);
+    ctx.fillStyle = '#fff';
+    ctx.font = '700 28px sans-serif';
+    ctx.fillText('Sunday game · 19th hole', 28, 64);
+    const text = this.nineteenthShareText(state || this.state);
+    ctx.font = '600 20px sans-serif';
+    const words = String(text || '').split(' ');
+    let line = '';
+    let y = 120;
+    words.forEach((word) => {
+      const next = line ? line + ' ' + word : word;
+      if (ctx.measureText(next).width > 660) {
+        ctx.fillText(line, 28, y);
+        line = word;
+        y += 32;
+      } else {
+        line = next;
+      }
+    });
+    if (line) ctx.fillText(line, 28, y);
+    ctx.font = '500 16px sans-serif';
+    ctx.fillText('Goldendale Scorecard · sound off', 28, 330);
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => resolve(blob), 'image/png');
+    });
+  },
+
+  async shareNineteenth() {
+    const text = this.state ? this.nineteenthShareText(this.state) : '';
+    const blob = await this.nineteenthSharePng(this.state);
+    const file = blob ? new File([blob], 'sunday-19th.png', { type: 'image/png' }) : null;
+    try {
+      if (navigator.share) {
+        const data = { title: 'Sunday game', text };
+        if (file && navigator.canShare && navigator.canShare({ files: [file] })) data.files = [file];
+        await navigator.share(data);
+        return;
+      }
+    } catch { /* fall through to copy */ }
+    try {
+      await navigator.clipboard.writeText(text);
+      _toast('Copied the 19th hole strip.', 'ok');
+    } catch {
+      _toast(text, 'ok');
+    }
+  },
+
+  playPodiumReveal() {
+    const order = ['3rd', '2nd', '1st'];
+    order.forEach((label, i) => {
+      window.setTimeout(() => {
+        const el = document.querySelector(`.podium-place[data-place="${label}"]`);
+        if (el) el.hidden = false;
+        if (label === '1st') {
+          const confetti = document.getElementById('nineteenth-confetti');
+          if (confetti) {
+            confetti.hidden = false;
+            confetti.classList.add('is-on');
+            window.setTimeout(() => confetti.classList.remove('is-on'), 1800);
+          }
+        }
+      }, 350 * (i + 1));
+    });
+  },
+
+  drawNineteenth(state) {
+    const container = document.getElementById('app');
+    const standard = this.isStandardScorecard(state);
+    const fmt = (rows) => (rows || []).length
+      ? rows.map((t) => `${this.teamDisplay(t)} ${this.fmtTeam(t.total)}`).join(' · ')
+      : '—';
+    const facts = state.funFacts || {};
+    const cfg = this.sideConfig(state);
+    const kps = !standard && cfg.kps && cfg.kps.on
+      ? (cfg.kps.holes || []).map((hn) => {
+        const win = cfg.kps.winners && cfg.kps.winners[String(hn)];
+        return `Hole ${hn}: ${win && win.name ? win.name : '—'}`;
+      }).join(' · ')
+      : '';
+    const skins = state.sideGames && state.sideGames.games && state.sideGames.games.skins;
+    const skinsBody = skins
+      ? `Gross ${skins.grossSkins} · Net ${skins.netSkins} · pot ${skins.pot ?? '—'} · ${skins.skinCount ? (skins.valuePerSkin + ' / skin') : 'no skins'}`
+      : 'Skins off';
+    const standardRows = (state.members || []).filter((m) => m.team_id && !this.isFollowAlongMember(m)).map((m) => {
+      return `<p><strong>${_esc(m.display_name)}</strong> · OUT ${m.outGross ?? '—'} / ${m.outNet ?? '—'} · IN ${m.inGross ?? '—'} / ${m.inNet ?? '—'} · TOT ${m.totalGross ?? '—'} / ${m.totalNet ?? '—'}</p>`;
+    }).join('') || '<p>No scores yet.</p>';
+    container.innerHTML = `
+      ${this.toolbar(state, `<button type="button" class="btn btn-sm btn-secondary" onclick="scorecard.showScreen('play')">Scorecard</button>`)}
+      <div class="card nineteenth" id="nineteenth">
+        <h2 class="card-title">19th hole</h2>
+        <p class="card-subtitle">${_esc(state.round.name)} · ${standard ? 'standard scorecard' : 'confirmed card · sound off'}</p>
+        ${standard ? '' : this.podiumHtml(state)}
+        ${standard ? '' : `<div class="reveal-row">
+          ${this.revealCardHtml('front', 'Front', _esc(fmt(state.frontLeaders)))}
+          ${this.revealCardHtml('back', 'Back', _esc(fmt(state.backLeaders)))}
+          ${this.revealCardHtml('overall', 'Overall', _esc(fmt(state.overallLeaders)))}
+          ${this.revealCardHtml('skins', 'Skins', _esc(skinsBody))}
+        </div>`}
+        <div class="share-strip" id="share-strip">
+          <span>${_esc(this.nineteenthShareText(state))}</span>
+          <button type="button" class="btn btn-sm btn-accent" onclick="scorecard.shareNineteenth()">Share</button>
+        </div>
+        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.funBoardHtml ? wyrmCoil.funBoardHtml(state) : '')}
+        ${standard ? '' : (typeof wyrmCoil !== 'undefined' && wyrmCoil.bannerHtml ? wyrmCoil.bannerHtml(state) : '')}
+        ${standard ? `<h3>Standard scorecard</h3>${standardRows}` : `<h3>Sunday game</h3>
+        ${(state.teams || []).map((t) => `<p><strong>${_esc(this.teamDisplay(t))}</strong> · Front ${this.fmtTeam(t.out)} · Back ${this.fmtTeam(t.inn)} · Overall ${this.fmtTeam(t.total)}</p>`).join('') || '<p>No teams yet.</p>'}`}
+        ${standard ? '' : this.sideGamesResultsHtml(state)}
+        ${kps ? `<h3>Closest to the pin</h3><p>${_esc(kps)}</p>` : ''}
+        <h3>Fun facts</h3>
+        <p>Total gross birdies: ${facts.totalBirdies ?? 0}</p>
+        <p>Hardest hole: ${facts.hardest ? ('#' + facts.hardest.hole + ' (' + (facts.hardest.avg > 0 ? '+' : '') + facts.hardest.avg.toFixed(1) + ' vs par)') : '—'}</p>
+        <p>Easiest hole: ${facts.easiest ? ('#' + facts.easiest.hole + ' (' + (facts.easiest.avg > 0 ? '+' : '') + facts.easiest.avg.toFixed(1) + ' vs par)') : '—'}</p>
+        <p>Most birdies: ${facts.mostBirdies ? (facts.mostBirdies.name + ' ' + facts.mostBirdies.birdies) : '—'}</p>
+        <p>Biggest team swing: ${facts.biggestSwing ? (facts.biggestSwing.name + ' ' + facts.biggestSwing.swing) : '—'}</p>
+      </div>`;
+    this.playPodiumReveal();
+    svcApi('updateBadge');
+  },
+};
+
+window.scorecard = scorecard;
